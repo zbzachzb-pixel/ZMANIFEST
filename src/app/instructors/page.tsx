@@ -18,6 +18,7 @@ export default function InstructorsPage() {
       })
     } catch (error) {
       console.error('Failed to toggle clock:', error)
+      alert('Failed to update clock status')
     }
   }
   
@@ -27,6 +28,7 @@ export default function InstructorsPage() {
         await db.archiveInstructor(instructor.id)
       } catch (error) {
         console.error('Failed to archive:', error)
+        alert('Failed to archive instructor')
       }
     }
   }
@@ -113,43 +115,43 @@ export default function InstructorsPage() {
                       <td className="px-6 py-4">
                         <div className="flex flex-wrap gap-2">
                           {instructor.team === 'red' && (
-                            <span className="px-2 py-1 bg-red-500/20 text-red-300 rounded text-xs font-semibold">
+                            <span key="team-red" className="px-2 py-1 bg-red-500/20 text-red-300 rounded text-xs font-semibold">
                               🔴 Red
                             </span>
                           )}
                           {instructor.team === 'blue' && (
-                            <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">
+                            <span key="team-blue" className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">
                               🔵 Blue
                             </span>
                           )}
                           {instructor.team === 'gold' && (
-                            <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded text-xs font-semibold">
+                            <span key="team-gold" className="px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded text-xs font-semibold">
                               🟡 Gold
                             </span>
                           )}
                           {!instructor.team && (
-                            <span className="px-2 py-1 bg-red-500/20 text-red-300 rounded text-xs font-semibold">
+                            <span key="team-none" className="px-2 py-1 bg-red-500/20 text-red-300 rounded text-xs font-semibold">
                               ⚠️ No Team
                             </span>
                           )}
                           {instructor.tandem && (
-                            <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">T</span>
+                            <span key="dept-tandem" className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">T</span>
                           )}
                           {instructor.aff && (
-                            <span className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-xs font-semibold">A</span>
+                            <span key="dept-aff" className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-xs font-semibold">A</span>
                           )}
                           {instructor.video && (
-                            <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs font-semibold">V</span>
+                            <span key="dept-video" className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs font-semibold">V</span>
                           )}
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-slate-300">
                           {instructor.tandem && instructor.tandemWeightLimit && (
-                            <div>T: {instructor.tandemWeightLimit} lbs</div>
+                            <div key="weight-tandem">T: {instructor.tandemWeightLimit} lbs</div>
                           )}
                           {instructor.aff && instructor.affWeightLimit && (
-                            <div>A: {instructor.affWeightLimit} lbs</div>
+                            <div key="weight-aff">A: {instructor.affWeightLimit} lbs</div>
                           )}
                         </div>
                       </td>
