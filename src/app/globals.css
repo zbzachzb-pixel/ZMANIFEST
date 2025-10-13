@@ -3,3 +3,8 @@
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
+
+/* Dark mode is always on for this app */
+html.dark {
+  color-scheme: dark;
+}

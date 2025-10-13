@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { useActiveInstructors, useCreateInstructor } from '@/hooks/useDatabase'
+import { useActiveInstructors } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { AddInstructorModal } from '@/components/AddInstructorModal'
 import type { Instructor } from '@/types'
@@ -55,7 +55,6 @@ export default function InstructorsPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-8">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-4xl font-bold text-white mb-2">Instructors</h1>
@@ -69,7 +68,6 @@ export default function InstructorsPage() {
           </button>
         </div>
         
-        {/* Instructors Table */}
         {instructors.length === 0 ? (
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-12 text-center border border-white/20">
             <div className="text-6xl mb-4">👨‍✈️</div>
@@ -92,7 +90,7 @@ export default function InstructorsPage() {
                       Name
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Team & Depts
+                      Team and Depts
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
                       Weight Limits
@@ -199,7 +197,6 @@ export default function InstructorsPage() {
         )}
       </div>
       
-      {/* Modal */}
       {isModalOpen && (
         <AddInstructorModal
           instructor={editingInstructor}
