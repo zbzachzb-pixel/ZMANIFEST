@@ -113,12 +113,17 @@ export default function AssignmentsPage() {
           <p className="text-slate-300">View and manage all assignments for {period.name}</p>
         </div>
         
-        {/* Clock Tracking Section */}
+        {/* Clock Tracking Section - REDESIGNED */}
         <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20 mb-6">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-              🕐 Clock Activity
-            </h2>
+            <div>
+              <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                🕐 Clock Activity
+              </h2>
+              <p className="text-sm text-slate-400 mt-1">
+                {clockEvents.length} events • {new Set(clockEvents.map(e => e.instructorId)).size} instructors
+              </p>
+            </div>
             <input
               type="date"
               value={selectedDate.toISOString().split('T')[0]}
@@ -133,90 +138,142 @@ export default function AssignmentsPage() {
               <p className="text-sm">No clock activity for this date</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {clockEvents.map((event, index) => {
-                const time = new Date(event.timestamp)
-                const isClockIn = event.type === 'in'
-                
-                // Calculate duration if there's a matching clock out
-                let duration = null
-                if (isClockIn && index < clockEvents.length - 1) {
-                  const nextEvent = clockEvents[index + 1]
-                  if (nextEvent.instructorId === event.instructorId && nextEvent.type === 'out') {
-                    const durationMs = new Date(nextEvent.timestamp).getTime() - time.getTime()
-                    const hours = Math.floor(durationMs / (1000 * 60 * 60))
-                    const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60))
-                    duration = `${hours}h ${minutes}m`
+            <>
+              {/* Group events by instructor */}
+              {(() => {
+                // Group events by instructor
+                const byInstructor = new Map<string, ClockEvent[]>()
+                clockEvents.forEach(event => {
+                  if (!byInstructor.has(event.instructorId)) {
+                    byInstructor.set(event.instructorId, [])
                   }
-                }
-                
+                  byInstructor.get(event.instructorId)!.push(event)
+                })
+
                 return (
-                  <div
-                    key={event.id}
-                    className={`flex items-center gap-4 p-4 rounded-lg border-2 transition-all ${
-                      isClockIn
-                        ? 'bg-green-500/10 border-green-500/30'
-                        : 'bg-slate-500/10 border-slate-500/30'
-                    }`}
-                  >
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                      isClockIn ? 'bg-green-500/20' : 'bg-slate-500/20'
-                    }`}>
-                      <span className="text-2xl">
-                        {isClockIn ? '✓' : '✕'}
-                      </span>
-                    </div>
-                    
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-1">
-                        <span className="font-bold text-white text-lg">
-                          {event.instructorName}
-                        </span>
-                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                          isClockIn
-                            ? 'bg-green-500/20 text-green-300'
-                            : 'bg-slate-500/20 text-slate-300'
-                        }`}>
-                          {isClockIn ? '🟢 Clocked In' : '🔴 Clocked Out'}
-                        </span>
-                      </div>
-                      <div className="text-sm text-slate-400">
-                        {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {duration && (
-                          <span className="ml-3 text-blue-400 font-semibold">
-                            • Worked {duration}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {Array.from(byInstructor.entries()).map(([instructorId, events]) => {
+                      const instructorName = events[0].instructorName
+                      
+                      // Calculate shifts (pair clock-ins with clock-outs)
+                      const shifts: Array<{ in: Date, out: Date | null, duration: string | null }> = []
+                      for (let i = 0; i < events.length; i++) {
+                        if (events[i].type === 'in') {
+                          const clockInTime = new Date(events[i].timestamp)
+                          let clockOutTime: Date | null = null
+                          let duration: string | null = null
+                          
+                          // Find matching clock out
+                          if (i + 1 < events.length && events[i + 1].type === 'out') {
+                            clockOutTime = new Date(events[i + 1].timestamp)
+                            const durationMs = clockOutTime.getTime() - clockInTime.getTime()
+                            const hours = Math.floor(durationMs / (1000 * 60 * 60))
+                            const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60))
+                            duration = `${hours}h ${minutes}m`
+                          }
+                          
+                          shifts.push({ in: clockInTime, out: clockOutTime, duration })
+                        }
+                      }
+                      
+                      // Calculate total hours for the day
+                      const totalMs = shifts.reduce((sum, shift) => {
+                        if (shift.out) {
+                          return sum + (shift.out.getTime() - shift.in.getTime())
+                        }
+                        return sum
+                      }, 0)
+                      const totalHours = Math.floor(totalMs / (1000 * 60 * 60))
+                      const totalMinutes = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60))
+                      const totalTime = totalMs > 0 ? `${totalHours}h ${totalMinutes}m` : null
+                      
+                      const isCurrentlyIn = shifts.length > 0 && shifts[shifts.length - 1].out === null
+                      
+                      return (
+                        <div
+                          key={instructorId}
+                          className={`p-4 rounded-lg border-2 transition-all ${
+                            isCurrentlyIn
+                              ? 'bg-green-500/10 border-green-500/30'
+                              : 'bg-white/5 border-white/20'
+                          }`}
+                        >
+                          {/* Instructor Header */}
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <div className={`w-3 h-3 rounded-full ${
+                                isCurrentlyIn ? 'bg-green-400' : 'bg-gray-400'
+                              }`} />
+                              <span className="font-bold text-white">{instructorName}</span>
+                            </div>
+                            {totalTime && (
+                              <span className="text-sm font-semibold text-blue-400">
+                                {totalTime}
+                              </span>
+                            )}
+                          </div>
+                          
+                          {/* Shifts */}
+                          <div className="space-y-2">
+                            {shifts.map((shift, idx) => (
+                              <div key={idx} className="text-sm bg-black/20 rounded p-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-green-400">▶</span>
+                                    <span className="text-slate-300">
+                                      {shift.in.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {shift.out ? (
+                                      <>
+                                        <span className="text-slate-300">
+                                          {shift.out.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                        <span className="text-red-400">■</span>
+                                      </>
+                                    ) : (
+                                      <span className="text-green-400 font-semibold">Active</span>
+                                    )}
+                                  </div>
+                                </div>
+                                {shift.duration && (
+                                  <div className="text-xs text-slate-400 text-center mt-1">
+                                    {shift.duration}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 )
-              })}
-            </div>
-          )}
-          
-          {/* Daily Summary */}
-          {clockEvents.length > 0 && (
-            <div className="mt-6 pt-6 border-t border-white/20 grid grid-cols-3 gap-4">
-              <div className="text-center">
-                <div className="text-sm text-slate-400 mb-1">Clock Ins</div>
-                <div className="text-2xl font-bold text-green-400">
-                  {clockEvents.filter(e => e.type === 'in').length}
+              })()}
+              
+              {/* Daily Summary */}
+              <div className="mt-6 pt-6 border-t border-white/20 grid grid-cols-3 gap-4">
+                <div className="text-center">
+                  <div className="text-sm text-slate-400 mb-1">Total Events</div>
+                  <div className="text-2xl font-bold text-white">
+                    {clockEvents.length}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className="text-sm text-slate-400 mb-1">Instructors</div>
+                  <div className="text-2xl font-bold text-blue-400">
+                    {new Set(clockEvents.map(e => e.instructorId)).size}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className="text-sm text-slate-400 mb-1">Currently In</div>
+                  <div className="text-2xl font-bold text-green-400">
+                    {instructors.filter(i => i.clockedIn).length}
+                  </div>
                 </div>
               </div>
-              <div className="text-center">
-                <div className="text-sm text-slate-400 mb-1">Clock Outs</div>
-                <div className="text-2xl font-bold text-slate-400">
-                  {clockEvents.filter(e => e.type === 'out').length}
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-sm text-slate-400 mb-1">Currently In</div>
-                <div className="text-2xl font-bold text-blue-400">
-                  {instructors.filter(i => i.clockedIn).length}
-                </div>
-              </div>
-            </div>
+            </>
           )}
         </div>
         

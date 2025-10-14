@@ -11,7 +11,7 @@ import type {
   CreateQueueStudent,
   Group,
   DatabaseState,
-  ClockEvent  // <-- ADD THIS
+  ClockEvent
 } from '@/types'
 
 export interface DatabaseService {
@@ -22,6 +22,12 @@ export interface DatabaseService {
   updateInstructor(id: string, updates: UpdateInstructor): Promise<void>
   archiveInstructor(id: string): Promise<void>
   subscribeToInstructors(callback: (instructors: Instructor[]) => void): () => void
+  
+  // CLOCK EVENTS
+  logClockEvent(instructorId: string, instructorName: string, type: 'in' | 'out'): Promise<ClockEvent>
+  getClockEvents(): Promise<ClockEvent[]>
+  getClockEventsByDate(date: Date): Promise<ClockEvent[]>
+  subscribeToClockEvents(callback: (events: ClockEvent[]) => void): () => void
   
   // LOADS
   createLoad(load: CreateLoad): Promise<Load>

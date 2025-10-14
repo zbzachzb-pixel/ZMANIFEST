@@ -20,7 +20,7 @@ import type {
   QueueStudent,
   CreateQueueStudent,
   Group,
-  DatabaseState
+  DatabaseState,
   ClockEvent
 } from '@/types'
 
@@ -34,6 +34,7 @@ export class FirebaseService implements DatabaseService {
     this.subscribeToAssignments = this.subscribeToAssignments.bind(this)
     this.subscribeToQueue = this.subscribeToQueue.bind(this)
     this.subscribeToGroups = this.subscribeToGroups.bind(this)
+    this.subscribeToClockEvents = this.subscribeToClockEvents.bind(this)
     this.subscribeToAll = this.subscribeToAll.bind(this)
   }
   
@@ -92,6 +93,8 @@ export class FirebaseService implements DatabaseService {
     })
     return unsubscribe
   }
+  
+  // ==================== CLOCK EVENTS ====================
   
   async logClockEvent(instructorId: string, instructorName: string, type: 'in' | 'out'): Promise<ClockEvent> {
     const newEvent: ClockEvent = {
@@ -299,7 +302,7 @@ export class FirebaseService implements DatabaseService {
   }
   
   async getFullState(): Promise<DatabaseState> {
-    const [instructors, assignments, studentQueue, groups, loads] = await Promise.all([
+    const [instructors, assignments, studentQueue, groups, loads, clockEvents] = await Promise.all([
       this.getInstructors(),
       this.getAssignments(),
       this.getQueue(),
@@ -325,7 +328,7 @@ export class FirebaseService implements DatabaseService {
     await set(rootRef, cleanedState)
   }
   
- subscribeToAll(callback: (state: DatabaseState) => void): () => void {
+  subscribeToAll(callback: (state: DatabaseState) => void): () => void {
     const rootRef = ref(this.db, '/')
     const unsubscribe = onValue(rootRef, (snapshot) => {
       const data = snapshot.val()
@@ -336,10 +339,11 @@ export class FirebaseService implements DatabaseService {
           studentQueue: data.studentQueue ? Object.values(data.studentQueue) : [],
           groups: data.groups ? Object.values(data.groups) : [],
           loads: data.loads ? Object.values(data.loads) : [],
-          clockEvents: data.clockEvents ? Object.values(data.clockEvents) : [],  // <-- ADD THIS
+          clockEvents: data.clockEvents ? Object.values(data.clockEvents) : [],
           lastSaved: data.lastSaved || new Date().toISOString(),
         })
       }
     })
     return unsubscribe
   }
+}
