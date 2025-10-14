@@ -183,25 +183,6 @@ export function useCreateAssignment() {
   return { create, loading, error }
 }
 
-export function useDeleteAssignment() {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
-
-  const deleteAssignment = useCallback(async (id: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      await db.deleteAssignment(id)
-    } catch (err) {
-      setError(err as Error)
-      throw err
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  return { deleteAssignment, loading, error }
-}
 export function useUpdateAssignment() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -222,12 +203,31 @@ export function useUpdateAssignment() {
   return { updateAssignment, loading, error }
 }
 
+export function useDeleteAssignment() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const deleteAssignment = useCallback(async (id: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.deleteAssignment(id)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { deleteAssignment, loading, error }
+}
+
 // ==================== QUEUE ====================
 
 export function useQueue() {
   return useRealtimeData<QueueStudent>(db.subscribeToQueue)
 }
-
 export function useTandemQueue() {
   const { data: allQueue, loading, error, refresh } = useQueue()
   const tandemQueue = allQueue.filter(s => s.jumpType === 'tandem')
@@ -432,4 +432,28 @@ export function useCreatePeriod() {
   }, [])
 
   return { create, loading, error }
+}
+
+export function useEndPeriod() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const endPeriod = useCallback(async (
+    periodId: string,
+    finalBalances: Record<string, number>,
+    finalStats: any
+  ) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.endPeriod(periodId, finalBalances, finalStats)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { endPeriod, loading, error }
 }

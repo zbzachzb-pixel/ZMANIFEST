@@ -24,7 +24,8 @@ import type {
   ClockEvent,
   Period,
   CreatePeriod,
-  UpdatePeriod
+  UpdatePeriod,
+  LoadSchedulingSettings  // NEW: Added this import
 } from '@/types'
 
 export class FirebaseService implements DatabaseService {
@@ -193,60 +194,6 @@ export class FirebaseService implements DatabaseService {
     return unsubscribe
   }
   
-  // ==================== ASSIGNMENTS ====================
-  
-  async createAssignment(assignment: CreateAssignment): Promise<Assignment> {
-    const newAssignment: Assignment = {
-      ...assignment,
-      id: this.generateId(),
-      timestamp: new Date().toISOString(),
-    }
-    
-    const cleanedAssignment = this.cleanData(newAssignment)
-    const assignmentRef = ref(this.db, `assignments/${newAssignment.id}`)
-    await set(assignmentRef, cleanedAssignment)
-    
-    return newAssignment
-  }
-  async updateAssignment(id: string, updates: Partial<Assignment>): Promise<void> {
-  const assignmentRef = ref(this.db, `assignments/${id}`)
-  const cleanedUpdates = this.cleanData(updates)
-  await update(assignmentRef, cleanedUpdates)
-}
-  
-  async getAssignments(): Promise<Assignment[]> {
-    return this.getData<Assignment>('assignments')
-  }
-  
-  async getInstructorAssignments(instructorId: string): Promise<Assignment[]> {
-    const allAssignments = await this.getAssignments()
-    return allAssignments.filter(a => 
-      a.instructorId === instructorId || a.videoInstructorId === instructorId
-    )
-  }
-  
-  async getAssignmentsByDateRange(start: Date, end: Date): Promise<Assignment[]> {
-    const allAssignments = await this.getAssignments()
-    return allAssignments.filter(a => {
-      const assignmentDate = new Date(a.timestamp)
-      return assignmentDate >= start && assignmentDate <= end
-    })
-  }
-  
-  async deleteAssignment(id: string): Promise<void> {
-    const assignmentRef = ref(this.db, `assignments/${id}`)
-    await remove(assignmentRef)
-  }
-  
-  subscribeToAssignments(callback: (assignments: Assignment[]) => void): () => void {
-    const assignmentsRef = ref(this.db, 'assignments')
-    const unsubscribe = onValue(assignmentsRef, (snapshot) => {
-      const data = snapshot.val()
-      callback(data ? Object.values(data) : [])
-    })
-    return unsubscribe
-  }
-  
   // ==================== QUEUE ====================
   
   async addToQueue(student: CreateQueueStudent): Promise<QueueStudent> {
@@ -325,6 +272,61 @@ export class FirebaseService implements DatabaseService {
     return unsubscribe
   }
   
+  // ==================== ASSIGNMENTS ====================
+  
+  async createAssignment(assignment: CreateAssignment): Promise<Assignment> {
+    const newAssignment: Assignment = {
+      ...assignment,
+      id: this.generateId(),
+      timestamp: new Date().toISOString(),
+    }
+    
+    const cleanedAssignment = this.cleanData(newAssignment)
+    const assignmentRef = ref(this.db, `assignments/${newAssignment.id}`)
+    await set(assignmentRef, cleanedAssignment)
+    
+    return newAssignment
+  }
+  
+  async updateAssignment(id: string, updates: Partial<Assignment>): Promise<void> {
+    const assignmentRef = ref(this.db, `assignments/${id}`)
+    const cleanedUpdates = this.cleanData(updates)
+    await update(assignmentRef, cleanedUpdates)
+  }
+  
+  async getAssignments(): Promise<Assignment[]> {
+    return this.getData<Assignment>('assignments')
+  }
+  
+  async getInstructorAssignments(instructorId: string): Promise<Assignment[]> {
+    const allAssignments = await this.getAssignments()
+    return allAssignments.filter(a => 
+      a.instructorId === instructorId || a.videoInstructorId === instructorId
+    )
+  }
+  
+  async getAssignmentsByDateRange(start: Date, end: Date): Promise<Assignment[]> {
+    const allAssignments = await this.getAssignments()
+    return allAssignments.filter(a => {
+      const assignmentDate = new Date(a.timestamp)
+      return assignmentDate >= start && assignmentDate <= end
+    })
+  }
+  
+  async deleteAssignment(id: string): Promise<void> {
+    const assignmentRef = ref(this.db, `assignments/${id}`)
+    await remove(assignmentRef)
+  }
+  
+  subscribeToAssignments(callback: (assignments: Assignment[]) => void): () => void {
+    const assignmentsRef = ref(this.db, 'assignments')
+    const unsubscribe = onValue(assignmentsRef, (snapshot) => {
+      const data = snapshot.val()
+      callback(data ? Object.values(data) : [])
+    })
+    return unsubscribe
+  }
+  
   // ==================== PERIODS ====================
   
   async createPeriod(period: CreatePeriod): Promise<Period> {
@@ -375,10 +377,33 @@ export class FirebaseService implements DatabaseService {
     return unsubscribe
   }
   
+  // ==================== LOAD SCHEDULING SETTINGS (NEW) ====================
+  
+  async saveLoadSchedulingSettings(settings: LoadSchedulingSettings): Promise<void> {
+    const settingsRef = ref(this.db, 'loadSchedulingSettings')
+    const cleanedSettings = this.cleanData(settings)
+    await set(settingsRef, cleanedSettings)
+  }
+  
+  async getLoadSchedulingSettings(): Promise<LoadSchedulingSettings | null> {
+    const settingsRef = ref(this.db, 'loadSchedulingSettings')
+    const snapshot = await get(settingsRef)
+    return snapshot.val() || null
+  }
+  
   // ==================== BULK ====================
   
   async getFullState(): Promise<DatabaseState> {
-    const [instructors, assignments, studentQueue, groups, loads, clockEvents, periods] = await Promise.all([
+    const [
+      instructors, 
+      assignments, 
+      studentQueue, 
+      groups, 
+      loads, 
+      clockEvents, 
+      periods,
+      loadSchedulingSettings  // NEW: Added this
+    ] = await Promise.all([
       this.getInstructors(),
       this.getAssignments(),
       this.getQueue(),
@@ -386,6 +411,7 @@ export class FirebaseService implements DatabaseService {
       this.getLoads(),
       this.getClockEvents(),
       this.getPeriods(),
+      this.getLoadSchedulingSettings(),  // NEW: Added this
     ])
     
     return {
@@ -396,6 +422,7 @@ export class FirebaseService implements DatabaseService {
       loads,
       clockEvents,
       periods,
+      loadSchedulingSettings: loadSchedulingSettings || undefined,  // NEW: Added this
       lastSaved: new Date().toISOString(),
     }
   }
@@ -423,7 +450,8 @@ export class FirebaseService implements DatabaseService {
             start: new Date(p.start),
             end: new Date(p.end)
           })) : [],
-          lastSaved: data.lastSaved || new Date().toISOString(),
+          loadSchedulingSettings: data.loadSchedulingSettings || undefined,  // NEW: Added this
+          lastSaved: new Date().toISOString(),
         })
       }
     })

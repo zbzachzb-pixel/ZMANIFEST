@@ -1,289 +1,294 @@
 'use client'
 
 import React, { useState, useMemo } from 'react'
-import { useActiveInstructors, useAssignments, useCreatePeriod } from '@/hooks/useDatabase'
-import { getCurrentPeriod, calculateInstructorEarnings } from '@/lib/utils'
+import { useInstructors, useAssignments } from '@/hooks/useDatabase'
+import { db } from '@/services'
+import { calculateInstructorEarnings } from '@/lib/utils'
+import type { Period, Instructor, Assignment } from '@/types'
 
 interface EndPeriodModalProps {
+  period: Period
   onClose: () => void
   onSuccess: () => void
 }
 
-export function EndPeriodModal({ onClose, onSuccess }: EndPeriodModalProps) {
-  const { data: instructors } = useActiveInstructors()
-  const { data: assignments } = useAssignments()
-  const { create: createPeriod } = useCreatePeriod()
+export function EndPeriodModal({ period, onClose, onSuccess }: EndPeriodModalProps) {
+  const { data: instructors } = useInstructors()
+  const { data: allAssignments } = useAssignments()
+  const [newPeriodName, setNewPeriodName] = useState('')
   const [loading, setLoading] = useState(false)
-  const [step, setStep] = useState<'confirm' | 'final-confirm' | 'processing' | 'complete'>('confirm')
   
-  const period = getCurrentPeriod()
+  // Filter assignments for current period
+  const periodAssignments = useMemo(() => {
+    return allAssignments.filter(a => {
+      const assignmentDate = new Date(a.timestamp)
+      return assignmentDate >= period.start && assignmentDate <= period.end
+    })
+  }, [allAssignments, period])
   
-  const stats = useMemo(() => {
-    const finalBalances: Record<string, number> = {}
-    let totalJumps = 0
-    let totalEarnings = 0
-    
+  // Calculate final balances
+  const finalBalances = useMemo(() => {
+    const balances: Record<string, number> = {}
     instructors.forEach(instructor => {
-      const balance = calculateInstructorEarnings(
+      balances[instructor.id] = calculateInstructorEarnings(
         instructor.id,
-        assignments,
+        periodAssignments,
         instructors,
         period
       )
-      finalBalances[instructor.id] = balance
     })
-    
-    assignments.forEach(a => {
-      const assignmentDate = new Date(a.timestamp)
-      if (assignmentDate >= period.start && assignmentDate <= period.end) {
-        if (!a.isMissedJump) totalJumps++
-        
-        let pay = 0
-        if (!a.isMissedJump && !a.isRequest) {
-          if (a.jumpType === 'tandem') {
-            pay = 40 + (a.tandemWeightTax || 0) * 20
-            if (a.tandemHandcam) pay += 30
-          } else if (a.jumpType === 'aff') {
-            pay = a.affLevel === 'lower' ? 55 : 45
-          }
-          if (a.hasOutsideVideo) pay += 45
-        }
-        totalEarnings += pay
-      }
-    })
+    return balances
+  }, [instructors, periodAssignments, period])
+  
+  // Calculate stats
+  const stats = useMemo(() => {
+    const totalJumps = periodAssignments.length
+    const totalEarnings = Object.values(finalBalances).reduce((sum, bal) => sum + bal, 0)
+    const instructorCount = Object.keys(finalBalances).length
+    const tandemCount = periodAssignments.filter(a => a.jumpType === 'tandem').length
+    const affCount = periodAssignments.filter(a => a.jumpType === 'aff').length
+    const videoCount = periodAssignments.filter(a => a.hasOutsideVideo).length
+    const missedJumps = periodAssignments.filter(a => a.isMissedJump).length
     
     return {
-      finalBalances,
       totalJumps,
       totalEarnings,
-      instructorCount: instructors.length
+      instructorCount,
+      tandemCount,
+      affCount,
+      videoCount,
+      missedJumps,
+      avgPerJump: totalJumps > 0 ? Math.round(totalEarnings / totalJumps) : 0
     }
-  }, [instructors, assignments, period])
+  }, [periodAssignments, finalBalances])
   
-  const handleEndPeriod = () => {
-    console.log('🔘 End period button clicked!')
-    setStep('final-confirm')
-  }
+  // Get top instructors
+  const topInstructors = useMemo(() => {
+    return Object.entries(finalBalances)
+      .map(([id, balance]) => ({
+        instructor: instructors.find(i => i.id === id),
+        balance
+      }))
+      .filter(item => item.instructor && item.balance > 0)
+      .sort((a, b) => b.balance - a.balance)
+      .slice(0, 5)
+  }, [finalBalances, instructors])
   
-  const handleFinalConfirm = async () => {
-    console.log('✅ User confirmed - proceeding...')
+  const handleEndPeriod = async () => {
+    if (!newPeriodName.trim()) {
+      alert('Please enter a name for the new period')
+      return
+    }
+    
+    if (!confirm(`⚠️ This will end "${period.name}" and start a new period.\n\nThis action:\n• Archives all current data\n• Locks this period as read-only\n• Resets all balances to $0\n\nContinue?`)) {
+      return
+    }
+    
     setLoading(true)
-    setStep('processing')
     
     try {
-      console.log('🔄 Starting period end process...')
-      console.log('Current period:', period)
+      // End current period
+      await db.endPeriod(period.id, finalBalances, stats)
       
-      // 1. Create archived period record
-      console.log('📦 Creating archived period...')
-      const archivedPeriod = await createPeriod({
-        name: period.name,
-        start: period.start,
-        end: period.end,
-        status: 'archived',
-        finalBalances: stats.finalBalances,
-        finalStats: {
-          totalJumps: stats.totalJumps,
-          totalEarnings: stats.totalEarnings,
-          instructorCount: stats.instructorCount
-        },
-        endedAt: new Date().toISOString()
-      })
-      console.log('✅ Archived period created:', archivedPeriod)
+      // Reset all instructor balances
+      const resetPromises = instructors.map(instructor => 
+        db.updateInstructor(instructor.id, { 
+          clockedIn: false  // Also clock everyone out
+        })
+      )
+      await Promise.all(resetPromises)
       
-      // 2. Calculate next period dates
-      const nextStart = new Date(period.end)
-      nextStart.setDate(nextStart.getDate() + 1)
+      // Create new period
+      const now = new Date()
+      const twoWeeksLater = new Date(now)
+      twoWeeksLater.setDate(twoWeeksLater.getDate() + 14)
       
-      // Find first Monday after period end
-      const firstMonday = new Date(nextStart)
-      const dayOfWeek = firstMonday.getDay()
-      const daysUntilMonday = dayOfWeek === 0 ? 1 : dayOfWeek === 1 ? 0 : 8 - dayOfWeek
-      firstMonday.setDate(firstMonday.getDate() + daysUntilMonday)
-      
-      // Third Monday (2 weeks later)
-      const thirdMonday = new Date(firstMonday)
-      thirdMonday.setDate(firstMonday.getDate() + 14)
-      
-      console.log('📅 New period dates:', { firstMonday, thirdMonday })
-      
-      // 3. Create new active period
-      console.log('📦 Creating new active period...')
-      const newPeriod = await createPeriod({
-        name: `Period 1: ${firstMonday.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - ${thirdMonday.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
-        start: firstMonday,
-        end: thirdMonday,
+      await db.createPeriod({
+        name: newPeriodName.trim(),
+        start: now,
+        end: twoWeeksLater,
         status: 'active'
       })
-      console.log('✅ New active period created:', newPeriod)
       
-      setStep('complete')
-      
-      setTimeout(() => {
-        onSuccess()
-        onClose()
-        window.location.reload()
-      }, 2000)
-      
-    } catch (error: any) {
-      console.error('❌ Failed to end period:', error)
-      console.error('Error details:', error.message, error.stack)
-      alert(`❌ Failed to end period: ${error.message || 'Unknown error'}. Check console for details.`)
-      setStep('final-confirm')
+      onSuccess()
+      onClose()
+    } catch (error) {
+      console.error('Failed to end period:', error)
+      alert('Failed to end period. Please try again.')
     } finally {
       setLoading(false)
     }
   }
   
-  if (step === 'processing') {
-    return (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-white/20 p-8">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-white text-lg font-semibold">Ending period...</p>
-            <p className="text-slate-400 text-sm mt-2">This may take a moment</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-  
-  if (step === 'complete') {
-    return (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-green-500/50 p-8">
-          <div className="text-center">
-            <div className="text-6xl mb-4">✅</div>
-            <h2 className="text-2xl font-bold text-white mb-2">Period Ended!</h2>
-            <p className="text-slate-300">New period has been created</p>
-            <p className="text-slate-400 text-sm mt-2">Refreshing page...</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-  
-  if (step === 'final-confirm') {
-    return (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-red-500">
-          <div className="p-6">
-            <div className="text-center mb-6">
-              <div className="text-6xl mb-4">⚠️</div>
-              <h2 className="text-2xl font-bold text-white mb-4">Final Confirmation</h2>
-              <p className="text-red-300 font-semibold mb-4">
-                This action cannot be undone!
-              </p>
-              <p className="text-slate-300 text-sm">
-                Are you absolutely sure you want to end the current period?
-              </p>
-            </div>
-            
-            <div className="bg-red-500/20 border border-red-500/30 rounded-lg p-4 mb-6">
-              <p className="text-red-300 text-sm font-semibold">
-                ✓ Current period will be archived<br/>
-                ✓ All instructor balances will reset to $0<br/>
-                ✓ A new active period will be created
-              </p>
-            </div>
-            
-            <div className="flex gap-3">
-              <button
-                onClick={() => setStep('confirm')}
-                disabled={loading}
-                className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleFinalConfirm}
-                disabled={loading}
-                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
-              >
-                Yes, End Period Now
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-  
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-white/20">
-        <div className="p-6">
-          <h2 className="text-2xl font-bold text-white mb-6">🔒 End Current Period</h2>
-          
-          <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg p-4 mb-6">
-            <p className="text-yellow-300 font-semibold mb-2">⚠️ Warning</p>
-            <p className="text-sm text-yellow-200">
-              This will permanently archive the current period and start a new one. 
-              All instructor balances will be reset to $0 for the new period.
-              Historical data will remain accessible.
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-red-500">
+        <div className="sticky top-0 bg-slate-800 border-b border-red-500 p-6 z-10">
+          <h2 className="text-3xl font-bold text-white">🔒 End Period: {period.name}</h2>
+          <p className="text-slate-300 mt-2">
+            {period.start.toLocaleDateString()} - {period.end.toLocaleDateString()}
+          </p>
+        </div>
+        
+        <div className="p-6 space-y-6">
+          {/* Period Summary */}
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-6">
+            <h3 className="text-xl font-bold text-white mb-4">⚠️ Warning</h3>
+            <p className="text-slate-300 mb-4">
+              Ending this period will:
+            </p>
+            <ul className="list-disc list-inside space-y-2 text-slate-300 mb-4">
+              <li>Archive all data from this period (read-only)</li>
+              <li>Lock final balances for all instructors</li>
+              <li>Reset all balances to $0 for new period</li>
+              <li>Clock out all instructors</li>
+              <li>Start a fresh period with clean slate</li>
+            </ul>
+            <p className="text-red-400 font-bold">
+              This action cannot be undone!
             </p>
           </div>
           
-          <div className="bg-white/10 rounded-lg p-4 mb-6">
-            <h3 className="text-lg font-bold text-white mb-4">Period Summary</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="text-sm text-slate-400">Period Name</div>
-                <div className="text-white font-semibold">{period.name}</div>
+          {/* Period Statistics */}
+          <div className="bg-white/5 rounded-lg p-6">
+            <h3 className="text-xl font-bold text-white mb-4">📊 Period Statistics</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white/5 rounded-lg p-4 text-center">
+                <div className="text-3xl font-bold text-blue-400">{stats.totalJumps}</div>
+                <div className="text-sm text-slate-400 mt-1">Total Jumps</div>
               </div>
-              <div>
-                <div className="text-sm text-slate-400">Total Jumps</div>
-                <div className="text-white font-semibold">{stats.totalJumps}</div>
+              <div className="bg-white/5 rounded-lg p-4 text-center">
+                <div className="text-3xl font-bold text-green-400">${stats.totalEarnings}</div>
+                <div className="text-sm text-slate-400 mt-1">Total Earnings</div>
               </div>
-              <div>
-                <div className="text-sm text-slate-400">Total Earnings</div>
-                <div className="text-green-400 font-semibold">${stats.totalEarnings.toLocaleString()}</div>
+              <div className="bg-white/5 rounded-lg p-4 text-center">
+                <div className="text-3xl font-bold text-purple-400">{stats.instructorCount}</div>
+                <div className="text-sm text-slate-400 mt-1">Instructors</div>
               </div>
-              <div>
-                <div className="text-sm text-slate-400">Active Instructors</div>
-                <div className="text-white font-semibold">{stats.instructorCount}</div>
+              <div className="bg-white/5 rounded-lg p-4 text-center">
+                <div className="text-3xl font-bold text-yellow-400">${stats.avgPerJump}</div>
+                <div className="text-sm text-slate-400 mt-1">Avg Per Jump</div>
               </div>
             </div>
+            
+            <div className="grid grid-cols-3 gap-4 mt-4">
+              <div className="bg-white/5 rounded-lg p-3 text-center">
+                <div className="text-xl font-bold text-blue-300">{stats.tandemCount}</div>
+                <div className="text-xs text-slate-400">Tandem</div>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3 text-center">
+                <div className="text-xl font-bold text-purple-300">{stats.affCount}</div>
+                <div className="text-xs text-slate-400">AFF</div>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3 text-center">
+                <div className="text-xl font-bold text-green-300">{stats.videoCount}</div>
+                <div className="text-xs text-slate-400">Video</div>
+              </div>
+            </div>
+            
+            {stats.missedJumps > 0 && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mt-4 text-center">
+                <div className="text-xl font-bold text-red-400">{stats.missedJumps}</div>
+                <div className="text-xs text-slate-400">Missed Jumps</div>
+              </div>
+            )}
           </div>
           
-          <div className="bg-white/10 rounded-lg p-4 mb-6 max-h-64 overflow-y-auto">
-            <h3 className="text-lg font-bold text-white mb-4">Final Balances</h3>
-            <div className="space-y-2">
-              {instructors
-                .sort((a, b) => (stats.finalBalances[b.id] || 0) - (stats.finalBalances[a.id] || 0))
-                .map(instructor => (
-                  <div key={instructor.id} className="flex justify-between items-center py-1">
-                    <span className="text-slate-300">{instructor.name}</span>
-                    <span className="text-white font-semibold">
-                      ${stats.finalBalances[instructor.id] || 0}
+          {/* Top Instructors */}
+          {topInstructors.length > 0 && (
+            <div className="bg-white/5 rounded-lg p-6">
+              <h3 className="text-xl font-bold text-white mb-4">🏆 Top Instructors</h3>
+              <div className="space-y-2">
+                {topInstructors.map((item, idx) => (
+                  <div 
+                    key={item.instructor!.id}
+                    className="flex items-center justify-between bg-white/5 rounded-lg p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`text-2xl ${
+                        idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🏅'
+                      }`}>
+                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                      </div>
+                      <div>
+                        <div className="font-bold text-white">{item.instructor!.name}</div>
+                        <div className="text-xs text-slate-400">
+                          {periodAssignments.filter(a => a.instructorId === item.instructor!.id).length} jumps
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xl font-bold text-green-400">
+                      ${item.balance}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* All Instructor Balances */}
+          <div className="bg-white/5 rounded-lg p-6">
+            <h3 className="text-xl font-bold text-white mb-4">💰 Final Balances (All Instructors)</h3>
+            <div className="max-h-64 overflow-y-auto space-y-2">
+              {Object.entries(finalBalances)
+                .map(([id, balance]) => ({
+                  instructor: instructors.find(i => i.id === id),
+                  balance
+                }))
+                .filter(item => item.instructor)
+                .sort((a, b) => b.balance - a.balance)
+                .map(item => (
+                  <div 
+                    key={item.instructor!.id}
+                    className="flex items-center justify-between bg-white/5 rounded p-2"
+                  >
+                    <span className="text-slate-300">{item.instructor!.name}</span>
+                    <span className={`font-bold ${
+                      item.balance > 0 ? 'text-green-400' : 
+                      item.balance < 0 ? 'text-red-400' : 'text-slate-400'
+                    }`}>
+                      ${item.balance}
                     </span>
                   </div>
                 ))}
             </div>
           </div>
           
-          <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-4 mb-6">
-            <p className="text-blue-300 text-sm">
-              💡 <strong>What happens next:</strong> A new period will be created starting from the next Monday.
-              All instructors will start with $0 balance. You can view historical data anytime from the Analytics page.
+          {/* New Period Name */}
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-6">
+            <h3 className="text-xl font-bold text-white mb-4">📅 New Period</h3>
+            <label className="block text-sm font-semibold text-slate-300 mb-2">
+              Name for new period *
+            </label>
+            <input
+              type="text"
+              value={newPeriodName}
+              onChange={(e) => setNewPeriodName(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              placeholder="e.g., December 2024 - Period 2"
+              required
+            />
+            <p className="text-xs text-slate-400 mt-2">
+              New period will start today and run for 2 weeks (customizable after creation)
             </p>
           </div>
           
-          <div className="flex gap-3">
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-4">
             <button
+              type="button"
               onClick={onClose}
               disabled={loading}
-              className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
+              className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-4 px-6 rounded-lg transition-colors disabled:opacity-50 text-lg"
             >
               Cancel
             </button>
             <button
               onClick={handleEndPeriod}
-              disabled={loading}
-              className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
+              disabled={loading || !newPeriodName.trim()}
+              className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-4 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg"
             >
-              {loading ? '⏳ Ending Period...' : '🔒 Continue to Confirmation'}
+              {loading ? '⏳ Ending Period...' : '🔒 End Period & Start New'}
             </button>
           </div>
         </div>

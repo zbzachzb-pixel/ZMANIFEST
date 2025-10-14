@@ -11,7 +11,10 @@ import type {
   CreateQueueStudent,
   Group,
   DatabaseState,
-  ClockEvent
+  ClockEvent,
+  Period,
+  CreatePeriod,
+  UpdatePeriod
 } from '@/types'
 
 export interface DatabaseService {
@@ -43,7 +46,7 @@ export interface DatabaseService {
   getAssignments(): Promise<Assignment[]>
   getInstructorAssignments(instructorId: string): Promise<Assignment[]>
   getAssignmentsByDateRange(start: Date, end: Date): Promise<Assignment[]>
-  updateAssignment(id: string, updates: Partial<Assignment>): Promise<void>  // ⭐ NEW
+  updateAssignment(id: string, updates: Partial<Assignment>): Promise<void>
   deleteAssignment(id: string): Promise<void>
   subscribeToAssignments(callback: (assignments: Assignment[]) => void): () => void
   
@@ -60,6 +63,14 @@ export interface DatabaseService {
   updateGroup(id: string, updates: Partial<Group>): Promise<void>
   deleteGroup(id: string): Promise<void>
   subscribeToGroups(callback: (groups: Group[]) => void): () => void
+  
+  // PERIODS
+  createPeriod(period: CreatePeriod): Promise<Period>
+  getPeriods(): Promise<Period[]>
+  getActivePeriod(): Promise<Period | null>
+  updatePeriod(id: string, updates: UpdatePeriod): Promise<void>
+  endPeriod(periodId: string, finalBalances: Record<string, number>, finalStats: any): Promise<void>
+  subscribeToPeriods(callback: (periods: Period[]) => void): () => void
   
   // BULK
   getFullState(): Promise<DatabaseState>

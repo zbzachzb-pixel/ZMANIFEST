@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { useAssignments, useActiveInstructors, useDeleteClockEvent } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { getCurrentPeriod } from '@/lib/utils'
+import { EditAssignmentModal } from '@/components/EditAssignmentModal'
 import type { Assignment, ClockEvent } from '@/types'
 
 export default function AssignmentsPage() {
@@ -12,6 +13,7 @@ export default function AssignmentsPage() {
   const { deleteEvent, loading: deleteClockLoading } = useDeleteClockEvent()
   const [searchTerm, setSearchTerm] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null)
   const [deleteShiftConfirm, setDeleteShiftConfirm] = useState<{ inId: string, outId: string | null } | null>(null)
   const [clockEvents, setClockEvents] = useState<ClockEvent[]>([])
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
@@ -74,52 +76,53 @@ export default function AssignmentsPage() {
     return instructor ? instructor.name : 'Unknown'
   }
   
+  const filteredAssignments = useMemo(() => {
+    return assignments
+      .filter(a => {
+        const assignmentDate = new Date(a.timestamp)
+        return assignmentDate >= period.start && assignmentDate <= period.end
+      })
+      .filter(a => {
+        if (!searchTerm) return true
+        const search = searchTerm.toLowerCase()
+        return (
+          a.name.toLowerCase().includes(search) ||
+          getInstructorName(a.instructorId).toLowerCase().includes(search)
+        )
+      })
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+  }, [assignments, searchTerm, period, instructors])
+  
   const calculatePay = (assignment: Assignment) => {
     if (assignment.isMissedJump) return 0
+    if (assignment.isRequest) return 0
     
     let pay = 0
+    
     if (assignment.jumpType === 'tandem') {
-      pay = 40 + (assignment.tandemWeightTax || 0) * 20
-      if (assignment.tandemHandcam) pay += 30
+      pay = 40
+      if (assignment.tandemWeightTax) {
+        pay += assignment.tandemWeightTax * 20
+      }
+      if (assignment.tandemHandcam) {
+        pay += 30
+      }
     } else if (assignment.jumpType === 'aff') {
       pay = assignment.affLevel === 'lower' ? 55 : 45
     } else if (assignment.jumpType === 'video') {
       pay = 45
     }
     
-    if (assignment.hasOutsideVideo) pay += 45
+    if (assignment.hasOutsideVideo && !assignment.isMissedJump) {
+      pay += 45
+    }
     
     return pay
   }
   
-  const filteredAssignments = useMemo(() => {
-    let filtered = assignments.filter(a => {
-      const assignmentDate = new Date(a.timestamp)
-      return assignmentDate >= period.start && assignmentDate <= period.end
-    })
-    
-    if (searchTerm) {
-      const search = searchTerm.toLowerCase()
-      filtered = filtered.filter(a => {
-        const instructorName = getInstructorName(a.instructorId).toLowerCase()
-        const videoName = a.videoInstructorId ? getInstructorName(a.videoInstructorId).toLowerCase() : ''
-        const coveredName = a.coveringFor ? getInstructorName(a.coveringFor).toLowerCase() : ''
-        return (
-          a.name.toLowerCase().includes(search) ||
-          instructorName.includes(search) ||
-          videoName.includes(search) ||
-          coveredName.includes(search) ||
-          a.jumpType.toLowerCase().includes(search)
-        )
-      })
-    }
-    
-    return filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-  }, [assignments, period, searchTerm, instructors])
-  
-  const handleDelete = async (assignmentId: string) => {
+  const handleDelete = async (id: string) => {
     try {
-      await db.deleteAssignment(assignmentId)
+      await db.deleteAssignment(id)
       setDeleteConfirm(null)
     } catch (error) {
       console.error('Failed to delete assignment:', error)
@@ -137,14 +140,6 @@ export default function AssignmentsPage() {
       // Delete clock-out event if it exists
       if (deleteShiftConfirm.outId) {
         await deleteEvent(deleteShiftConfirm.outId)
-      } else {
-        // If there's no clock-out (active shift), clock out the instructor
-        const clockInEvent = clockEvents.find(e => e.id === deleteShiftConfirm.inId)
-        if (clockInEvent) {
-          await db.updateInstructor(clockInEvent.instructorId, {
-            clockedIn: false
-          })
-        }
       }
       
       setDeleteShiftConfirm(null)
@@ -194,126 +189,80 @@ export default function AssignmentsPage() {
           </div>
           
           {clockEvents.length === 0 ? (
-            <div className="text-center py-8 text-slate-400">
-              <div className="text-4xl mb-2">⏰</div>
-              <p className="text-sm">No clock activity for this date</p>
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">📅</div>
+              <p className="text-slate-400">No clock activity for this date</p>
             </div>
           ) : (
-            <>
-              {/* Group events by instructor */}
-              {(() => {
-                // Group events by instructor
-                const byInstructor = new Map<string, ClockEvent[]>()
-                clockEvents.forEach(event => {
-                  if (!byInstructor.has(event.instructorId)) {
-                    byInstructor.set(event.instructorId, [])
-                  }
-                  byInstructor.get(event.instructorId)!.push(event)
-                })
+            (() => {
+              // Group clock events by instructor
+              const byInstructor = new Map<string, ClockEvent[]>()
+              clockEvents.forEach(event => {
+                if (!byInstructor.has(event.instructorId)) {
+                  byInstructor.set(event.instructorId, [])
+                }
+                byInstructor.get(event.instructorId)!.push(event)
+              })
 
-                // Calculate shifts for each instructor and filter out those with no shifts
-                const instructorsWithShifts = Array.from(byInstructor.entries())
-                  .map(([instructorId, events]) => {
+              return (
+                <div className="space-y-4">
+                  {Array.from(byInstructor.entries()).map(([instructorId, events]) => {
                     const instructorName = events[0].instructorName
                     
-                    // Calculate shifts (pair clock-ins with clock-outs)
-                    const shifts: Array<{ 
-                      in: Date, 
-                      inId: string,
-                      out: Date | null, 
-                      outId: string | null,
-                      duration: string | null 
+                    // Create shifts (pair clock-ins with clock-outs)
+                    const shifts: Array<{
+                      in: Date
+                      out: Date | null
+                      duration: string | null
+                      inId: string
+                      outId: string | null
                     }> = []
                     
                     for (let i = 0; i < events.length; i++) {
                       if (events[i].type === 'in') {
-                        const clockInTime = new Date(events[i].timestamp)
-                        const clockInId = events[i].id
-                        let clockOutTime: Date | null = null
-                        let clockOutId: string | null = null
-                        let duration: string | null = null
+                        const clockIn = new Date(events[i].timestamp)
+                        let clockOut: Date | null = null
+                        let outId: string | null = null
                         
-                        // Find matching clock out
-                        if (i + 1 < events.length && events[i + 1].type === 'out') {
-                          clockOutTime = new Date(events[i + 1].timestamp)
-                          clockOutId = events[i + 1].id
-                          const durationMs = clockOutTime.getTime() - clockInTime.getTime()
-                          const hours = Math.floor(durationMs / (1000 * 60 * 60))
-                          const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60))
+                        // Find matching clock-out
+                        for (let j = i + 1; j < events.length; j++) {
+                          if (events[j].type === 'out') {
+                            clockOut = new Date(events[j].timestamp)
+                            outId = events[j].id
+                            break
+                          }
+                        }
+                        
+                        let duration: string | null = null
+                        if (clockOut) {
+                          const diffMs = clockOut.getTime() - clockIn.getTime()
+                          const hours = Math.floor(diffMs / (1000 * 60 * 60))
+                          const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
                           duration = `${hours}h ${minutes}m`
                         }
                         
-                        shifts.push({ 
-                          in: clockInTime, 
-                          inId: clockInId,
-                          out: clockOutTime, 
-                          outId: clockOutId,
-                          duration 
+                        shifts.push({
+                          in: clockIn,
+                          out: clockOut,
+                          duration,
+                          inId: events[i].id,
+                          outId
                         })
                       }
                     }
                     
-                    // Calculate total hours for the day
-                    const totalMs = shifts.reduce((sum, shift) => {
-                      if (shift.out) {
-                        return sum + (shift.out.getTime() - shift.in.getTime())
-                      }
-                      return sum
-                    }, 0)
-                    const totalHours = Math.floor(totalMs / (1000 * 60 * 60))
-                    const totalMinutes = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60))
-                    const totalTime = totalMs > 0 ? `${totalHours}h ${totalMinutes}m` : null
-                    
-                    const isCurrentlyIn = shifts.length > 0 && shifts[shifts.length - 1].out === null
-                    
-                    return {
-                      instructorId,
-                      instructorName,
-                      shifts,
-                      totalTime,
-                      isCurrentlyIn
-                    }
-                  })
-                  .filter(instructor => instructor.shifts.length > 0) // Only show instructors with shifts
-
-                return instructorsWithShifts.length === 0 ? (
-                  <div className="text-center py-8 text-slate-400">
-                    <div className="text-4xl mb-2">⏰</div>
-                    <p className="text-sm">No clock activity for this date</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {instructorsWithShifts.map(({ instructorId, instructorName, shifts, totalTime, isCurrentlyIn }) => (
-                      <div
-                        key={instructorId}
-                        className={`p-4 rounded-lg border-2 transition-all ${
-                          isCurrentlyIn
-                            ? 'bg-green-500/10 border-green-500/30'
-                            : 'bg-white/5 border-white/20'
-                        }`}
-                      >
-                        {/* Instructor Header */}
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-3 h-3 rounded-full ${
-                              isCurrentlyIn ? 'bg-green-400' : 'bg-gray-400'
-                            }`} />
-                            <span className="font-bold text-white">{instructorName}</span>
-                          </div>
-                          {totalTime && (
-                            <span className="text-sm font-semibold text-blue-400">
-                              {totalTime}
-                            </span>
-                          )}
-                        </div>
-                        
-                        {/* Shifts */}
-                        <div className="space-y-2">
+                    return (
+                      <div key={instructorId} className="bg-slate-800/50 rounded-lg p-4">
+                        <h3 className="text-white font-semibold mb-3">{instructorName}</h3>
+                        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                           {shifts.map((shift, idx) => (
-                            <div key={idx} className="text-sm bg-black/20 rounded p-2 relative group">
-                              <div className="flex items-center justify-between">
+                            <div 
+                              key={idx}
+                              className="relative bg-white/5 rounded-lg p-3 border border-white/10 hover:border-white/20 transition-colors group"
+                            >
+                              <div className="flex justify-between items-center">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-green-400">▶</span>
+                                  <span className="text-green-400">●</span>
                                   <span className="text-slate-300">
                                     {shift.in.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                   </span>
@@ -351,140 +300,118 @@ export default function AssignmentsPage() {
                           ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )
-              })()}
-              
-              {/* Daily Summary */}
-              <div className="mt-6 pt-6 border-t border-white/20 grid grid-cols-3 gap-4">
-                <div className="text-center">
-                  <div className="text-sm text-slate-400 mb-1">Total Shifts</div>
-                  <div className="text-2xl font-bold text-white">
-                    {totalShifts}
-                  </div>
+                    )
+                  })}
                 </div>
-                <div className="text-center">
-                  <div className="text-sm text-slate-400 mb-1">Instructors</div>
-                  <div className="text-2xl font-bold text-blue-400">
-                    {new Set(clockEvents.map(e => e.instructorId)).size}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-sm text-slate-400 mb-1">Currently In</div>
-                  <div className="text-2xl font-bold text-green-400">
-                    {instructors.filter(i => i.clockedIn).length}
-                  </div>
-                </div>
-              </div>
-            </>
+              )
+            })()
           )}
-        </div>
-        
-        <div className="mb-6">
-          <input
-            type="text"
-            placeholder="🔍 Search by student, instructor, or jump type..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
-          />
-        </div>
-        
-        {filteredAssignments.length === 0 ? (
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-12 text-center border border-white/20">
-            <div className="text-6xl mb-4">📋</div>
-            <p className="text-white text-xl font-semibold mb-2">No assignments yet</p>
-            <p className="text-slate-400">Assignments will appear here once you start assigning students</p>
+              
+          {/* Daily Summary */}
+          <div className="mt-6 pt-6 border-t border-white/20 grid grid-cols-3 gap-4">
+            <div className="text-center">
+              <div className="text-sm text-slate-400 mb-1">Total Shifts</div>
+              <div className="text-2xl font-bold text-white">
+                {totalShifts}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-sm text-slate-400 mb-1">Active Instructors</div>
+              <div className="text-2xl font-bold text-white">
+                {new Set(clockEvents.map(e => e.instructorId)).size}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-sm text-slate-400 mb-1">Clock Events</div>
+              <div className="text-2xl font-bold text-white">
+                {clockEvents.length}
+              </div>
+            </div>
           </div>
-        ) : (
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl overflow-hidden border border-white/20">
+        </div>
+        
+        {/* Assignments Section */}
+        <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-white">📋 Assignment History</h2>
+            <input
+              type="text"
+              placeholder="Search by name or instructor..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 w-64"
+            />
+          </div>
+          
+          {filteredAssignments.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">📭</div>
+              <p className="text-slate-400">
+                {searchTerm ? 'No assignments match your search' : 'No assignments yet'}
+              </p>
+            </div>
+          ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-slate-800/50">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Date and Time
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Student
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Instructor
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Jump Type
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Pay
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Notes
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Actions
-                    </th>
+                <thead>
+                  <tr className="border-b border-white/20">
+                    <th className="text-left px-6 py-3 text-slate-300 font-semibold">Date/Time</th>
+                    <th className="text-left px-6 py-3 text-slate-300 font-semibold">Student</th>
+                    <th className="text-left px-6 py-3 text-slate-300 font-semibold">Instructor</th>
+                    <th className="text-left px-6 py-3 text-slate-300 font-semibold">Type</th>
+                    <th className="text-left px-6 py-3 text-slate-300 font-semibold">Weight</th>
+                    <th className="text-left px-6 py-3 text-slate-300 font-semibold">Pay</th>
+                    <th className="text-left px-6 py-3 text-slate-300 font-semibold">Tags</th>
+                    <th className="text-left px-6 py-3 text-slate-300 font-semibold">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700/50">
-                  {filteredAssignments.map((assignment) => {
-                    const date = new Date(assignment.timestamp)
+                <tbody>
+                  {filteredAssignments.map(assignment => {
                     const pay = calculatePay(assignment)
-                    const instructorName = getInstructorName(assignment.instructorId)
-                    const videoName = assignment.videoInstructorId ? getInstructorName(assignment.videoInstructorId) : null
                     const coveredForName = assignment.coveringFor ? getInstructorName(assignment.coveringFor) : null
                     
                     return (
-                      <tr 
-                        key={assignment.id} 
-                        className={`hover:bg-white/5 transition-colors ${
-                          assignment.isMissedJump ? 'bg-red-500/10' : 
-                          assignment.coveringFor ? 'bg-blue-500/5' : ''
-                        }`}
-                      >
-                        <td className="px-6 py-4 text-sm text-slate-300">
-                          <div>{date.toLocaleDateString()}</div>
-                          <div className="text-xs text-slate-400">{date.toLocaleTimeString()}</div>
+                      <tr key={assignment.id} className="border-b border-white/10 hover:bg-white/5">
+                        <td className="px-6 py-4 text-slate-300 text-sm">
+                          {new Date(assignment.timestamp).toLocaleString()}
                         </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm font-semibold text-white">
-                            {assignment.isMissedJump ? 'MISSED JUMP' : assignment.name}
-                          </div>
-                          {assignment.weight > 0 && (
-                            <div className="text-xs text-slate-400">{assignment.weight} lbs</div>
-                          )}
+                        <td className="px-6 py-4 text-white font-semibold">
+                          {assignment.name}
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-300">
-                          <div className="flex items-center gap-2">
-                            <span>{instructorName}</span>
-                            {coveredForName && (
-                              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">
-                                🤝 Covering
-                              </span>
+                        <td className="px-6 py-4 text-slate-300">
+                          <div>
+                            {coveredForName ? (
+                              <div className="flex items-center gap-2">
+                                <span>{getInstructorName(assignment.instructorId)}</span>
+                                <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">
+                                  covering {coveredForName}
+                                </span>
+                              </div>
+                            ) : (
+                              getInstructorName(assignment.instructorId)
                             )}
                           </div>
-                          {coveredForName && (
-                            <div className="text-xs text-blue-400 mt-1">
-                              Covered for {coveredForName}
+                          {assignment.videoInstructorId && (
+                            <div className="text-xs text-slate-400 mt-1">
+                              📹 {getInstructorName(assignment.videoInstructorId)}
                             </div>
                           )}
-                          {videoName && (
-                            <div className="text-xs text-slate-400">Video: {videoName}</div>
-                          )}
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-sm font-semibold text-white uppercase">
-                            {assignment.jumpType}
-                            {assignment.jumpType === 'aff' && assignment.affLevel && (
-                              <span className="text-xs text-slate-400"> ({assignment.affLevel})</span>
-                            )}
-                          </div>
-                          {assignment.hasOutsideVideo && (
-                            <div className="text-xs text-blue-400">+ Video</div>
-                          )}
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                            assignment.jumpType === 'tandem' ? 'bg-green-500/20 text-green-300' :
+                            assignment.jumpType === 'aff' ? 'bg-purple-500/20 text-purple-300' :
+                            'bg-blue-500/20 text-blue-300'
+                          }`}>
+                            {assignment.jumpType.toUpperCase()}
+                            {assignment.jumpType === 'aff' && ` ${assignment.affLevel?.toUpperCase()}`}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-slate-300">
+                          {assignment.weight} lbs
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`text-sm font-bold ${assignment.isMissedJump ? 'text-red-400' : 'text-green-400'}`}>
+                          <span className={`font-bold ${pay === 0 ? 'text-red-400' : 'text-green-400'}`}>
                             ${pay}
                           </span>
                         </td>
@@ -508,12 +435,20 @@ export default function AssignmentsPage() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <button
-                            onClick={() => setDeleteConfirm(assignment.id)}
-                            className="px-3 py-1 bg-red-500/20 text-red-300 rounded text-xs font-bold hover:bg-red-500/30 transition-colors"
-                          >
-                            Delete
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setEditingAssignment(assignment)}
+                              className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-bold hover:bg-blue-500/30 transition-colors"
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirm(assignment.id)}
+                              className="px-3 py-1 bg-red-500/20 text-red-300 rounded text-xs font-bold hover:bg-red-500/30 transition-colors"
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -521,25 +456,36 @@ export default function AssignmentsPage() {
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
+          )}
         
-        <div className="mt-6 bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
-          <div className="flex justify-between items-center text-slate-300">
-            <span>Total Assignments: <strong className="text-white">{filteredAssignments.length}</strong></span>
-            <span>
-              Covers: <strong className="text-blue-400">
-                {filteredAssignments.filter(a => a.coveringFor).length}
-              </strong>
-            </span>
-            <span>
-              Total Pay: <strong className="text-green-400">
-                ${filteredAssignments.reduce((sum, a) => sum + calculatePay(a), 0)}
-              </strong>
-            </span>
+          <div className="mt-6 bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+            <div className="flex justify-between items-center text-slate-300">
+              <span>Total Assignments: <strong className="text-white">{filteredAssignments.length}</strong></span>
+              <span>
+                Covers: <strong className="text-blue-400">
+                  {filteredAssignments.filter(a => a.coveringFor).length}
+                </strong>
+              </span>
+              <span>
+                Total Pay: <strong className="text-green-400">
+                  ${filteredAssignments.reduce((sum, a) => sum + calculatePay(a), 0)}
+                </strong>
+              </span>
+            </div>
           </div>
         </div>
       </div>
+      
+      {/* Edit Assignment Modal */}
+      {editingAssignment && (
+        <EditAssignmentModal
+          assignment={editingAssignment}
+          onClose={() => setEditingAssignment(null)}
+          onSuccess={() => {
+            setEditingAssignment(null)
+          }}
+        />
+      )}
       
       {/* Delete Assignment Confirmation Modal */}
       {deleteConfirm && (

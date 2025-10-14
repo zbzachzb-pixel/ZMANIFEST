@@ -1,43 +1,10 @@
-// ==================== CORE TYPES ====================
-
-export type Team = 'red' | 'blue' | 'gold' | null
+// ==================== JUMP TYPES ====================
 
 export type JumpType = 'tandem' | 'aff' | 'video'
-
 export type LoadStatus = 'building' | 'ready' | 'departed' | 'completed'
-
 export type AFFLevel = 'lower' | 'upper'
 
 // ==================== INSTRUCTOR ====================
-
-export interface Instructor {
-  id: string
-  name: string
-  bodyWeight: number
-  team: Team
-  
-  // Departments
-  tandem: boolean
-  aff: boolean
-  video: boolean
-  
-  // Weight limits
-  tandemWeightLimit: number | null
-  affWeightLimit: number | null
-  
-  // Video restrictions
-  videoRestricted: boolean
-  videoMinWeight: number | null
-  videoMaxWeight: number | null
-  
-  // Status
-  clockedIn: boolean
-  archived: boolean
-  
-  // AFF locking
-  affLocked: boolean
-  affStudents: AFFStudent[]
-}
 
 export interface AFFStudent {
   name: string
@@ -45,7 +12,62 @@ export interface AFFStudent {
   studentId: string
 }
 
-// ==================== STUDENT QUEUE ====================
+export interface Instructor {
+  id: string
+  name: string
+  canTandem: boolean
+  canAFF: boolean
+  canVideo: boolean
+  tandemWeightLimit?: number
+  affWeightLimit?: number
+  clockedIn: boolean
+  archived: boolean
+  affLocked: boolean
+  affStudents?: AFFStudent[]
+  
+  // Covering for system
+  coveringFor?: string  // ID of instructor being covered for
+}
+
+// ==================== ASSIGNMENT ====================
+
+export interface Assignment {
+  id: string
+  instructorId: string
+  instructorName: string
+  videoInstructorId?: string
+  videoInstructorName?: string
+  studentName: string
+  studentWeight: number
+  jumpType: JumpType
+  timestamp: string
+  isMissedJump: boolean
+  isRequest: boolean
+  
+  // Tandem specific
+  tandemWeightTax?: number
+  tandemHandcam?: boolean
+  
+  // AFF specific
+  affLevel?: AFFLevel
+}
+
+export interface CreateAssignment {
+  instructorId: string
+  instructorName: string
+  videoInstructorId?: string
+  videoInstructorName?: string
+  studentName: string
+  studentWeight: number
+  jumpType: JumpType
+  isMissedJump?: boolean
+  isRequest?: boolean
+  tandemWeightTax?: number
+  tandemHandcam?: boolean
+  affLevel?: AFFLevel
+}
+
+// ==================== QUEUE ====================
 
 export interface QueueStudent {
   id: string
@@ -53,6 +75,7 @@ export interface QueueStudent {
   weight: number
   jumpType: JumpType
   timestamp: string
+  isRequest: boolean
   
   // Tandem specific
   tandemWeightTax?: number
@@ -61,13 +84,20 @@ export interface QueueStudent {
   
   // AFF specific
   affLevel?: AFFLevel
-  
-  // General
-  isRequest: boolean
-  groupId?: string
 }
 
-// ==================== GROUP ====================
+export interface CreateQueueStudent {
+  name: string
+  weight: number
+  jumpType: JumpType
+  isRequest?: boolean
+  tandemWeightTax?: number
+  tandemHandcam?: boolean
+  outsideVideo?: boolean
+  affLevel?: AFFLevel
+}
+
+// ==================== GROUPS ====================
 
 export interface Group {
   id: string
@@ -84,35 +114,7 @@ export interface ClockEvent {
   instructorName: string
   type: 'in' | 'out'
   timestamp: string
-}
-
-// ==================== ASSIGNMENT ====================
-
-export interface Assignment {
-  id: string
-  instructorId: string
-  name: string
-  weight: number
-  jumpType: JumpType
-  timestamp: string
-  isRequest: boolean
-  
-  // Tandem specific
-  tandemWeightTax?: number
-  tandemHandcam?: boolean
-  
-  // AFF specific
-  affLevel?: AFFLevel
-  
-  // Video
-  videoInstructorId?: string
-  hasOutsideVideo?: boolean
-  
-  // Missed jumps
-  isMissedJump?: boolean
-  
-  // Covering for system
-  coveringFor?: string  // ID of instructor being covered for
+  notes?: string
 }
 
 // ==================== LOAD ====================
@@ -145,6 +147,18 @@ export interface Load {
   assignments: LoadAssignment[]
   capacity: number
   createdAt: string
+  
+  // NEW COUNTDOWN FIELDS - ADD THESE:
+  position: number                    // Load sequence: 1, 2, 3, 4...
+  countdownStartTime?: string         // ISO timestamp when countdown began
+  scheduledDepartureTime?: string     // Calculated departure time
+  delayMinutes?: number              // Total minutes this load has been delayed
+}
+
+// NEW INTERFACE - ADD THIS:
+export interface LoadSchedulingSettings {
+  minutesBetweenLoads: number        // Default: 20
+  instructorCycleTime: number        // Default: 40 (20 prep + 20 skydive)
 }
 
 // ==================== PERIOD ====================
@@ -206,6 +220,12 @@ export interface AutoAssignSettings {
   batchSize: number
 }
 
+// NEW: Load Scheduling Settings
+export interface LoadSchedulingSettings {
+  minutesBetweenLoads: number   // Default: 20
+  instructorCycleTime: number   // Default: 40 (20 prep + 20 skydive)
+}
+
 // ==================== API RESPONSES ====================
 
 export interface DatabaseState {
@@ -216,6 +236,7 @@ export interface DatabaseState {
   loads: Load[]
   clockEvents: ClockEvent[]
   periods?: Period[]
+  loadSchedulingSettings?: LoadSchedulingSettings
   lastSaved: string
 }
 
@@ -226,10 +247,6 @@ export type UpdateInstructor = Partial<Instructor>
 
 export type CreateLoad = Omit<Load, 'id' | 'createdAt'>
 export type UpdateLoad = Partial<Load>
-
-export type CreateAssignment = Omit<Assignment, 'id' | 'timestamp'>
-
-export type CreateQueueStudent = Omit<QueueStudent, 'id' | 'timestamp'>
 
 export type CreatePeriod = Omit<Period, 'id' | 'createdAt'>
 export type UpdatePeriod = Partial<Period>
