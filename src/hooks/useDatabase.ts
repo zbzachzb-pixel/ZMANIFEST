@@ -7,10 +7,12 @@ import type {
   QueueStudent,
   Group,
   ClockEvent,
+  Period,
   CreateInstructor,
   CreateLoad,
   CreateAssignment,
   CreateQueueStudent,
+  CreatePeriod,
 } from '@/types'
 
 interface UseDataResult<T> {
@@ -200,6 +202,25 @@ export function useDeleteAssignment() {
 
   return { deleteAssignment, loading, error }
 }
+export function useUpdateAssignment() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const updateAssignment = useCallback(async (id: string, updates: Partial<Assignment>) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.updateAssignment(id, updates)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { updateAssignment, loading, error }
+}
 
 // ==================== QUEUE ====================
 
@@ -352,6 +373,7 @@ export function useDeleteGroup() {
 export function useClockEvents() {
   return useRealtimeData<ClockEvent>(db.subscribeToClockEvents)
 }
+
 export function useDeleteClockEvent() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -370,4 +392,44 @@ export function useDeleteClockEvent() {
   }, [])
 
   return { deleteEvent, loading, error }
+}
+
+// ==================== PERIODS ====================
+
+export function usePeriods() {
+  return useRealtimeData<Period>(db.subscribeToPeriods)
+}
+
+export function useActivePeriod() {
+  const { data: allPeriods, loading, error, refresh } = usePeriods()
+  const activePeriod = allPeriods.find(p => p.status === 'active') || null
+  return { data: activePeriod, loading, error, refresh }
+}
+
+export function useArchivedPeriods() {
+  const { data: allPeriods, loading, error, refresh } = usePeriods()
+  const archivedPeriods = allPeriods.filter(p => p.status === 'archived')
+    .sort((a, b) => new Date(b.endedAt || b.end).getTime() - new Date(a.endedAt || a.end).getTime())
+  return { data: archivedPeriods, loading, error, refresh }
+}
+
+export function useCreatePeriod() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const create = useCallback(async (period: CreatePeriod) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const newPeriod = await db.createPeriod(period)
+      return newPeriod
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { create, loading, error }
 }

@@ -119,7 +119,7 @@ export interface Assignment {
 
 export interface LoadAssignment {
   id: string
-  studentId: string  // ⭐ ADDED THIS - needed for tracking
+  studentId: string
   instructorId: string
   instructorName: string
   videoInstructorId?: string
@@ -150,6 +150,22 @@ export interface Load {
 // ==================== PERIOD ====================
 
 export interface Period {
+  id: string
+  name: string
+  start: Date
+  end: Date
+  status: 'active' | 'archived'
+  finalBalances?: Record<string, number> // instructorId → finalBalance
+  finalStats?: {
+    totalJumps: number
+    totalEarnings: number
+    instructorCount: number
+  }
+  createdAt: string
+  endedAt?: string
+}
+
+export interface PeriodData {
   start: Date
   end: Date
   name: string
@@ -199,6 +215,7 @@ export interface DatabaseState {
   groups: Group[]
   loads: Load[]
   clockEvents: ClockEvent[]
+  periods?: Period[]
   lastSaved: string
 }
 
@@ -213,3 +230,6 @@ export type UpdateLoad = Partial<Load>
 export type CreateAssignment = Omit<Assignment, 'id' | 'timestamp'>
 
 export type CreateQueueStudent = Omit<QueueStudent, 'id' | 'timestamp'>
+
+export type CreatePeriod = Omit<Period, 'id' | 'createdAt'>
+export type UpdatePeriod = Partial<Period>

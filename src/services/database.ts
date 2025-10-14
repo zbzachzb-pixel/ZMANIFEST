@@ -43,6 +43,7 @@ export interface DatabaseService {
   getAssignments(): Promise<Assignment[]>
   getInstructorAssignments(instructorId: string): Promise<Assignment[]>
   getAssignmentsByDateRange(start: Date, end: Date): Promise<Assignment[]>
+  updateAssignment(id: string, updates: Partial<Assignment>): Promise<void>  // ⭐ NEW
   deleteAssignment(id: string): Promise<void>
   subscribeToAssignments(callback: (assignments: Assignment[]) => void): () => void
   

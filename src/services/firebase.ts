@@ -21,7 +21,10 @@ import type {
   CreateQueueStudent,
   Group,
   DatabaseState,
-  ClockEvent
+  ClockEvent,
+  Period,
+  CreatePeriod,
+  UpdatePeriod
 } from '@/types'
 
 export class FirebaseService implements DatabaseService {
@@ -35,6 +38,7 @@ export class FirebaseService implements DatabaseService {
     this.subscribeToQueue = this.subscribeToQueue.bind(this)
     this.subscribeToGroups = this.subscribeToGroups.bind(this)
     this.subscribeToClockEvents = this.subscribeToClockEvents.bind(this)
+    this.subscribeToPeriods = this.subscribeToPeriods.bind(this)
     this.subscribeToAll = this.subscribeToAll.bind(this)
   }
   
@@ -52,6 +56,8 @@ export class FirebaseService implements DatabaseService {
   private generateId(): string {
     return Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9)
   }
+  
+  // ==================== INSTRUCTORS ====================
   
   async createInstructor(instructor: CreateInstructor): Promise<Instructor> {
     const newInstructor: Instructor = {
@@ -136,11 +142,14 @@ export class FirebaseService implements DatabaseService {
     })
     return unsubscribe
   }
+  
   async deleteClockEvent(id: string): Promise<void> {
-  const eventRef = ref(this.db, `clockEvents/${id}`)
-  await remove(eventRef)
-}
-
+    const eventRef = ref(this.db, `clockEvents/${id}`)
+    await remove(eventRef)
+  }
+  
+  // ==================== LOADS ====================
+  
   async createLoad(load: CreateLoad): Promise<Load> {
     const newLoad: Load = {
       ...load,
@@ -184,6 +193,8 @@ export class FirebaseService implements DatabaseService {
     return unsubscribe
   }
   
+  // ==================== ASSIGNMENTS ====================
+  
   async createAssignment(assignment: CreateAssignment): Promise<Assignment> {
     const newAssignment: Assignment = {
       ...assignment,
@@ -197,6 +208,11 @@ export class FirebaseService implements DatabaseService {
     
     return newAssignment
   }
+  async updateAssignment(id: string, updates: Partial<Assignment>): Promise<void> {
+  const assignmentRef = ref(this.db, `assignments/${id}`)
+  const cleanedUpdates = this.cleanData(updates)
+  await update(assignmentRef, cleanedUpdates)
+}
   
   async getAssignments(): Promise<Assignment[]> {
     return this.getData<Assignment>('assignments')
@@ -230,6 +246,8 @@ export class FirebaseService implements DatabaseService {
     })
     return unsubscribe
   }
+  
+  // ==================== QUEUE ====================
   
   async addToQueue(student: CreateQueueStudent): Promise<QueueStudent> {
     const newStudent: QueueStudent = {
@@ -268,6 +286,8 @@ export class FirebaseService implements DatabaseService {
     return unsubscribe
   }
   
+  // ==================== GROUPS ====================
+  
   async createGroup(name: string, studentIds: string[]): Promise<Group> {
     const newGroup: Group = {
       id: this.generateId(),
@@ -305,14 +325,67 @@ export class FirebaseService implements DatabaseService {
     return unsubscribe
   }
   
+  // ==================== PERIODS ====================
+  
+  async createPeriod(period: CreatePeriod): Promise<Period> {
+    const newPeriod: Period = {
+      ...period,
+      id: this.generateId(),
+      createdAt: new Date().toISOString(),
+    }
+    
+    const cleanedPeriod = this.cleanData(newPeriod)
+    const periodRef = ref(this.db, `periods/${newPeriod.id}`)
+    await set(periodRef, cleanedPeriod)
+    
+    return newPeriod
+  }
+  
+  async getPeriods(): Promise<Period[]> {
+    const periods = await this.getData<any>('periods')
+    return periods.map(p => ({
+      ...p,
+      start: new Date(p.start),
+      end: new Date(p.end)
+    }))
+  }
+  
+  async getActivePeriod(): Promise<Period | null> {
+    const periods = await this.getPeriods()
+    return periods.find(p => p.status === 'active') || null
+  }
+  
+  async updatePeriod(id: string, updates: UpdatePeriod): Promise<void> {
+    const periodRef = ref(this.db, `periods/${id}`)
+    const cleanedUpdates = this.cleanData(updates)
+    await update(periodRef, cleanedUpdates)
+  }
+  
+  subscribeToPeriods(callback: (periods: Period[]) => void): () => void {
+    const periodsRef = ref(this.db, 'periods')
+    const unsubscribe = onValue(periodsRef, (snapshot) => {
+      const data = snapshot.val()
+      const periods = data ? Object.values(data).map((p: any) => ({
+        ...p,
+        start: new Date(p.start),
+        end: new Date(p.end)
+      })) : []
+      callback(periods)
+    })
+    return unsubscribe
+  }
+  
+  // ==================== BULK ====================
+  
   async getFullState(): Promise<DatabaseState> {
-    const [instructors, assignments, studentQueue, groups, loads, clockEvents] = await Promise.all([
+    const [instructors, assignments, studentQueue, groups, loads, clockEvents, periods] = await Promise.all([
       this.getInstructors(),
       this.getAssignments(),
       this.getQueue(),
       this.getGroups(),
       this.getLoads(),
       this.getClockEvents(),
+      this.getPeriods(),
     ])
     
     return {
@@ -322,6 +395,7 @@ export class FirebaseService implements DatabaseService {
       groups,
       loads,
       clockEvents,
+      periods,
       lastSaved: new Date().toISOString(),
     }
   }
@@ -344,6 +418,11 @@ export class FirebaseService implements DatabaseService {
           groups: data.groups ? Object.values(data.groups) : [],
           loads: data.loads ? Object.values(data.loads) : [],
           clockEvents: data.clockEvents ? Object.values(data.clockEvents) : [],
+          periods: data.periods ? Object.values(data.periods).map((p: any) => ({
+            ...p,
+            start: new Date(p.start),
+            end: new Date(p.end)
+          })) : [],
           lastSaved: data.lastSaved || new Date().toISOString(),
         })
       }

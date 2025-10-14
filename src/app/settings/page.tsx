@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react'
 import { db } from '@/services'
+import { EndPeriodModal } from '@/components/EndPeriodModal'
+import { getCurrentPeriod } from '@/lib/utils'
 
 interface AutoAssignSettings {
   enabled: boolean
@@ -23,6 +25,9 @@ export default function SettingsPage() {
   
   const [exportLoading, setExportLoading] = useState(false)
   const [importLoading, setImportLoading] = useState(false)
+  const [showEndPeriodModal, setShowEndPeriodModal] = useState(false)
+  
+  const period = getCurrentPeriod()
   
   // Load settings on mount
   useEffect(() => {
@@ -171,6 +176,40 @@ export default function SettingsPage() {
           <p className="text-slate-300">Manage system preferences and data</p>
         </div>
         
+        {/* Period Management */}
+        <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20 mb-6">
+          <h2 className="text-2xl font-bold text-white mb-6">📅 Period Management</h2>
+          
+          <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-blue-300 font-semibold mb-1">Current Period</div>
+                <div className="text-white text-lg font-bold">{period.name}</div>
+                <div className="text-xs text-slate-400 mt-1">
+                  {period.start.toLocaleDateString()} - {period.end.toLocaleDateString()}
+                </div>
+              </div>
+              <span className="px-3 py-1 bg-green-500/20 text-green-300 rounded-lg text-sm font-semibold">
+                ✓ Active
+              </span>
+            </div>
+          </div>
+          
+          <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg p-4 mb-4">
+            <p className="text-yellow-300 text-sm">
+              <strong>⚠️ Important:</strong> Ending a period will archive all current data and reset instructor balances to $0.
+              This action cannot be undone. Historical data will remain accessible in Analytics.
+            </p>
+          </div>
+          
+          <button
+            onClick={() => setShowEndPeriodModal(true)}
+            className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
+          >
+            🔒 End Current Period & Start New
+          </button>
+        </div>
+        
         {/* Appearance */}
         <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20 mb-6">
           <h2 className="text-2xl font-bold text-white mb-6">🎨 Appearance</h2>
@@ -290,7 +329,7 @@ export default function SettingsPage() {
             <div className="p-4 bg-slate-800/50 rounded-lg">
               <h3 className="text-white font-semibold mb-2">Export Full Backup</h3>
               <p className="text-sm text-slate-400 mb-4">
-                Download complete system data (instructors, assignments, queue, loads)
+                Download complete system data (instructors, assignments, queue, loads, periods)
               </p>
               <button
                 onClick={handleExportData}
@@ -363,6 +402,13 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+      
+      {showEndPeriodModal && (
+        <EndPeriodModal
+          onClose={() => setShowEndPeriodModal(false)}
+          onSuccess={() => setShowEndPeriodModal(false)}
+        />
+      )}
     </div>
   )
 }
