@@ -186,7 +186,7 @@ export function isWorkingOffDay(instructor: Instructor, date: Date): boolean {
 
 // ==================== PERIOD CALCULATIONS ====================
 
-export function getCurrentPeriod(): Period {
+export function getCurrentPeriod(): PeriodData {
   const today = new Date()
   const year = today.getFullYear()
   const month = today.getMonth()
@@ -279,4 +279,32 @@ export function formatTime(date: Date): string {
     hour: 'numeric', 
     minute: '2-digit'
   })
+}
+
+/**
+ * Convert Period (with string dates) to PeriodData (with Date objects)
+ * Use this when you need to work with dates in calculations
+ */
+export function periodToData(period: Period): PeriodData {
+  return {
+    start: new Date(period.start),
+    end: new Date(period.end),
+    name: period.name
+  }
+}
+
+/**
+ * Check if a date is within a period
+ */
+export function isDateInPeriod(date: Date, period: Period): boolean {
+  const periodStart = new Date(period.start)
+  const periodEnd = new Date(period.end)
+  return date >= periodStart && date <= periodEnd
+}
+
+/**
+ * Compare two periods for sorting (newest first)
+ */
+export function comparePeriods(a: Period, b: Period): number {
+  return new Date(b.start).getTime() - new Date(a.start).getTime()
 }

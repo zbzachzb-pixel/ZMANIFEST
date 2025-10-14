@@ -4,7 +4,7 @@
 import React, { useState, useMemo } from 'react'
 import { useQueue, useActiveInstructors, useAssignments, useUpdateLoad } from '@/hooks/useDatabase'
 import { db } from '@/services'
-import { getCurrentPeriod } from '@/lib/utils'
+import { getCurrentPeriod, calculateInstructorBalance } from '@/lib/utils'
 import type { Load, QueueStudent, Instructor, Assignment } from '@/types'
 
 interface AssignToLoadModalProps {

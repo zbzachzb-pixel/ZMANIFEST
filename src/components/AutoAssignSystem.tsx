@@ -1,10 +1,10 @@
-// Save as: src/components/AutoAssignSystem.tsx
+// src/components/AutoAssignSystem.tsx
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
 import { useQueue, useLoads, useActiveInstructors, useAssignments, useUpdateLoad } from '@/hooks/useDatabase'
 import { db } from '@/services'
-import { getCurrentPeriod } from '@/lib/utils'
+import { getCurrentPeriod, calculateInstructorBalance } from '@/lib/utils'
 import type { QueueStudent, Load, Instructor, Assignment } from '@/types'
 
 interface AutoAssignSettings {
@@ -19,37 +19,6 @@ const DEFAULT_SETTINGS: AutoAssignSettings = {
   skipRequests: true,
   batchMode: false,
   batchSize: 3
-}
-
-function calculateBalance(instructor: Instructor, assignments: Assignment[], period: any) {
-  let balance = 0
-  
-  for (const assignment of assignments) {
-    const assignmentDate = new Date(assignment.timestamp)
-    if (assignmentDate < period.start || assignmentDate > period.end) continue
-    if (assignment.isRequest) continue
-    
-    let pay = 0
-    if (!assignment.isMissedJump) {
-      if (assignment.jumpType === 'tandem') {
-        pay = 40 + (assignment.tandemWeightTax || 0) * 20
-        if (assignment.tandemHandcam) pay += 30
-      } else if (assignment.jumpType === 'aff') {
-        pay = assignment.affLevel === 'lower' ? 55 : 45
-      } else if (assignment.jumpType === 'video') {
-        pay = 45
-      }
-    }
-    
-    if (assignment.instructorId === instructor.id) {
-      balance += pay
-    }
-    if (assignment.videoInstructorId === instructor.id && !assignment.isMissedJump) {
-      balance += 45
-    }
-  }
-  
-  return balance
 }
 
 export function AutoAssignSystem() {
@@ -92,212 +61,171 @@ export function AutoAssignSystem() {
         startCountdown(eligibleStudents[0])
       }
     }
-  }, [isEnabled, queue, currentStudent, settings])
+  }, [queue, isEnabled, currentStudent, settings])
   
   const startCountdown = (student: QueueStudent) => {
     setCurrentStudent(student)
     setCountdown(settings.delay)
     
+    // Countdown timer
     countdownIntervalRef.current = setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) {
-          if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+          if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current)
+          }
           return 0
         }
         return prev - 1
       })
     }, 1000)
     
+    // Actual assignment after delay
     autoAssignTimeoutRef.current = setTimeout(() => {
       performAutoAssignment(student)
     }, settings.delay * 1000)
   }
   
+  const cancelAssignment = () => {
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+    if (autoAssignTimeoutRef.current) clearTimeout(autoAssignTimeoutRef.current)
+    setCountdown(0)
+    setCurrentStudent(null)
+  }
+  
   const performAutoAssignment = async (student: QueueStudent) => {
     try {
-      const clockedIn = instructors.filter(i => i.clockedIn)
+      // Find best instructor using centralized balance calculation
+      const qualified = instructors.filter(inst => {
+        if (!inst.clockedIn) return false
+        if (student.jumpType === 'tandem' && !inst.canTandem) return false
+        if (student.jumpType === 'aff' && !inst.canAFF) return false
+        return true
+      })
       
-      const buildingLoads = loads.filter(l => l.status === 'building')
-      let targetLoad: Load | null = null
+      if (qualified.length === 0) {
+        console.log('No qualified instructors available')
+        setCurrentStudent(null)
+        return
+      }
       
-      for (const load of buildingLoads) {
-        const totalPeople = (load.assignments || []).reduce((sum, a) => {
-          let count = 2
-          if (a.hasOutsideVideo) count += 1
-          return sum + count
+      // Sort by balance using centralized function
+      qualified.sort((a, b) => {
+        const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period)
+        const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period)
+        return balanceA - balanceB
+      })
+      
+      const bestInstructor = qualified[0]
+      
+      // Find available load
+      const availableLoad = loads.find(load => {
+        const usedSeats = (load.assignments || []).reduce((sum, a) => {
+          if (a.jumpType === 'tandem') return sum + 2
+          if (a.jumpType === 'aff') return sum + 2
+          return sum + 1
         }, 0)
-        if (totalPeople + 2 <= load.capacity) {
-          targetLoad = load
-          break
-        }
-      }
+        return usedSeats < (load.capacity || 18)
+      })
       
-      if (!targetLoad) {
-        console.log('No available load, skipping auto-assign')
-        cancelCountdown()
+      if (!availableLoad) {
+        console.log('No available loads')
+        setCurrentStudent(null)
         return
       }
       
-      const instructorsOnLoad = new Set(
-        (targetLoad.assignments || []).flatMap(a => {
-          const ids = [a.instructorId]
-          if (a.videoInstructorId) ids.push(a.videoInstructorId)
-          return ids
-        })
-      )
-      
-      const qualifiedInstructors = clockedIn
-        .filter(instructor => {
-          if (instructorsOnLoad.has(instructor.id)) return false
-          if (student.jumpType === 'tandem' && !instructor.tandem) return false
-          if (student.jumpType === 'aff' && !instructor.aff) return false
-          if (student.jumpType === 'video' && !instructor.video) return false
-          if (student.jumpType === 'tandem' && instructor.tandemWeightLimit && student.weight > instructor.tandemWeightLimit) return false
-          if (student.jumpType === 'aff' && instructor.affWeightLimit && student.weight > instructor.affWeightLimit) return false
-          if (student.jumpType === 'aff' && instructor.affLocked) return false
-          return true
-        })
-        .map(instructor => ({
-          instructor,
-          balance: calculateBalance(instructor, assignments, period)
-        }))
-        .sort((a, b) => a.balance - b.balance)
-      
-      if (qualifiedInstructors.length === 0) {
-        console.log('No qualified instructor, skipping')
-        cancelCountdown()
-        return
-      }
-      
-      const bestInstructor = qualifiedInstructors[0].instructor
-      
-      let videoInstructor: Instructor | undefined
-      if (student.outsideVideo && student.jumpType === 'tandem') {
-        const videoInstructors = clockedIn.filter(i => 
-          i.video && 
-          i.id !== bestInstructor.id &&
-          !instructorsOnLoad.has(i.id) &&
-          (!i.videoRestricted || 
-            (student.weight >= (i.videoMinWeight || 0) && 
-             student.weight <= (i.videoMaxWeight || 999)))
-        )
-        if (videoInstructors.length > 0) {
-          videoInstructor = videoInstructors[0]
-        }
-      }
-      
+      // Create assignment
       const newAssignment = {
-        id: Date.now().toString(),
+        id: `assignment-${Date.now()}`,
+        studentId: student.id,
+        studentName: student.name,
+        jumpType: student.jumpType,
         instructorId: bestInstructor.id,
         instructorName: bestInstructor.name,
-        studentName: student.name,
-        studentWeight: student.weight,
-        jumpType: student.jumpType,
-        isRequest: student.isRequest,
+        weight: student.weight,
         ...(student.jumpType === 'tandem' && {
-          tandemWeightTax: student.tandemWeightTax,
-          tandemHandcam: student.tandemHandcam,
+          tandemWeightTax: student.tandemWeightTax || 0,
+          tandemHandcam: student.tandemHandcam || false,
+          hasOutsideVideo: student.outsideVideo || false
         }),
         ...(student.jumpType === 'aff' && {
-          affLevel: student.affLevel,
-        }),
-        ...(videoInstructor && {
-          hasOutsideVideo: true,
-          videoInstructorId: videoInstructor.id,
-          videoInstructorName: videoInstructor.name,
-        }),
+          affLevel: student.affLevel
+        })
       }
       
-      const updatedAssignments = [...(targetLoad.assignments || []), newAssignment]
-      await update(targetLoad.id, { assignments: updatedAssignments })
+      await update(availableLoad.id, {
+        assignments: [...(availableLoad.assignments || []), newAssignment]
+      })
+      
+      // Remove from queue
       await db.removeFromQueue(student.id)
       
-      console.log('Auto-assigned:', student.name, 'to', bestInstructor.name)
+      console.log(`Auto-assigned ${student.name} to ${bestInstructor.name}`)
     } catch (error) {
       console.error('Auto-assignment failed:', error)
     } finally {
-      cancelCountdown()
+      setCurrentStudent(null)
     }
   }
   
-  const cancelCountdown = () => {
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
-    if (autoAssignTimeoutRef.current) clearTimeout(autoAssignTimeoutRef.current)
-    setCurrentStudent(null)
-    setCountdown(0)
-  }
-  
-  const handleAssignNow = () => {
-    if (currentStudent) {
-      if (autoAssignTimeoutRef.current) clearTimeout(autoAssignTimeoutRef.current)
-      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
-      performAutoAssignment(currentStudent)
+  const toggleAutoAssign = () => {
+    const newState = !isEnabled
+    setIsEnabled(newState)
+    
+    if (!newState) {
+      cancelAssignment()
     }
   }
   
   return (
-    <>
-      <button
-        onClick={() => setIsEnabled(!isEnabled)}
-        className={`px-4 py-2 rounded-lg font-semibold transition-all ${
-          isEnabled
-            ? 'bg-green-500 text-white hover:bg-green-600'
-            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-        }`}
-      >
-        Auto: {isEnabled ? 'ON' : 'OFF'}
-      </button>
-      
-      <button
-        onClick={() => setShowSettings(true)}
-        className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-semibold transition-colors"
-      >
-        ⚙️
-      </button>
-      
-      {currentStudent && countdown > 0 && (
-        <div className="fixed bottom-8 right-8 bg-slate-800 border-2 border-blue-500 rounded-xl shadow-2xl p-6 z-50 w-96">
-          <div className="mb-4">
-            <h3 className="text-lg font-bold text-white mb-2">
-              Auto-Assigning Student
-            </h3>
-            <p className="text-sm text-slate-300">
-              <strong>{currentStudent.name}</strong> - {currentStudent.weight}lbs
+    <div className="fixed bottom-4 right-4 z-40">
+      <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 p-4 min-w-[250px]">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-white font-bold">Auto-Assign</h3>
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="text-slate-400 hover:text-white"
+          >
+            ⚙️
+          </button>
+        </div>
+        
+        <div className="flex items-center gap-3 mb-3">
+          <button
+            onClick={toggleAutoAssign}
+            className={`flex-1 py-2 px-4 rounded-lg font-semibold transition-colors ${
+              isEnabled
+                ? 'bg-green-500 hover:bg-green-600 text-white'
+                : 'bg-slate-600 hover:bg-slate-700 text-white'
+            }`}
+          >
+            {isEnabled ? '✓ ON' : 'OFF'}
+          </button>
+        </div>
+        
+        {currentStudent && (
+          <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-3 mb-2">
+            <p className="text-blue-300 text-sm font-semibold mb-1">
+              Assigning: {currentStudent.name}
             </p>
-            <p className="text-xs text-slate-400">
-              {currentStudent.jumpType.toUpperCase()}
-              {currentStudent.isRequest && ' [REQUEST]'}
+            <p className="text-blue-400 text-xs mb-2">
+              in {countdown} seconds...
             </p>
-          </div>
-          
-          <div className="mb-4">
-            <div className="bg-slate-700 rounded-full h-2 overflow-hidden">
-              <div 
-                className="bg-blue-500 h-full transition-all duration-1000"
-                style={{ width: `${(countdown / settings.delay) * 100}%` }}
-              />
-            </div>
-            <p className="text-center text-white font-bold text-2xl mt-2">
-              {countdown}s
-            </p>
-          </div>
-          
-          <div className="flex gap-2">
             <button
-              onClick={cancelCountdown}
-              className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+              onClick={cancelAssignment}
+              className="w-full bg-red-500 hover:bg-red-600 text-white text-sm py-1 px-3 rounded"
             >
               Cancel
             </button>
-            <button
-              onClick={handleAssignNow}
-              className="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-            >
-              Assign Now
-            </button>
           </div>
+        )}
+        
+        <div className="text-xs text-slate-400">
+          <div>Delay: {settings.delay}s</div>
+          <div>Skip requests: {settings.skipRequests ? 'Yes' : 'No'}</div>
+          {settings.batchMode && <div>Batch: {settings.batchSize}</div>}
         </div>
-      )}
+      </div>
       
       {showSettings && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -343,14 +271,14 @@ export function AutoAssignSystem() {
                   className="w-5 h-5 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
                 />
                 <label htmlFor="batchMode" className="text-sm font-semibold text-slate-300">
-                  Wait for multiple students (batch mode)
+                  Batch mode (wait for multiple students)
                 </label>
               </div>
               
               {settings.batchMode && (
                 <div>
                   <label className="block text-sm font-semibold text-slate-300 mb-2">
-                    Batch size
+                    Batch Size
                   </label>
                   <input
                     type="number"
@@ -367,20 +295,14 @@ export function AutoAssignSystem() {
             <div className="border-t border-slate-700 p-6 flex gap-3">
               <button
                 onClick={() => setShowSettings(false)}
-                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
               >
                 Close
-              </button>
-              <button
-                onClick={() => setShowSettings(false)}
-                className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
-              >
-                Save Settings
               </button>
             </div>
           </div>
         </div>
       )}
-    </>
+    </div>
   )
 }

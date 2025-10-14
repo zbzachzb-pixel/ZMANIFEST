@@ -6,6 +6,8 @@ import { db } from '@/services'
 import { getCurrentPeriod } from '@/lib/utils'
 import { EditAssignmentModal } from '@/components/EditAssignmentModal'
 import type { Assignment, ClockEvent } from '@/types'
+import { calculateAssignmentPay } from '@/lib/utils'
+import { PAY_RATES } from '@/lib/constants'
 
 export default function AssignmentsPage() {
   const { data: assignments, loading } = useAssignments()
@@ -93,32 +95,19 @@ export default function AssignmentsPage() {
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
   }, [assignments, searchTerm, period, instructors])
   
-  const calculatePay = (assignment: Assignment) => {
-    if (assignment.isMissedJump) return 0
-    if (assignment.isRequest) return 0
-    
-    let pay = 0
-    
-    if (assignment.jumpType === 'tandem') {
-      pay = 40
-      if (assignment.tandemWeightTax) {
-        pay += assignment.tandemWeightTax * 20
-      }
-      if (assignment.tandemHandcam) {
-        pay += 30
-      }
-    } else if (assignment.jumpType === 'aff') {
-      pay = assignment.affLevel === 'lower' ? 55 : 45
-    } else if (assignment.jumpType === 'video') {
-      pay = 45
-    }
-    
-    if (assignment.hasOutsideVideo && !assignment.isMissedJump) {
-      pay += 45
-    }
-    
-    return pay
+const calculatePay = (assignment: Assignment) => {
+  if (assignment.isMissedJump) return 0
+  if (assignment.isRequest) return 0
+  
+  let pay = calculateAssignmentPay(assignment)
+  
+  // Add video instructor pay if applicable
+  if (assignment.hasOutsideVideo) {
+    pay += PAY_RATES.VIDEO_INSTRUCTOR
   }
+  
+  return pay
+}
   
   const handleDelete = async (id: string) => {
     try {

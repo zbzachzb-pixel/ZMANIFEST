@@ -8,6 +8,7 @@ import { AddStudentModal } from '@/components/AddStudentModal'
 import { StudentCard } from '@/components/StudentCard'
 import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal'
 import type { QueueStudent } from '@/types'
+import { ImportStudentsModal } from '@/components/ImportStudentsModal'
 
 export default function QueuePage() {
   const { data: tandemQueue, loading: tandemLoading } = useTandemQueue()
@@ -21,6 +22,7 @@ export default function QueuePage() {
   const [searchTandem, setSearchTandem] = useState('')
   const [searchAFF, setSearchAFF] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'tandem' | 'aff', count: number } | null>(null)
+  const [showImportModal, setShowImportModal] = useState(false)
   
   const handleAddStudent = (type: 'tandem' | 'aff') => {
     setModalQueueType(type)
@@ -147,6 +149,12 @@ export default function QueuePage() {
               >
                 <span className="text-lg">+</span> Add Student
               </button>
+              <button
+                 onClick={() => setShowImportModal(true)}
+                 className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-6 rounded-lg transition-colors flex items-center gap-2"
+              >
+                    📥 Import Students
+              </button>
             </div>
             
             <div className="mb-4">
@@ -271,6 +279,9 @@ export default function QueuePage() {
           onCancel={() => setConfirmDelete(null)}
         />
       )}
+      {showImportModal && (
+  <ImportStudentsModal onClose={() => setShowImportModal(false)} />
+)}
     </div>
   )
 }

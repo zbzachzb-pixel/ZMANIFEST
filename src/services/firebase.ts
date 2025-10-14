@@ -343,14 +343,9 @@ export class FirebaseService implements DatabaseService {
     return newPeriod
   }
   
-  async getPeriods(): Promise<Period[]> {
-    const periods = await this.getData<any>('periods')
-    return periods.map(p => ({
-      ...p,
-      start: new Date(p.start),
-      end: new Date(p.end)
-    }))
-  }
+ async getPeriods(): Promise<Period[]> {
+  return await this.getData<Period>('periods')
+}
   
   async getActivePeriod(): Promise<Period | null> {
     const periods = await this.getPeriods()
@@ -364,18 +359,13 @@ export class FirebaseService implements DatabaseService {
   }
   
   subscribeToPeriods(callback: (periods: Period[]) => void): () => void {
-    const periodsRef = ref(this.db, 'periods')
-    const unsubscribe = onValue(periodsRef, (snapshot) => {
-      const data = snapshot.val()
-      const periods = data ? Object.values(data).map((p: any) => ({
-        ...p,
-        start: new Date(p.start),
-        end: new Date(p.end)
-      })) : []
-      callback(periods)
-    })
-    return unsubscribe
-  }
+  const periodsRef = ref(this.db, 'periods')
+  const unsubscribe = onValue(periodsRef, (snapshot) => {
+    const data = snapshot.val()
+    callback(data ? Object.values(data) as Period[] : [])
+  })
+  return unsubscribe
+}
   
   // ==================== LOAD SCHEDULING SETTINGS (NEW) ====================
   
