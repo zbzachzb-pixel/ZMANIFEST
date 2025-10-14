@@ -10,7 +10,8 @@ import type {
   QueueStudent,
   CreateQueueStudent,
   Group,
-  DatabaseState
+  DatabaseState,
+  ClockEvent  // <-- ADD THIS
 } from '@/types'
 
 export interface DatabaseService {

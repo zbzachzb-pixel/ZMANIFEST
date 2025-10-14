@@ -1,17 +1,40 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useAssignments, useActiveInstructors } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { getCurrentPeriod } from '@/lib/utils'
-import type { Assignment } from '@/types'
+import type { Assignment, ClockEvent } from '@/types'
 
 export default function AssignmentsPage() {
   const { data: assignments, loading } = useAssignments()
   const { data: instructors } = useActiveInstructors()
   const [searchTerm, setSearchTerm] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [clockEvents, setClockEvents] = useState<ClockEvent[]>([])
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   
   const period = getCurrentPeriod()
+  
+  // Subscribe to clock events
+  useEffect(() => {
+    const unsubscribe = db.subscribeToClockEvents((events) => {
+      // Filter events for selected date
+      const startOfDay = new Date(selectedDate)
+      startOfDay.setHours(0, 0, 0, 0)
+      const endOfDay = new Date(selectedDate)
+      endOfDay.setHours(23, 59, 59, 999)
+      
+      const filtered = events.filter(event => {
+        const eventDate = new Date(event.timestamp)
+        return eventDate >= startOfDay && eventDate <= endOfDay
+      }).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      
+      setClockEvents(filtered)
+    })
+    
+    return unsubscribe
+  }, [selectedDate])
   
   const getInstructorName = (id: string) => {
     const instructor = instructors.find(i => i.id === id)
@@ -62,13 +85,12 @@ export default function AssignmentsPage() {
   }, [assignments, period, searchTerm, instructors])
   
   const handleDelete = async (assignmentId: string) => {
-    if (confirm('Delete this assignment? This will remove it from earnings and jump count.')) {
-      try {
-        await db.deleteAssignment(assignmentId)
-      } catch (error) {
-        console.error('Failed to delete assignment:', error)
-        alert('Failed to delete assignment. Please try again.')
-      }
+    try {
+      await db.deleteAssignment(assignmentId)
+      setDeleteConfirm(null)
+    } catch (error) {
+      console.error('Failed to delete assignment:', error)
+      alert('Failed to delete assignment. Please try again.')
     }
   }
   
@@ -89,6 +111,113 @@ export default function AssignmentsPage() {
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">Assignment History</h1>
           <p className="text-slate-300">View and manage all assignments for {period.name}</p>
+        </div>
+        
+        {/* Clock Tracking Section */}
+        <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20 mb-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+              🕐 Clock Activity
+            </h2>
+            <input
+              type="date"
+              value={selectedDate.toISOString().split('T')[0]}
+              onChange={(e) => setSelectedDate(new Date(e.target.value + 'T12:00:00'))}
+              className="px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          
+          {clockEvents.length === 0 ? (
+            <div className="text-center py-8 text-slate-400">
+              <div className="text-4xl mb-2">⏰</div>
+              <p className="text-sm">No clock activity for this date</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {clockEvents.map((event, index) => {
+                const time = new Date(event.timestamp)
+                const isClockIn = event.type === 'in'
+                
+                // Calculate duration if there's a matching clock out
+                let duration = null
+                if (isClockIn && index < clockEvents.length - 1) {
+                  const nextEvent = clockEvents[index + 1]
+                  if (nextEvent.instructorId === event.instructorId && nextEvent.type === 'out') {
+                    const durationMs = new Date(nextEvent.timestamp).getTime() - time.getTime()
+                    const hours = Math.floor(durationMs / (1000 * 60 * 60))
+                    const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60))
+                    duration = `${hours}h ${minutes}m`
+                  }
+                }
+                
+                return (
+                  <div
+                    key={event.id}
+                    className={`flex items-center gap-4 p-4 rounded-lg border-2 transition-all ${
+                      isClockIn
+                        ? 'bg-green-500/10 border-green-500/30'
+                        : 'bg-slate-500/10 border-slate-500/30'
+                    }`}
+                  >
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                      isClockIn ? 'bg-green-500/20' : 'bg-slate-500/20'
+                    }`}>
+                      <span className="text-2xl">
+                        {isClockIn ? '✓' : '✕'}
+                      </span>
+                    </div>
+                    
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="font-bold text-white text-lg">
+                          {event.instructorName}
+                        </span>
+                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                          isClockIn
+                            ? 'bg-green-500/20 text-green-300'
+                            : 'bg-slate-500/20 text-slate-300'
+                        }`}>
+                          {isClockIn ? '🟢 Clocked In' : '🔴 Clocked Out'}
+                        </span>
+                      </div>
+                      <div className="text-sm text-slate-400">
+                        {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {duration && (
+                          <span className="ml-3 text-blue-400 font-semibold">
+                            • Worked {duration}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          
+          {/* Daily Summary */}
+          {clockEvents.length > 0 && (
+            <div className="mt-6 pt-6 border-t border-white/20 grid grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="text-sm text-slate-400 mb-1">Clock Ins</div>
+                <div className="text-2xl font-bold text-green-400">
+                  {clockEvents.filter(e => e.type === 'in').length}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm text-slate-400 mb-1">Clock Outs</div>
+                <div className="text-2xl font-bold text-slate-400">
+                  {clockEvents.filter(e => e.type === 'out').length}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm text-slate-400 mb-1">Currently In</div>
+                <div className="text-2xl font-bold text-blue-400">
+                  {instructors.filter(i => i.clockedIn).length}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         
         <div className="mb-6">
@@ -219,7 +348,7 @@ export default function AssignmentsPage() {
                         </td>
                         <td className="px-6 py-4">
                           <button
-                            onClick={() => handleDelete(assignment.id)}
+                            onClick={() => setDeleteConfirm(assignment.id)}
                             className="px-3 py-1 bg-red-500/20 text-red-300 rounded text-xs font-bold hover:bg-red-500/30 transition-colors"
                           >
                             Delete
@@ -250,6 +379,41 @@ export default function AssignmentsPage() {
           </div>
         </div>
       </div>
+      
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center p-4"
+          style={{ zIndex: 9999 }}
+        >
+          <div 
+            className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-red-500"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-white mb-4">🗑️ Delete Assignment?</h2>
+              <p className="text-slate-300 mb-6">
+                This will permanently remove this assignment from the history. 
+                <strong className="text-white block mt-2">This will affect earnings and jump counts.</strong>
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeleteConfirm(null)}
+                  className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDelete(deleteConfirm)}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                >
+                  ✓ Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

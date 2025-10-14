@@ -13,11 +13,23 @@ export default function InstructorsPage() {
   const [editingInstructor, setEditingInstructor] = useState<Instructor | null>(null)
   const [releaseInstructor, setReleaseInstructor] = useState<Instructor | null>(null)
   
+// Replace your existing handleClockToggle function with this:
+
   const handleClockToggle = async (instructor: Instructor) => {
     try {
+      const newStatus = !instructor.clockedIn
+      
+      // Update instructor status
       await db.updateInstructor(instructor.id, {
-        clockedIn: !instructor.clockedIn
+        clockedIn: newStatus
       })
+      
+      // Log clock event
+      await db.logClockEvent(
+        instructor.id,
+        instructor.name,
+        newStatus ? 'in' : 'out'
+      )
     } catch (error) {
       console.error('Failed to toggle clock:', error)
     }

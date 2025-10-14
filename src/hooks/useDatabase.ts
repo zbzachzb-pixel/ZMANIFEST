@@ -6,6 +6,7 @@ import type {
   Assignment,
   QueueStudent,
   Group,
+  ClockEvent,
   CreateInstructor,
   CreateLoad,
   CreateAssignment,
@@ -344,4 +345,10 @@ export function useDeleteGroup() {
   }, [])
 
   return { deleteGroup, loading, error }
+}
+
+// ==================== CLOCK EVENTS ====================
+
+export function useClockEvents() {
+  return useRealtimeData<ClockEvent>(db.subscribeToClockEvents)
 }

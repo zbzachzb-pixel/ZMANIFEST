@@ -21,6 +21,7 @@ import type {
   CreateQueueStudent,
   Group,
   DatabaseState
+  ClockEvent
 } from '@/types'
 
 export class FirebaseService implements DatabaseService {
@@ -92,6 +93,47 @@ export class FirebaseService implements DatabaseService {
     return unsubscribe
   }
   
+  async logClockEvent(instructorId: string, instructorName: string, type: 'in' | 'out'): Promise<ClockEvent> {
+    const newEvent: ClockEvent = {
+      id: this.generateId(),
+      instructorId,
+      instructorName,
+      type,
+      timestamp: new Date().toISOString()
+    }
+    
+    const eventRef = ref(this.db, `clockEvents/${newEvent.id}`)
+    await set(eventRef, newEvent)
+    
+    return newEvent
+  }
+  
+  async getClockEvents(): Promise<ClockEvent[]> {
+    return this.getData<ClockEvent>('clockEvents')
+  }
+  
+  async getClockEventsByDate(date: Date): Promise<ClockEvent[]> {
+    const allEvents = await this.getClockEvents()
+    const startOfDay = new Date(date)
+    startOfDay.setHours(0, 0, 0, 0)
+    const endOfDay = new Date(date)
+    endOfDay.setHours(23, 59, 59, 999)
+    
+    return allEvents.filter(event => {
+      const eventDate = new Date(event.timestamp)
+      return eventDate >= startOfDay && eventDate <= endOfDay
+    })
+  }
+  
+  subscribeToClockEvents(callback: (events: ClockEvent[]) => void): () => void {
+    const eventsRef = ref(this.db, 'clockEvents')
+    const unsubscribe = onValue(eventsRef, (snapshot) => {
+      const data = snapshot.val()
+      callback(data ? Object.values(data) : [])
+    })
+    return unsubscribe
+  }
+
   async createLoad(load: CreateLoad): Promise<Load> {
     const newLoad: Load = {
       ...load,
@@ -263,6 +305,7 @@ export class FirebaseService implements DatabaseService {
       this.getQueue(),
       this.getGroups(),
       this.getLoads(),
+      this.getClockEvents(),
     ])
     
     return {
@@ -271,6 +314,7 @@ export class FirebaseService implements DatabaseService {
       studentQueue,
       groups,
       loads,
+      clockEvents,
       lastSaved: new Date().toISOString(),
     }
   }
@@ -281,7 +325,7 @@ export class FirebaseService implements DatabaseService {
     await set(rootRef, cleanedState)
   }
   
-  subscribeToAll(callback: (state: DatabaseState) => void): () => void {
+ subscribeToAll(callback: (state: DatabaseState) => void): () => void {
     const rootRef = ref(this.db, '/')
     const unsubscribe = onValue(rootRef, (snapshot) => {
       const data = snapshot.val()
@@ -292,10 +336,10 @@ export class FirebaseService implements DatabaseService {
           studentQueue: data.studentQueue ? Object.values(data.studentQueue) : [],
           groups: data.groups ? Object.values(data.groups) : [],
           loads: data.loads ? Object.values(data.loads) : [],
+          clockEvents: data.clockEvents ? Object.values(data.clockEvents) : [],  // <-- ADD THIS
           lastSaved: data.lastSaved || new Date().toISOString(),
         })
       }
     })
     return unsubscribe
   }
-}

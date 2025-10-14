@@ -76,6 +76,15 @@ export interface Group {
   createdAt: string
 }
 
+// ==================== CLOCK EVENTS ====================
+
+export interface ClockEvent {
+  id: string
+  instructorId: string
+  instructorName: string
+  type: 'in' | 'out'
+  timestamp: string
+}
 
 // ==================== ASSIGNMENT ====================
 
@@ -189,6 +198,7 @@ export interface DatabaseState {
   studentQueue: QueueStudent[]
   groups: Group[]
   loads: Load[]
+  clockEvents: ClockEvent[]
   lastSaved: string
 }
 
