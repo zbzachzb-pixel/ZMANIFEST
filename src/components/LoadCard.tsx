@@ -12,146 +12,77 @@ export function LoadCard({ load }: LoadCardProps) {
   const { update, loading: updateLoading } = useUpdateLoad()
   const { deleteLoad, loading: deleteLoading } = useDeleteLoad()
   
-  const assignments = load.assignments || []
-  const totalPeople = assignments.reduce((sum, a) => {
-    let count = 2 // Instructor + Student
-    if (a.hasOutsideVideo) count += 1 // Video instructor
-    return sum + count
-  }, 0)
+  console.log('LoadCard render:', { loadId: load.id, updateLoading, deleteLoading })
   
-  const isOverCapacity = totalPeople > load.capacity
   const loading = updateLoading || deleteLoading
   
+  const testClick = () => {
+    console.log('🎯 TEST BUTTON CLICKED!')
+    alert('Button works!')
+  }
+  
   const handleStatusChange = async (newStatus: Load['status']) => {
+    console.log('🔄 Status change clicked:', { loadId: load.id, newStatus })
     try {
       await update(load.id, { status: newStatus })
+      console.log('✅ Status updated')
     } catch (error) {
-      console.error('Failed to update load:', error)
-      alert('Failed to update load status. Please try again.')
+      console.error('❌ Failed:', error)
+      alert('Failed to update: ' + error)
     }
   }
   
   const handleDelete = async () => {
-    const confirmMessage = assignments.length > 0
-      ? `This load has ${assignments.length} assignment(s). Delete anyway?`
-      : 'Delete this load?'
+    console.log('🗑️ Delete clicked:', load.id)
+    console.log('🔍 About to call deleteLoad function...')
     
-    if (confirm(confirmMessage)) {
-      try {
-        await deleteLoad(load.id)
-      } catch (error) {
-        console.error('Failed to delete load:', error)
-        alert('Failed to delete load. Please try again.')
-      }
+    try {
+      console.log('⏳ Calling deleteLoad now...')
+      await deleteLoad(load.id)
+      console.log('✅ DELETE COMPLETED SUCCESSFULLY!')
+    } catch (error) {
+      console.error('❌ DELETE FAILED:', error)
+      alert('Failed to delete: ' + error)
     }
   }
   
-  const statusColors = {
-    building: 'border-blue-500 bg-blue-500/10',
-    ready: 'border-green-500 bg-green-500/10',
-    departed: 'border-yellow-500 bg-yellow-500/10',
-    completed: 'border-gray-500 bg-gray-500/10'
-  }
-  
-  const statusBadgeColors = {
-    building: 'bg-blue-500/20 text-blue-300',
-    ready: 'bg-green-500/20 text-green-300',
-    departed: 'bg-yellow-500/20 text-yellow-300',
-    completed: 'bg-gray-500/20 text-gray-300'
-  }
-  
   return (
-    <div className={`rounded-xl shadow-lg p-6 border-2 ${statusColors[load.status]} backdrop-blur-lg`}>
-      {/* Header */}
-      <div className="flex justify-between items-start mb-4">
-        <div>
-          <h3 className="text-xl font-bold text-white">
-            {load.name}
-          </h3>
-          <p className={`text-sm font-medium ${isOverCapacity ? 'text-red-400' : 'text-slate-400'}`}>
-            {totalPeople}/{load.capacity} people
-            {isOverCapacity && ' ⚠️ OVER CAPACITY'}
-          </p>
-        </div>
+    <div className="rounded-xl shadow-lg p-6 border-2 border-blue-500 bg-blue-500/10">
+      <h3 className="text-xl font-bold text-white mb-4">{load.name}</h3>
+      
+      <div className="space-y-2">
+        {/* TEST BUTTON */}
+        <button
+          onClick={testClick}
+          className="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg"
+        >
+          🎯 TEST - Click Me First!
+        </button>
         
-        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${statusBadgeColors[load.status]}`}>
-          {load.status}
-        </span>
-      </div>
-      
-      {/* Assignments List */}
-      <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
-        {assignments.length === 0 ? (
-          <p className="text-slate-400 text-center py-4 text-sm">
-            No assignments yet
-          </p>
-        ) : (
-          assignments.map((assignment) => (
-            <div key={assignment.id} className="bg-white/5 rounded-lg p-3 border border-white/10">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="font-semibold text-white text-sm">
-                    👤 {assignment.instructorName} + {assignment.studentName}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
-                    {assignment.hasOutsideVideo && ` • 📹 ${assignment.videoInstructorName}`}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-      
-      {/* Action Buttons */}
-      <div className="flex gap-2 flex-wrap">
+        {/* STATUS BUTTONS */}
         {load.status === 'building' && (
           <button
-            onClick={() => handleStatusChange('ready')}
+            onClick={() => {
+              console.log('Button clicked!');
+              handleStatusChange('ready');
+            }}
             disabled={loading}
-            className="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50"
           >
-            ✓ Mark Ready
+            {loading ? '⏳ Loading...' : '✓ Mark Ready'}
           </button>
         )}
         
-        {load.status === 'ready' && (
-          <>
-            <button
-              onClick={() => handleStatusChange('building')}
-              disabled={loading}
-              className="flex-1 bg-slate-500 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-            >
-              ← Building
-            </button>
-            <button
-              onClick={() => handleStatusChange('departed')}
-              disabled={loading}
-              className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-            >
-              🚀 Departed
-            </button>
-          </>
-        )}
-        
-        {load.status === 'departed' && (
-          <button
-            onClick={() => handleStatusChange('completed')}
-            disabled={loading}
-            className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-          >
-            ✓ Completed
-          </button>
-        )}
-        
-        {/* Delete Button - Always visible */}
+        {/* DELETE BUTTON */}
         <button
-          onClick={handleDelete}
+          onClick={() => {
+            console.log('Delete button clicked!');
+            handleDelete();
+          }}
           disabled={loading}
-          className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50"
         >
-          🗑️ Delete
+          {loading ? '⏳ Loading...' : '🗑️ DELETE LOAD'}
         </button>
       </div>
     </div>
