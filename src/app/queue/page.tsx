@@ -1,21 +1,20 @@
+// src/app/queue/page.tsx
 'use client'
 
 import React, { useState } from 'react'
-import { useTandemQueue, useAFFQueue } from '@/hooks/useDatabase'
+import { useTandemQueue, useAFFQueue, useRemoveFromQueue } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { AddStudentModal } from '@/components/AddStudentModal'
-import { AssignStudentModal } from '@/components/AssignStudentModal'
 import { StudentCard } from '@/components/StudentCard'
 import type { QueueStudent } from '@/types'
 
 export default function QueuePage() {
-  const { data: tandemQueue, loading: tandemLoading, refresh: refreshTandem } = useTandemQueue()
-  const { data: affQueue, loading: affLoading, refresh: refreshAFF } = useAFFQueue()
+  const { data: tandemQueue, loading: tandemLoading } = useTandemQueue()
+  const { data: affQueue, loading: affLoading } = useAFFQueue()
+  const { remove, loading: removeLoading } = useRemoveFromQueue()
   
   const [showAddModal, setShowAddModal] = useState(false)
-  const [showAssignModal, setShowAssignModal] = useState(false)
   const [modalQueueType, setModalQueueType] = useState<'tandem' | 'aff'>('tandem')
-  const [studentsToAssign, setStudentsToAssign] = useState<QueueStudent[]>([])
   const [selectedTandem, setSelectedTandem] = useState<string[]>([])
   const [selectedAFF, setSelectedAFF] = useState<string[]>([])
   const [searchTandem, setSearchTandem] = useState('')
@@ -42,20 +41,6 @@ export default function QueuePage() {
     }
   }
   
-  const handleAssignSelected = (type: 'tandem' | 'aff') => {
-    const selected = type === 'tandem' ? selectedTandem : selectedAFF
-    if (selected.length === 0) {
-      alert('Please select at least one student')
-      return
-    }
-    
-    const queue = type === 'tandem' ? tandemQueue : affQueue
-    const students = queue.filter(s => selected.includes(s.id))
-    
-    setStudentsToAssign(students)
-    setShowAssignModal(true)
-  }
-  
   const handleRemoveSelected = async (type: 'tandem' | 'aff') => {
     const selected = type === 'tandem' ? selectedTandem : selectedAFF
     if (selected.length === 0) {
@@ -71,36 +56,13 @@ export default function QueuePage() {
       
       if (type === 'tandem') {
         setSelectedTandem([])
-        await refreshTandem()
       } else {
         setSelectedAFF([])
-        await refreshAFF()
       }
     } catch (error) {
       console.error('Failed to remove students:', error)
       alert('Failed to remove students. Please try again.')
     }
-  }
-  
-  // ⭐ THIS WAS MISSING - The function that refreshes after assignment
-  const handleAssignmentSuccess = async () => {
-    // Determine which queue type was used
-    const wasAssigningTandem = studentsToAssign.some(s => s.jumpType === 'tandem')
-    const wasAssigningAFF = studentsToAssign.some(s => s.jumpType === 'aff')
-    
-    // Clear selections
-    if (wasAssigningTandem) {
-      setSelectedTandem([])
-      await refreshTandem()
-    }
-    if (wasAssigningAFF) {
-      setSelectedAFF([])
-      await refreshAFF()
-    }
-    
-    // Clear the modal state
-    setStudentsToAssign([])
-    setShowAssignModal(false)
   }
   
   const filteredTandem = tandemQueue.filter(s => 
@@ -130,7 +92,22 @@ export default function QueuePage() {
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">Student Queue</h1>
-          <p className="text-slate-300">Manage students waiting for assignments</p>
+          <p className="text-slate-300">Add students here, then use Load Builder to assign them</p>
+        </div>
+        
+        {/* Info Banner */}
+        <div className="bg-blue-500/20 border-2 border-blue-500/50 rounded-xl p-4 mb-6">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">💡</span>
+            <div>
+              <div className="font-bold text-blue-300 mb-1">How to Assign Students</div>
+              <p className="text-sm text-slate-300">
+                1. Add students to this queue<br/>
+                2. Go to <a href="/loads" className="text-blue-400 hover:text-blue-300 font-semibold underline">Load Builder</a><br/>
+                3. Drag students to loads OR click "Optimize All"
+              </p>
+            </div>
+          </div>
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -177,16 +154,18 @@ export default function QueuePage() {
             {selectedTandem.length > 0 && (
               <div className="flex gap-3">
                 <button
-                  onClick={() => handleAssignSelected('tandem')}
-                  className="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                >
-                  Assign Selected ({selectedTandem.length})
-                </button>
-                <button
                   onClick={() => handleRemoveSelected('tandem')}
                   className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
                 >
-                  Remove Selected
+                  🗑️ Remove Selected ({selectedTandem.length})
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedTandem([])
+                  }}
+                  className="px-4 bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 rounded-lg transition-colors"
+                >
+                  Clear
                 </button>
               </div>
             )}
@@ -235,16 +214,18 @@ export default function QueuePage() {
             {selectedAFF.length > 0 && (
               <div className="flex gap-3">
                 <button
-                  onClick={() => handleAssignSelected('aff')}
-                  className="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                >
-                  Assign Selected ({selectedAFF.length})
-                </button>
-                <button
                   onClick={() => handleRemoveSelected('aff')}
                   className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
                 >
-                  Remove Selected
+                  🗑️ Remove Selected ({selectedAFF.length})
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedAFF([])
+                  }}
+                  className="px-4 bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 rounded-lg transition-colors"
+                >
+                  Clear
                 </button>
               </div>
             )}
@@ -256,17 +237,6 @@ export default function QueuePage() {
         <AddStudentModal
           queueType={modalQueueType}
           onClose={() => setShowAddModal(false)}
-        />
-      )}
-      
-      {showAssignModal && studentsToAssign.length > 0 && (
-        <AssignStudentModal
-          students={studentsToAssign}
-          onClose={() => {
-            setShowAssignModal(false)
-            setStudentsToAssign([])
-          }}
-          onSuccess={handleAssignmentSuccess}
         />
       )}
     </div>
