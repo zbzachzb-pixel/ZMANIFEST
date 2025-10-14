@@ -33,6 +33,7 @@ export default function LoadBuilderPage() {
   const [draggedItem, setDraggedItem] = useState<{ type: 'student' | 'assignment', id: string, sourceLoadId?: string } | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [optimizing, setOptimizing] = useState(false)
+  const [showOptimizeConfirm, setShowOptimizeConfirm] = useState(false)
 
   const period = getCurrentPeriod()
   const buildingLoads = loads.filter(l => l.status === 'building')
@@ -382,63 +383,80 @@ export default function LoadBuilderPage() {
     }
   }
 
-  // FIXED: handleOptimizeAll with better logic
+  // FIXED: handleOptimizeAll with React modal instead of browser confirm
   const handleOptimizeAll = async () => {
     console.log('🎯 Optimize All clicked')
     
     if (buildingLoads.length === 0) {
+      console.log('❌ Stopping: No loads')
       alert('❌ No loads to optimize. Create a load first.')
       return
     }
     
     if (queue.length === 0) {
+      console.log('❌ Stopping: Empty queue')
       alert('❌ Queue is empty. Add students to the queue first.')
       return
     }
     
     const clockedInInstructors = instructors.filter(i => i.clockedIn)
     if (clockedInInstructors.length === 0) {
+      console.log('❌ Stopping: No clocked in instructors')
       alert('❌ No instructors are clocked in.')
       return
     }
     
+    console.log('✅ Pre-checks passed')
     console.log('Starting optimization:', {
       loads: buildingLoads.length,
       students: queue.length,
       instructors: clockedInInstructors.length
     })
     
-    if (!confirm(`Optimize ${buildingLoads.length} load(s)? This will assign ${queue.length} student(s) for best balance.`)) {
-      return
-    }
-    
+    console.log('🔔 Showing confirmation modal...')
+    setShowOptimizeConfirm(true)
+  }
+  
+  const executeOptimization = async () => {
+    console.log('✅ User confirmed, starting optimization...')
+    setShowOptimizeConfirm(false)
     setOptimizing(true)
     
     try {
+      console.log('📋 Step 1: Initialize variables')
       const usedInstructors = new Set<string>()
       const eligibleStudents = [...queue] // Copy array
       const updates: { loadId: string, assignments: LoadAssignment[] }[] = []
       
-      // Prepare all loads
+      console.log('📋 Step 2: Prepare loads')
       buildingLoads.forEach(load => {
+        console.log(`  Preparing load: ${load.name}`)
         updates.push({
           loadId: load.id,
           assignments: [...(load.assignments || [])]
         })
       })
+      console.log(`✅ Prepared ${updates.length} loads`)
       
       let assignedCount = 0
       const studentsToRemove: string[] = []
       
+      console.log('📋 Step 3: Assign students globally')
+      console.log(`Processing ${eligibleStudents.length} students...`)
+      
       // Assign students globally
-      for (const student of eligibleStudents) {
+      for (let i = 0; i < eligibleStudents.length; i++) {
+        const student = eligibleStudents[i]
+        console.log(`\n--- Processing student ${i + 1}/${eligibleStudents.length}: ${student.name} ---`)
+        
         // Skip requests if needed
         if (student.isRequest) {
-          console.log('Skipping request:', student.name)
+          console.log('  ⏭️ Skipping request jump')
           continue
         }
         
         // Find a load with space
+        console.log('  🔍 Looking for load with space...')
         const loadWithSpace = updates.find(u => {
           const load = buildingLoads.find(l => l.id === u.loadId)
           if (!load) return false
@@ -447,20 +465,26 @@ export default function LoadBuilderPage() {
             if (a.hasOutsideVideo || a.videoInstructorId) count += 1
             return sum + count
           }, 0)
-          return totalPeople + 2 <= load.capacity
+          const hasSpace = totalPeople + 2 <= load.capacity
+          if (hasSpace) {
+            console.log(`    ✅ Found space on ${load.name} (${totalPeople}/${load.capacity})`)
+          }
+          return hasSpace
         })
         
         if (!loadWithSpace) {
-          console.log('No space for:', student.name)
+          console.log('  ⚠️ No loads have space, stopping')
           break
         }
         
+        console.log('  🔍 Finding best instructor...')
         const instructor = findBestInstructor(student, loadWithSpace.assignments, usedInstructors)
         if (!instructor) {
-          console.log('No instructor for:', student.name)
+          console.log('  ⚠️ No qualified instructor, skipping student')
           continue
         }
         
+        console.log(`  ✅ Selected instructor: ${instructor.name}`)
         usedInstructors.add(instructor.id)
         
         const newAssignment: LoadAssignment = {
@@ -482,26 +506,40 @@ export default function LoadBuilderPage() {
         studentsToRemove.push(student.id)
         assignedCount++
         
-        console.log(`✅ Assigned ${student.name} to ${instructor.name}`)
+        console.log(`  ✅ Successfully assigned ${student.name} to ${instructor.name}`)
       }
       
-      console.log('Applying updates...')
+      console.log(`\n📋 Step 4: Apply updates (${assignedCount} assignments)`)
+      
+      if (assignedCount === 0) {
+        console.log('⚠️ No students were assigned')
+        alert('⚠️ No students could be assigned. Check console for details.')
+        return
+      }
       
       // Apply all updates
+      console.log(`Updating ${updates.length} loads...`)
       for (const update of updates) {
+        console.log(`  Updating load: ${update.loadId}`)
         await updateLoad(update.loadId, { assignments: update.assignments })
+        console.log(`  ✅ Updated`)
       }
       
-      // Remove assigned students from queue
+      console.log('📋 Step 5: Remove students from queue')
+      console.log(`Removing ${studentsToRemove.length} students...`)
       for (const studentId of studentsToRemove) {
+        console.log(`  Removing: ${studentId}`)
         await db.removeFromQueue(studentId)
+        console.log(`  ✅ Removed`)
       }
       
+      console.log('✅✅✅ OPTIMIZATION COMPLETE ✅✅✅')
       alert(`✅ Optimization complete! Assigned ${assignedCount} student(s) across ${buildingLoads.length} load(s).`)
     } catch (error) {
-      console.error('Global optimization failed:', error)
+      console.error('❌❌❌ Global optimization failed:', error)
       alert('❌ Optimization failed. Check console for details.')
     } finally {
+      console.log('🏁 Cleaning up, setting optimizing = false')
       setOptimizing(false)
     }
   }
@@ -1002,6 +1040,53 @@ export default function LoadBuilderPage() {
           </div>
         </div>
       </div>
+      
+      {/* Optimization Confirmation Modal */}
+      {showOptimizeConfirm && (
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center p-4"
+          style={{ zIndex: 9999 }}
+          onClick={() => console.log('🔍 Backdrop clicked')}
+        >
+          <div 
+            className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-purple-500"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-white mb-4">🎯 Optimize All Loads?</h2>
+              <p className="text-slate-300 mb-6">
+                This will automatically assign <strong className="text-white">{queue.length} student(s)</strong> across{' '}
+                <strong className="text-white">{buildingLoads.length} load(s)</strong> using the fairest rotation algorithm.
+              </p>
+              <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-4 mb-6">
+                <p className="text-sm text-slate-300">
+                  ✓ Students will be assigned to the best available instructors<br/>
+                  ✓ Instructors with lowest balance will be prioritized<br/>
+                  ✓ No instructor conflicts across loads<br/>
+                  ✓ Capacity limits will be respected
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    console.log('❌ User canceled optimization')
+                    setShowOptimizeConfirm(false)
+                  }}
+                  className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={executeOptimization}
+                  className="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                >
+                  ✓ Optimize Now
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
