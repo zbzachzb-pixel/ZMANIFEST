@@ -1,4 +1,4 @@
-import type { Assignment, Instructor, Period } from '@/types'
+import type { Assignment, Instructor, Period, Team } from '@/types'
 
 // PAY CALCULATIONS
 export function calculateAssignmentPay(assignment: Assignment): number {
@@ -22,12 +22,59 @@ export function calculateAssignmentPay(assignment: Assignment): number {
   return 0
 }
 
+// TEAM SCHEDULE LOGIC
+export function getCurrentWeekRotation(): Team {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), 0, 0)
+  const diff = now.getTime() - start.getTime()
+  const oneWeek = 1000 * 60 * 60 * 24 * 7
+  const weekNumber = Math.floor(diff / oneWeek)
+  
+  // Even weeks: Blue has Mon/Tue off
+  // Odd weeks: Red has Mon/Tue off
+  return weekNumber % 2 === 0 ? 'blue' : 'red'
+}
+
+export function isWorkingOffDay(instructor: Instructor, date: Date): boolean {
+  if (!instructor.team || instructor.team === 'gold') {
+    return false // Gold team never works "off" days
+  }
+  
+  const dayOfWeek = date.getDay() // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+  
+  // Everyone works weekends (Fri/Sat/Sun)
+  if (dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6) {
+    return false
+  }
+  
+  const teamWithMonTueOff = getCurrentWeekRotation()
+  
+  // Monday or Tuesday
+  if (dayOfWeek === 1 || dayOfWeek === 2) {
+    return instructor.team === teamWithMonTueOff
+  }
+  
+  // Wednesday or Thursday
+  if (dayOfWeek === 3 || dayOfWeek === 4) {
+    return instructor.team !== teamWithMonTueOff
+  }
+  
+  return false
+}
+
+// EARNINGS CALCULATION
+// This calculates the "balance" used for rotation - NOT actual pay
 export function calculateInstructorEarnings(
   instructorId: string,
   assignments: Assignment[],
+  instructors: Instructor[],
   period: Period
 ): number {
   let total = 0
+  
+  // Find the instructor
+  const instructor = instructors.find(i => i.id === instructorId)
+  if (!instructor) return 0
   
   for (const assignment of assignments) {
     const assignmentDate = new Date(assignment.timestamp)
@@ -39,8 +86,43 @@ export function calculateInstructorEarnings(
     if (assignment.isRequest) continue
     
     if (assignment.instructorId === instructorId) {
-      const pay = calculateAssignmentPay(assignment)
+      let pay = calculateAssignmentPay(assignment)
+      
+      // Apply 1.2x multiplier to BALANCE if working off day (for rotation purposes)
+      if (!assignment.isMissedJump && isWorkingOffDay(instructor, assignmentDate)) {
+        pay = Math.round(pay * 1.2)
+      }
+      
       total += pay
+    }
+    
+    if (assignment.videoInstructorId === instructorId && !assignment.isMissedJump) {
+      let videoPay = 45
+      
+      // Apply 1.2x multiplier to BALANCE if working off day (for rotation purposes)
+      if (isWorkingOffDay(instructor, assignmentDate)) {
+        videoPay = Math.round(videoPay * 1.2)
+      }
+      
+      total += videoPay
+    }
+  }
+  
+  return total
+}
+
+// TOTAL EARNINGS CALCULATION
+// This calculates ACTUAL pay (what shows on paychecks) - NO multiplier
+export function calculateInstructorTotalEarnings(
+  instructorId: string,
+  assignments: Assignment[]
+): number {
+  let total = 0
+  
+  for (const assignment of assignments) {
+    // For actual earnings, just use base pay - NO multiplier
+    if (assignment.instructorId === instructorId && !assignment.isMissedJump) {
+      total += calculateAssignmentPay(assignment)
     }
     
     if (assignment.videoInstructorId === instructorId && !assignment.isMissedJump) {
@@ -104,6 +186,23 @@ export function getCurrentPeriod(): Period {
       start: prevThirdMonday,
       end: new Date(firstMonday.getTime() - 1),
       name: `Period 2: ${formatDate(prevThirdMonday)} - ${formatDate(new Date(firstMonday.getTime() - 1))}`
+    }
+  }
+}
+
+// SCHEDULE DISPLAY
+export function getScheduleDisplay(): { redTeam: string; blueTeam: string } {
+  const teamWithMonTueOff = getCurrentWeekRotation()
+  
+  if (teamWithMonTueOff === 'blue') {
+    return {
+      redTeam: 'OFF WED/THUR',
+      blueTeam: 'OFF MON/TUE'
+    }
+  } else {
+    return {
+      redTeam: 'OFF MON/TUE',
+      blueTeam: 'OFF WED/THUR'
     }
   }
 }

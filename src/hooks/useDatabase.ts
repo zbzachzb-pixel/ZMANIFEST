@@ -41,7 +41,8 @@ function useRealtimeData<T>(
   return { data, loading, error, refresh }
 }
 
-// INSTRUCTORS
+// ==================== INSTRUCTORS ====================
+
 export function useInstructors() {
   return useRealtimeData<Instructor>(db.subscribeToInstructors)
 }
@@ -79,7 +80,8 @@ export function useCreateInstructor() {
   return { create, loading, error }
 }
 
-// LOADS
+// ==================== LOADS ====================
+
 export function useLoads() {
   return useRealtimeData<Load>(db.subscribeToLoads)
 }
@@ -131,7 +133,28 @@ export function useUpdateLoad() {
   return { update, loading, error }
 }
 
-// ASSIGNMENTS
+export function useDeleteLoad() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const deleteLoad = useCallback(async (id: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.deleteLoad(id)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { deleteLoad, loading, error }
+}
+
+// ==================== ASSIGNMENTS ====================
+
 export function useAssignments() {
   return useRealtimeData<Assignment>(db.subscribeToAssignments)
 }
@@ -157,7 +180,28 @@ export function useCreateAssignment() {
   return { create, loading, error }
 }
 
-// QUEUE
+export function useDeleteAssignment() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const deleteAssignment = useCallback(async (id: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.deleteAssignment(id)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { deleteAssignment, loading, error }
+}
+
+// ==================== QUEUE ====================
+
 export function useQueue() {
   return useRealtimeData<QueueStudent>(db.subscribeToQueue)
 }
@@ -195,7 +239,109 @@ export function useAddToQueue() {
   return { add, loading, error }
 }
 
-// GROUPS
+export function useRemoveFromQueue() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const remove = useCallback(async (id: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.removeFromQueue(id)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { remove, loading, error }
+}
+
+export function useRemoveMultipleFromQueue() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const removeMultiple = useCallback(async (ids: string[]) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.removeMultipleFromQueue(ids)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { removeMultiple, loading, error }
+}
+
+// ==================== GROUPS ====================
+
 export function useGroups() {
   return useRealtimeData<Group>(db.subscribeToGroups)
+}
+
+export function useCreateGroup() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const create = useCallback(async (name: string, studentIds: string[]) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const newGroup = await db.createGroup(name, studentIds)
+      return newGroup
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { create, loading, error }
+}
+
+export function useUpdateGroup() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const update = useCallback(async (id: string, updates: Partial<Group>) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.updateGroup(id, updates)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { update, loading, error }
+}
+
+export function useDeleteGroup() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const deleteGroup = useCallback(async (id: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.deleteGroup(id)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { deleteGroup, loading, error }
 }

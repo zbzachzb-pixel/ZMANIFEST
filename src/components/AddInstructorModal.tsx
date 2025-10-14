@@ -140,7 +140,7 @@ export function AddInstructorModal({ instructor, onClose }: AddInstructorModalPr
                 <option value="">No Team (⚠️ Warning on assignment)</option>
                 <option value="red">🔴 Red Team</option>
                 <option value="blue">🔵 Blue Team</option>
-                <option value="gold">🟡 Gold Team (VIP)</option>
+                <option value="gold">🟡 Gold Team </option>
               </select>
             </div>
             

@@ -76,6 +76,7 @@ export interface Group {
   createdAt: string
 }
 
+
 // ==================== ASSIGNMENT ====================
 
 export interface Assignment {
@@ -100,8 +101,12 @@ export interface Assignment {
   
   // Missed jumps
   isMissedJump?: boolean
-  coveringFor?: string
+  
+  // ⭐ NEW: Covering for system - add this line
+  coveringFor?: string  // ID of instructor being covered for
 }
+
+// Rest of your types remain unchanged
 
 // ==================== LOAD ====================
 
