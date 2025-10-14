@@ -145,7 +145,8 @@ export function QueuePanel({ queue, instructors, onAddStudent }: QueuePanelProps
                         {student.weight} lbs
                       </span>
                       
-                      {student.tandemWeightTax > 0 && (
+                      {/* Fix: Check if tandemWeightTax exists and is > 0 */}
+                      {student.jumpType === 'tandem' && student.tandemWeightTax && student.tandemWeightTax > 0 && (
                         <span className="text-xs px-2 py-0.5 bg-yellow-500/20 text-yellow-300 rounded">
                           {student.tandemWeightTax}x Tax
                         </span>

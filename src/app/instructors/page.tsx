@@ -55,8 +55,9 @@ export default function InstructorsPage() {
     setReleaseInstructor(null)
   }
   
+  // Fixed: Actually close the modal and clear state on success
   const handleReleaseSuccess = () => {
-    // Modal will close itself and data will update automatically via real-time subscription
+    setReleaseInstructor(null)
   }
   
   if (loading) {
@@ -229,7 +230,6 @@ export default function InstructorsPage() {
         <AddInstructorModal
           instructor={editingInstructor}
           onClose={handleCloseAddModal}
-          onSuccess={handleCloseAddModal}
         />
       )}
       
