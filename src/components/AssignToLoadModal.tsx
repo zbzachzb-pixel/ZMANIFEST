@@ -1,4 +1,4 @@
-// Save as: src/components/AssignToLoadModal.tsx
+// src/components/AssignToLoadModal.tsx
 'use client'
 
 import React, { useState, useMemo } from 'react'
@@ -73,10 +73,10 @@ export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
     
     return clockedInInstructors
       .filter(instructor => {
-        // Check department qualification
-        if (selectedStudent.jumpType === 'tandem' && !instructor.tandem) return false
-        if (selectedStudent.jumpType === 'aff' && !instructor.aff) return false
-        if (selectedStudent.jumpType === 'video' && !instructor.video) return false
+        // ✅ FIXED: Check department qualification using correct property names
+        if (selectedStudent.jumpType === 'tandem' && !instructor.canTandem) return false
+        if (selectedStudent.jumpType === 'aff' && !instructor.canAFF) return false
+        if (selectedStudent.jumpType === 'video' && !instructor.canVideo) return false
         
         // Check weight limits
         if (selectedStudent.jumpType === 'tandem' && instructor.tandemWeightLimit) {
@@ -107,8 +107,9 @@ export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
     if (!selectedStudent) return []
     
     return clockedInInstructors
+      // ✅ FIXED: Use correct property name
       .filter(i => 
-        i.video && 
+        i.canVideo && 
         i.id !== selectedInstructorId &&
         (!i.videoRestricted || 
           (selectedStudent.weight >= (i.videoMinWeight || 0) && 
@@ -205,22 +206,37 @@ export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
   }
   
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-700">
-        <div className="sticky top-0 bg-slate-800 border-b border-slate-700 p-6 z-10">
-          <h2 className="text-2xl font-bold text-white">
-            Assign Students to {load.name}
-          </h2>
-          <p className="text-slate-400 text-sm mt-1">
-            {availableSeats} seats available
+    <div 
+      className="fixed inset-0 bg-black/80 flex items-center justify-center p-4"
+      style={{ zIndex: 9999 }}
+      onClick={onClose}
+    >
+      <div 
+        className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-blue-500"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 border-b border-slate-700">
+          <div className="flex justify-between items-center">
+            <h2 className="text-2xl font-bold text-white">
+              ➕ Assign to {load.name}
+            </h2>
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-white text-xl"
+            >
+              ✕
+            </button>
+          </div>
+          <p className="text-slate-400 text-sm mt-2">
+            Available: {availableSeats} seats
           </p>
         </div>
         
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
           {/* Student Selection */}
           <div>
             <label className="block text-sm font-semibold text-slate-300 mb-2">
-              Select Student from Queue *
+              Select Student *
             </label>
             <select
               value={selectedStudentId}
@@ -232,12 +248,11 @@ export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
               }}
               className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
             >
-              <option value="">Choose a student...</option>
+              <option value="">Choose student...</option>
               {queue.map(student => (
                 <option key={student.id} value={student.id}>
-                  {student.name} - {student.weight}lbs - {student.jumpType.toUpperCase()}
-                  {student.isRequest && ' [REQUEST]'}
-                  {student.jumpType === 'aff' && ` (${student.affLevel})`}
+                  {student.name} - {student.jumpType.toUpperCase()} ({student.weight} lbs)
+                  {student.affLevel && ` - Level: ${student.affLevel}`}
                 </option>
               ))}
             </select>
@@ -277,19 +292,22 @@ export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
                 )}
               </div>
               
-              {/* Outside Video */}
+              {/* Outside Video Option */}
               {selectedStudent.jumpType === 'tandem' && (
                 <>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      id="outsideVideo"
+                      id="hasOutsideVideo"
                       checked={hasOutsideVideo}
-                      onChange={(e) => setHasOutsideVideo(e.target.checked)}
-                      className="w-5 h-5 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                      onChange={(e) => {
+                        setHasOutsideVideo(e.target.checked)
+                        if (!e.target.checked) setVideoInstructorId('')
+                      }}
+                      className="w-4 h-4 text-blue-500 bg-slate-700 border-slate-600 rounded focus:ring-blue-500"
                     />
-                    <label htmlFor="outsideVideo" className="text-sm font-semibold text-slate-300">
-                      Add Outside Video (+$45)
+                    <label htmlFor="hasOutsideVideo" className="text-sm text-slate-300">
+                      Has outside video
                     </label>
                   </div>
                   
@@ -304,8 +322,10 @@ export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
                         className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                       >
                         <option value="">Choose video instructor...</option>
-                        {videoInstructors.map(vi => (
-                          <option key={vi.id} value={vi.id}>{vi.name}</option>
+                        {videoInstructors.map(instructor => (
+                          <option key={instructor.id} value={instructor.id}>
+                            {instructor.name}
+                          </option>
                         ))}
                       </select>
                     </div>

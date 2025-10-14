@@ -1,4 +1,4 @@
-// Save as: src/components/OptimizeLoadModal.tsx
+// src/components/OptimizeLoadModal.tsx
 'use client'
 
 import React, { useState, useMemo } from 'react'
@@ -103,10 +103,10 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
           // Check if already used
           if (usedInstructors.has(instructor.id)) return false
           
-          // Check department
-          if (student.jumpType === 'tandem' && !instructor.tandem) return false
-          if (student.jumpType === 'aff' && !instructor.aff) return false
-          if (student.jumpType === 'video' && !instructor.video) return false
+          // ✅ FIXED: Check department using correct property names
+          if (student.jumpType === 'tandem' && !instructor.canTandem) return false
+          if (student.jumpType === 'aff' && !instructor.canAFF) return false
+          if (student.jumpType === 'video' && !instructor.canVideo) return false
           
           // Check weight limits
           if (student.jumpType === 'tandem' && instructor.tandemWeightLimit) {
@@ -135,8 +135,9 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
       // Find video instructor if needed
       let videoInstructor: Instructor | undefined
       if (student.outsideVideo && student.jumpType === 'tandem') {
+        // ✅ FIXED: Use correct property name
         const videoInstructors = clockedInInstructors.filter(i => 
-          i.video && 
+          i.canVideo && 
           i.id !== bestInstructor.id &&
           !usedInstructors.has(i.id) &&
           (!i.videoRestricted || 
@@ -169,6 +170,7 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
     try {
       const newAssignments = optimizationPlan.map((plan, index) => ({
         id: `${Date.now()}_${index}`,
+        studentId: plan.student.id,
         instructorId: plan.instructor.id,
         instructorName: plan.instructor.name,
         studentName: plan.student.name,
@@ -206,15 +208,31 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
   }
   
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-700">
+    <div 
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-700"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="sticky top-0 bg-slate-800 border-b border-slate-700 p-6 z-10">
-          <h2 className="text-2xl font-bold text-white">
-            🎯 Optimize {load.name}
-          </h2>
-          <p className="text-slate-400 text-sm mt-1">
-            Automatically assign students using best available instructors
-          </p>
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-bold text-white">
+                🎯 Optimize {load.name}
+              </h2>
+              <p className="text-slate-400 text-sm mt-1">
+                Automatically assign students using best available instructors
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-white text-xl"
+            >
+              ✕
+            </button>
+          </div>
         </div>
         
         <div className="p-6 space-y-4">

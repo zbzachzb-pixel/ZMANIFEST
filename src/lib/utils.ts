@@ -1,28 +1,150 @@
-import type { Assignment, Instructor, Period, Team } from '@/types'
+// src/lib/utils.ts
+// ✅ UPDATED: Tasks #3 & #4 - Fixed double multiplier bug and standardized pay rates
 
-// PAY CALCULATIONS
+import type { Assignment, Instructor, Period, Team } from '@/types'
+import { PAY_RATES } from './constants'
+
+// ==================== PAY CALCULATIONS ====================
+
+/**
+ * Calculate pay for a single assignment
+ * This is the BASE pay without any multipliers
+ */
 export function calculateAssignmentPay(assignment: Assignment): number {
   if (assignment.isMissedJump) return 0
   
   if (assignment.jumpType === 'tandem') {
-    let pay = 40
-    pay += (assignment.tandemWeightTax || 0) * 20
-    if (assignment.tandemHandcam) pay += 30
+    let pay = PAY_RATES.TANDEM_BASE
+    pay += (assignment.tandemWeightTax || 0) * PAY_RATES.TANDEM_WEIGHT_TAX
+    if (assignment.tandemHandcam) pay += PAY_RATES.TANDEM_HANDCAM
     return pay
   }
   
   if (assignment.jumpType === 'aff') {
-    return assignment.affLevel === 'lower' ? 55 : 45
+    return assignment.affLevel === 'lower' 
+      ? PAY_RATES.AFF_LOWER 
+      : PAY_RATES.AFF_UPPER
   }
   
   if (assignment.jumpType === 'video') {
-    return 45
+    return PAY_RATES.VIDEO_INSTRUCTOR
   }
   
   return 0
 }
 
-// TEAM SCHEDULE LOGIC
+/**
+ * Calculate instructor's BALANCE for rotation fairness
+ * - Excludes request jumps (they don't count toward rotation)
+ * - Excludes missed jumps (no pay but counts as assignment)
+ * - Applies off-day multiplier (1.2x) for balance fairness
+ * 
+ * This is the function that should be used for instructor rotation and balancing
+ */
+export function calculateInstructorBalance(
+  instructorId: string,
+  assignments: Assignment[],
+  instructors: Instructor[],
+  period: Period
+): number {
+  let total = 0
+  
+  const instructor = instructors.find(i => i.id === instructorId)
+  if (!instructor) return 0
+  
+  for (const assignment of assignments) {
+    const assignmentDate = new Date(assignment.timestamp)
+    
+    // Only count assignments in the current period
+    if (assignmentDate < period.start || assignmentDate > period.end) {
+      continue
+    }
+    
+    // Requests don't count toward balance (rotation fairness)
+    if (assignment.isRequest) continue
+    
+    // Main instructor assignment
+    if (assignment.instructorId === instructorId && !assignment.isMissedJump) {
+      let pay = calculateAssignmentPay(assignment)
+      
+      // Apply off-day multiplier for balance fairness
+      if (isWorkingOffDay(instructor, assignmentDate)) {
+        pay = Math.round(pay * PAY_RATES.OFF_DAY_MULTIPLIER)
+      }
+      
+      total += pay
+    }
+    
+    // Video instructor assignment (only if not outside video)
+    if (assignment.videoInstructorId === instructorId && 
+        !assignment.isMissedJump && 
+        !assignment.hasOutsideVideo) {
+      let videoPay = PAY_RATES.VIDEO_INSTRUCTOR
+      
+      // Apply off-day multiplier for balance fairness
+      if (isWorkingOffDay(instructor, assignmentDate)) {
+        videoPay = Math.round(videoPay * PAY_RATES.OFF_DAY_MULTIPLIER)
+      }
+      
+      total += videoPay
+    }
+  }
+  
+  return total
+}
+
+/**
+ * LEGACY FUNCTION NAME - Kept for backwards compatibility
+ * Use calculateInstructorBalance() instead for new code
+ */
+export function calculateInstructorEarnings(
+  instructorId: string,
+  assignments: Assignment[],
+  instructors: Instructor[],
+  period: Period
+): number {
+  return calculateInstructorBalance(instructorId, assignments, instructors, period)
+}
+
+/**
+ * Calculate instructor's TOTAL EARNINGS (actual paychecks)
+ * - Includes request jumps (they get paid for these)
+ * - Excludes missed jumps (no pay)
+ * - NO off-day multiplier (actual pay doesn't get bonus, only balance does)
+ */
+export function calculateInstructorTotalEarnings(
+  instructorId: string,
+  assignments: Assignment[],
+  period: Period
+): number {
+  let total = 0
+  
+  for (const assignment of assignments) {
+    const assignmentDate = new Date(assignment.timestamp)
+    
+    // Only count assignments in the current period
+    if (assignmentDate < period.start || assignmentDate > period.end) {
+      continue
+    }
+    
+    // Main instructor - includes requests, excludes missed
+    if (assignment.instructorId === instructorId && !assignment.isMissedJump) {
+      total += calculateAssignmentPay(assignment)
+    }
+    
+    // Video instructor - includes requests, excludes missed
+    if (assignment.videoInstructorId === instructorId && 
+        !assignment.isMissedJump && 
+        !assignment.hasOutsideVideo) {
+      total += PAY_RATES.VIDEO_INSTRUCTOR
+    }
+  }
+  
+  return total
+}
+
+// ==================== TEAM SCHEDULE LOGIC ====================
+
 export function getCurrentWeekRotation(): Team {
   const now = new Date()
   const start = new Date(now.getFullYear(), 0, 0)
@@ -62,78 +184,8 @@ export function isWorkingOffDay(instructor: Instructor, date: Date): boolean {
   return false
 }
 
-// EARNINGS CALCULATION
-// This calculates the "balance" used for rotation - NOT actual pay
-export function calculateInstructorEarnings(
-  instructorId: string,
-  assignments: Assignment[],
-  instructors: Instructor[],
-  period: Period
-): number {
-  let total = 0
-  
-  // Find the instructor
-  const instructor = instructors.find(i => i.id === instructorId)
-  if (!instructor) return 0
-  
-  for (const assignment of assignments) {
-    const assignmentDate = new Date(assignment.timestamp)
-    
-    if (assignmentDate < period.start || assignmentDate > period.end) {
-      continue
-    }
-    
-    if (assignment.isRequest) continue
-    
-    if (assignment.instructorId === instructorId) {
-      let pay = calculateAssignmentPay(assignment)
-      
-      // Apply 1.2x multiplier to BALANCE if working off day (for rotation purposes)
-      if (!assignment.isMissedJump && isWorkingOffDay(instructor, assignmentDate)) {
-        pay = Math.round(pay * 1.2)
-      }
-      
-      total += pay
-    }
-    
-    if (assignment.videoInstructorId === instructorId && !assignment.isMissedJump) {
-      let videoPay = 45
-      
-      // Apply 1.2x multiplier to BALANCE if working off day (for rotation purposes)
-      if (isWorkingOffDay(instructor, assignmentDate)) {
-        videoPay = Math.round(videoPay * 1.2)
-      }
-      
-      total += videoPay
-    }
-  }
-  
-  return total
-}
+// ==================== PERIOD CALCULATIONS ====================
 
-// TOTAL EARNINGS CALCULATION
-// This calculates ACTUAL pay (what shows on paychecks) - NO multiplier
-export function calculateInstructorTotalEarnings(
-  instructorId: string,
-  assignments: Assignment[]
-): number {
-  let total = 0
-  
-  for (const assignment of assignments) {
-    // For actual earnings, just use base pay - NO multiplier
-    if (assignment.instructorId === instructorId && !assignment.isMissedJump) {
-      total += calculateAssignmentPay(assignment)
-    }
-    
-    if (assignment.videoInstructorId === instructorId && !assignment.isMissedJump) {
-      total += 45
-    }
-  }
-  
-  return total
-}
-
-// PERIOD CALCULATIONS
 export function getCurrentPeriod(): Period {
   const today = new Date()
   const year = today.getFullYear()
@@ -190,7 +242,8 @@ export function getCurrentPeriod(): Period {
   }
 }
 
-// SCHEDULE DISPLAY
+// ==================== SCHEDULE DISPLAY ====================
+
 export function getScheduleDisplay(): { redTeam: string; blueTeam: string } {
   const teamWithMonTueOff = getCurrentWeekRotation()
   
@@ -207,7 +260,8 @@ export function getScheduleDisplay(): { redTeam: string; blueTeam: string } {
   }
 }
 
-// FORMATTING
+// ==================== FORMATTING ====================
+
 export function formatDate(date: Date): string {
   return date.toLocaleDateString('en-US', { 
     month: 'short', 

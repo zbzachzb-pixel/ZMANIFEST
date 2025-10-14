@@ -12,42 +12,7 @@ interface AssignStudentModalProps {
   onSuccess: () => void
 }
 
-const RATES = {
-  TANDEM_BASE: 50,
-  TANDEM_HANDCAM: 10,
-  TANDEM_VIDEO: 25,
-  AFF_LOWER: 45,
-  AFF_UPPER: 55
-}
-
-function calculateBalance(
-  instructor: Instructor,
-  assignments: Assignment[],
-  period: Period
-): number {
-  let total = 0
-
-  for (const assignment of assignments) {
-    const assignmentDate = new Date(assignment.timestamp)
-    if (assignmentDate < period.start || assignmentDate > period.end) continue
-    if (assignment.isMissedJump) continue
-
-    if (assignment.instructorId === instructor.id) {
-      if (assignment.jumpType === 'tandem') {
-        total += RATES.TANDEM_BASE
-        if (assignment.tandemHandcam) total += RATES.TANDEM_HANDCAM
-      } else if (assignment.jumpType === 'aff') {
-        total += assignment.affLevel === 'upper' ? RATES.AFF_UPPER : RATES.AFF_LOWER
-      }
-    }
-
-    if (assignment.videoInstructorId === instructor.id && !assignment.hasOutsideVideo) {
-      total += RATES.TANDEM_VIDEO
-    }
-  }
-
-  return total
-}
+import { calculateInstructorBalance } from '@/lib/utils'
 
 export function AssignStudentModal({ students, onClose, onSuccess }: AssignStudentModalProps) {
   const { data: allInstructors } = useInstructors()
@@ -60,6 +25,7 @@ export function AssignStudentModal({ students, onClose, onSuccess }: AssignStude
   const period = getCurrentPeriod()
   const clockedInInstructors = allInstructors.filter(i => !i.archived && i.clockedIn)
   
+  const { data: instructors } = useInstructors()
   const student = students[0]
   const needsTandem = student.jumpType === 'tandem'
   const needsAFF = student.jumpType === 'aff'
@@ -67,63 +33,66 @@ export function AssignStudentModal({ students, onClose, onSuccess }: AssignStude
   const maxWeight = student.weight + (student.tandemWeightTax || 0)
   
   const suggestedMain = useMemo(() => {
-    const qualified = clockedInInstructors.filter(instructor => {
-      if (needsTandem && !instructor.tandem) return false
-      if (needsAFF && !instructor.aff) return false
-      
-      if (needsTandem && instructor.tandemWeightLimit && maxWeight > instructor.tandemWeightLimit) {
-        return false
-      }
-      
-      if (needsAFF && instructor.affWeightLimit && student.weight > instructor.affWeightLimit) {
-        return false
-      }
-      
-      if (needsAFF && instructor.affLocked) {
-        const hasThisStudent = instructor.affStudents?.some(s => s.studentId === student.id)
-        if (!hasThisStudent) return false
-      }
-      
-      return true
-    })
+  const qualified = clockedInInstructors.filter(instructor => {
+    // ✅ FIXED: Use correct property names
+    if (needsTandem && !instructor.canTandem) return false
+    if (needsAFF && !instructor.canAFF) return false
     
-    qualified.sort((a, b) => {
-      const balanceA = calculateBalance(a, assignments, period)
-      const balanceB = calculateBalance(b, assignments, period)
-      return balanceA - balanceB
-    })
+    if (needsTandem && instructor.tandemWeightLimit && maxWeight > instructor.tandemWeightLimit) {
+      return false
+    }
     
-    return qualified[0] || null
-  }, [clockedInInstructors, assignments, needsTandem, needsAFF, maxWeight, period, student])
+    if (needsAFF && instructor.affWeightLimit && student.weight > instructor.affWeightLimit) {
+      return false
+    }
+    
+    if (needsAFF && instructor.affLocked) {
+      const hasThisStudent = instructor.affStudents?.some(s => s.studentId === student.id)
+      if (!hasThisStudent) return false
+    }
+    
+    return true
+  })
   
-  const suggestedVideo = useMemo(() => {
-    if (!needsVideo) return null
+  qualified.sort((a, b) => {
+    const balanceA = calculateBalance(a, assignments, period)
+    const balanceB = calculateBalance(b, assignments, period)
+    return balanceA - balanceB
+  })
+  
+  return qualified[0] || null
+}, [clockedInInstructors, assignments, needsTandem, needsAFF, maxWeight, period, student])
+
+// Also find the video instructor section around line 60:
+const suggestedVideo = useMemo(() => {
+  if (!needsVideo) return null
+  
+  const qualified = clockedInInstructors.filter(instructor => {
+    // ✅ FIXED: Use correct property name
+    if (!instructor.canVideo) return false
+    if (selectedMainId && instructor.id === selectedMainId) return false
     
-    const qualified = clockedInInstructors.filter(instructor => {
-      if (!instructor.video) return false
-      if (selectedMainId && instructor.id === selectedMainId) return false
-      
-      if (instructor.videoRestricted && selectedMainId) {
-        const mainInstructor = allInstructors.find(i => i.id === selectedMainId)
-        if (mainInstructor) {
-          const combinedWeight = mainInstructor.bodyWeight + student.weight
-          
-          if (instructor.videoMinWeight && combinedWeight < instructor.videoMinWeight) return false
-          if (instructor.videoMaxWeight && combinedWeight > instructor.videoMaxWeight) return false
-        }
+    if (instructor.videoRestricted && selectedMainId) {
+      const mainInstructor = allInstructors.find(i => i.id === selectedMainId)
+      if (mainInstructor) {
+        const combinedWeight = mainInstructor.bodyWeight + student.weight
+        
+        if (instructor.videoMinWeight && combinedWeight < instructor.videoMinWeight) return false
+        if (instructor.videoMaxWeight && combinedWeight > instructor.videoMaxWeight) return false
       }
-      
-      return true
-    })
+    }
     
-    qualified.sort((a, b) => {
-      const balanceA = calculateBalance(a, assignments, period)
-      const balanceB = calculateBalance(b, assignments, period)
-      return balanceA - balanceB
-    })
-    
-    return qualified[0] || null
-  }, [needsVideo, clockedInInstructors, selectedMainId, allInstructors, student, assignments, period])
+    return true
+  })
+  
+  qualified.sort((a, b) => {
+    const balanceA = calculateBalance(a, assignments, period)
+    const balanceB = calculateBalance(b, assignments, period)
+    return balanceA - balanceB
+  })
+  
+  return qualified[0] || null
+}, [needsVideo, clockedInInstructors, selectedMainId, allInstructors, student, assignments, period])
   
   React.useEffect(() => {
     if (suggestedMain && !selectedMainId) {
@@ -253,7 +222,7 @@ export function AssignStudentModal({ students, onClose, onSuccess }: AssignStude
             >
               <option key="placeholder-main" value="">Select instructor...</option>
               {clockedInInstructors.map((instructor, index) => {
-                const balance = calculateBalance(instructor, assignments, period)
+                const balance = calculateInstructorBalance(instructor.id, assignments, instructors, period)
                 const isSuggested = suggestedMain?.id === instructor.id
                 return (
                   <option key={`main-${instructor.id || index}`} value={instructor.id}>
@@ -290,7 +259,7 @@ export function AssignStudentModal({ students, onClose, onSuccess }: AssignStude
                 {clockedInInstructors
                   .filter(i => i.video && i.id !== selectedMainId)
                   .map((instructor, index) => {
-                    const balance = calculateBalance(instructor, assignments, period)
+                    const balance = calculateInstructorBalance(instructor.id, assignments, instructors, period)
                     const isSuggested = suggestedVideo?.id === instructor.id
                     return (
                       <option key={`video-${instructor.id || index}`} value={instructor.id}>
