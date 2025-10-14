@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useMemo, useEffect } from 'react'
-import { useAssignments, useActiveInstructors } from '@/hooks/useDatabase'
+import { useAssignments, useActiveInstructors, useDeleteClockEvent } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { getCurrentPeriod } from '@/lib/utils'
 import type { Assignment, ClockEvent } from '@/types'
@@ -9,12 +9,45 @@ import type { Assignment, ClockEvent } from '@/types'
 export default function AssignmentsPage() {
   const { data: assignments, loading } = useAssignments()
   const { data: instructors } = useActiveInstructors()
+  const { deleteEvent, loading: deleteClockLoading } = useDeleteClockEvent()
   const [searchTerm, setSearchTerm] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [deleteShiftConfirm, setDeleteShiftConfirm] = useState<{ inId: string, outId: string | null } | null>(null)
   const [clockEvents, setClockEvents] = useState<ClockEvent[]>([])
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   
   const period = getCurrentPeriod()
+  
+  // Check if selected date is today
+  const isToday = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const selected = new Date(selectedDate)
+    selected.setHours(0, 0, 0, 0)
+    return today.getTime() === selected.getTime()
+  }, [selectedDate])
+  
+  // Calculate total shifts from clock events
+  const totalShifts = useMemo(() => {
+    const byInstructor = new Map<string, ClockEvent[]>()
+    clockEvents.forEach(event => {
+      if (!byInstructor.has(event.instructorId)) {
+        byInstructor.set(event.instructorId, [])
+      }
+      byInstructor.get(event.instructorId)!.push(event)
+    })
+    
+    let count = 0
+    byInstructor.forEach(events => {
+      for (let i = 0; i < events.length; i++) {
+        if (events[i].type === 'in') {
+          count++
+        }
+      }
+    })
+    
+    return count
+  }, [clockEvents])
   
   // Subscribe to clock events
   useEffect(() => {
@@ -94,6 +127,33 @@ export default function AssignmentsPage() {
     }
   }
   
+  const handleDeleteShift = async () => {
+    if (!deleteShiftConfirm) return
+    
+    try {
+      // Delete clock-in event
+      await deleteEvent(deleteShiftConfirm.inId)
+      
+      // Delete clock-out event if it exists
+      if (deleteShiftConfirm.outId) {
+        await deleteEvent(deleteShiftConfirm.outId)
+      } else {
+        // If there's no clock-out (active shift), clock out the instructor
+        const clockInEvent = clockEvents.find(e => e.id === deleteShiftConfirm.inId)
+        if (clockInEvent) {
+          await db.updateInstructor(clockInEvent.instructorId, {
+            clockedIn: false
+          })
+        }
+      }
+      
+      setDeleteShiftConfirm(null)
+    } catch (error) {
+      console.error('Failed to delete shift:', error)
+      alert('Failed to delete shift. Please try again.')
+    }
+  }
+  
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
@@ -113,7 +173,7 @@ export default function AssignmentsPage() {
           <p className="text-slate-300">View and manage all assignments for {period.name}</p>
         </div>
         
-        {/* Clock Tracking Section - REDESIGNED */}
+        {/* Clock Tracking Section */}
         <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20 mb-6">
           <div className="flex justify-between items-center mb-6">
             <div>
@@ -121,7 +181,8 @@ export default function AssignmentsPage() {
                 🕐 Clock Activity
               </h2>
               <p className="text-sm text-slate-400 mt-1">
-                {clockEvents.length} events • {new Set(clockEvents.map(e => e.instructorId)).size} instructors
+                {totalShifts} {totalShifts === 1 ? 'shift' : 'shifts'} • {new Set(clockEvents.map(e => e.instructorId)).size} instructors
+                {!isToday && <span className="text-yellow-400 ml-2">• Historical (read-only)</span>}
               </p>
             </div>
             <input
@@ -150,104 +211,147 @@ export default function AssignmentsPage() {
                   byInstructor.get(event.instructorId)!.push(event)
                 })
 
-                return (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {Array.from(byInstructor.entries()).map(([instructorId, events]) => {
-                      const instructorName = events[0].instructorName
-                      
-                      // Calculate shifts (pair clock-ins with clock-outs)
-                      const shifts: Array<{ in: Date, out: Date | null, duration: string | null }> = []
-                      for (let i = 0; i < events.length; i++) {
-                        if (events[i].type === 'in') {
-                          const clockInTime = new Date(events[i].timestamp)
-                          let clockOutTime: Date | null = null
-                          let duration: string | null = null
-                          
-                          // Find matching clock out
-                          if (i + 1 < events.length && events[i + 1].type === 'out') {
-                            clockOutTime = new Date(events[i + 1].timestamp)
-                            const durationMs = clockOutTime.getTime() - clockInTime.getTime()
-                            const hours = Math.floor(durationMs / (1000 * 60 * 60))
-                            const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60))
-                            duration = `${hours}h ${minutes}m`
-                          }
-                          
-                          shifts.push({ in: clockInTime, out: clockOutTime, duration })
+                // Calculate shifts for each instructor and filter out those with no shifts
+                const instructorsWithShifts = Array.from(byInstructor.entries())
+                  .map(([instructorId, events]) => {
+                    const instructorName = events[0].instructorName
+                    
+                    // Calculate shifts (pair clock-ins with clock-outs)
+                    const shifts: Array<{ 
+                      in: Date, 
+                      inId: string,
+                      out: Date | null, 
+                      outId: string | null,
+                      duration: string | null 
+                    }> = []
+                    
+                    for (let i = 0; i < events.length; i++) {
+                      if (events[i].type === 'in') {
+                        const clockInTime = new Date(events[i].timestamp)
+                        const clockInId = events[i].id
+                        let clockOutTime: Date | null = null
+                        let clockOutId: string | null = null
+                        let duration: string | null = null
+                        
+                        // Find matching clock out
+                        if (i + 1 < events.length && events[i + 1].type === 'out') {
+                          clockOutTime = new Date(events[i + 1].timestamp)
+                          clockOutId = events[i + 1].id
+                          const durationMs = clockOutTime.getTime() - clockInTime.getTime()
+                          const hours = Math.floor(durationMs / (1000 * 60 * 60))
+                          const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60))
+                          duration = `${hours}h ${minutes}m`
                         }
+                        
+                        shifts.push({ 
+                          in: clockInTime, 
+                          inId: clockInId,
+                          out: clockOutTime, 
+                          outId: clockOutId,
+                          duration 
+                        })
                       }
-                      
-                      // Calculate total hours for the day
-                      const totalMs = shifts.reduce((sum, shift) => {
-                        if (shift.out) {
-                          return sum + (shift.out.getTime() - shift.in.getTime())
-                        }
-                        return sum
-                      }, 0)
-                      const totalHours = Math.floor(totalMs / (1000 * 60 * 60))
-                      const totalMinutes = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60))
-                      const totalTime = totalMs > 0 ? `${totalHours}h ${totalMinutes}m` : null
-                      
-                      const isCurrentlyIn = shifts.length > 0 && shifts[shifts.length - 1].out === null
-                      
-                      return (
-                        <div
-                          key={instructorId}
-                          className={`p-4 rounded-lg border-2 transition-all ${
-                            isCurrentlyIn
-                              ? 'bg-green-500/10 border-green-500/30'
-                              : 'bg-white/5 border-white/20'
-                          }`}
-                        >
-                          {/* Instructor Header */}
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <div className={`w-3 h-3 rounded-full ${
-                                isCurrentlyIn ? 'bg-green-400' : 'bg-gray-400'
-                              }`} />
-                              <span className="font-bold text-white">{instructorName}</span>
-                            </div>
-                            {totalTime && (
-                              <span className="text-sm font-semibold text-blue-400">
-                                {totalTime}
-                              </span>
-                            )}
+                    }
+                    
+                    // Calculate total hours for the day
+                    const totalMs = shifts.reduce((sum, shift) => {
+                      if (shift.out) {
+                        return sum + (shift.out.getTime() - shift.in.getTime())
+                      }
+                      return sum
+                    }, 0)
+                    const totalHours = Math.floor(totalMs / (1000 * 60 * 60))
+                    const totalMinutes = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60))
+                    const totalTime = totalMs > 0 ? `${totalHours}h ${totalMinutes}m` : null
+                    
+                    const isCurrentlyIn = shifts.length > 0 && shifts[shifts.length - 1].out === null
+                    
+                    return {
+                      instructorId,
+                      instructorName,
+                      shifts,
+                      totalTime,
+                      isCurrentlyIn
+                    }
+                  })
+                  .filter(instructor => instructor.shifts.length > 0) // Only show instructors with shifts
+
+                return instructorsWithShifts.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400">
+                    <div className="text-4xl mb-2">⏰</div>
+                    <p className="text-sm">No clock activity for this date</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {instructorsWithShifts.map(({ instructorId, instructorName, shifts, totalTime, isCurrentlyIn }) => (
+                      <div
+                        key={instructorId}
+                        className={`p-4 rounded-lg border-2 transition-all ${
+                          isCurrentlyIn
+                            ? 'bg-green-500/10 border-green-500/30'
+                            : 'bg-white/5 border-white/20'
+                        }`}
+                      >
+                        {/* Instructor Header */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-3 h-3 rounded-full ${
+                              isCurrentlyIn ? 'bg-green-400' : 'bg-gray-400'
+                            }`} />
+                            <span className="font-bold text-white">{instructorName}</span>
                           </div>
-                          
-                          {/* Shifts */}
-                          <div className="space-y-2">
-                            {shifts.map((shift, idx) => (
-                              <div key={idx} className="text-sm bg-black/20 rounded p-2">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-green-400">▶</span>
-                                    <span className="text-slate-300">
-                                      {shift.in.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    {shift.out ? (
-                                      <>
-                                        <span className="text-slate-300">
-                                          {shift.out.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        </span>
-                                        <span className="text-red-400">■</span>
-                                      </>
-                                    ) : (
-                                      <span className="text-green-400 font-semibold">Active</span>
-                                    )}
-                                  </div>
-                                </div>
-                                {shift.duration && (
-                                  <div className="text-xs text-slate-400 text-center mt-1">
-                                    {shift.duration}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
+                          {totalTime && (
+                            <span className="text-sm font-semibold text-blue-400">
+                              {totalTime}
+                            </span>
+                          )}
                         </div>
-                      )
-                    })}
+                        
+                        {/* Shifts */}
+                        <div className="space-y-2">
+                          {shifts.map((shift, idx) => (
+                            <div key={idx} className="text-sm bg-black/20 rounded p-2 relative group">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-green-400">▶</span>
+                                  <span className="text-slate-300">
+                                    {shift.in.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {shift.out ? (
+                                    <>
+                                      <span className="text-slate-300">
+                                        {shift.out.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                      <span className="text-red-400">■</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-green-400 font-semibold">Active</span>
+                                  )}
+                                </div>
+                              </div>
+                              {shift.duration && (
+                                <div className="text-xs text-slate-400 text-center mt-1">
+                                  {shift.duration}
+                                </div>
+                              )}
+                              
+                              {/* Delete button - only show for today's shifts */}
+                              {isToday && (
+                                <button
+                                  onClick={() => setDeleteShiftConfirm({ inId: shift.inId, outId: shift.outId })}
+                                  disabled={deleteClockLoading}
+                                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 hover:bg-red-600 text-white text-xs font-bold px-2 py-1 rounded disabled:opacity-50"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )
               })()}
@@ -255,9 +359,9 @@ export default function AssignmentsPage() {
               {/* Daily Summary */}
               <div className="mt-6 pt-6 border-t border-white/20 grid grid-cols-3 gap-4">
                 <div className="text-center">
-                  <div className="text-sm text-slate-400 mb-1">Total Events</div>
+                  <div className="text-sm text-slate-400 mb-1">Total Shifts</div>
                   <div className="text-2xl font-bold text-white">
-                    {clockEvents.length}
+                    {totalShifts}
                   </div>
                 </div>
                 <div className="text-center">
@@ -437,7 +541,7 @@ export default function AssignmentsPage() {
         </div>
       </div>
       
-      {/* Delete Confirmation Modal */}
+      {/* Delete Assignment Confirmation Modal */}
       {deleteConfirm && (
         <div 
           className="fixed inset-0 bg-black/80 flex items-center justify-center p-4"
@@ -465,6 +569,47 @@ export default function AssignmentsPage() {
                   className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
                 >
                   ✓ Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Delete Shift Confirmation Modal */}
+      {deleteShiftConfirm && (
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center p-4"
+          style={{ zIndex: 9999 }}
+        >
+          <div 
+            className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-red-500"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-white mb-4">🗑️ Delete Clock Shift?</h2>
+              <p className="text-slate-300 mb-6">
+                This will permanently delete this clock-in/out shift.
+                {deleteShiftConfirm.outId ? (
+                  <strong className="text-white block mt-2">Both clock-in and clock-out events will be removed.</strong>
+                ) : (
+                  <strong className="text-yellow-300 block mt-2">⚠️ This is an active shift. The instructor will be automatically clocked out.</strong>
+                )}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeleteShiftConfirm(null)}
+                  disabled={deleteClockLoading}
+                  className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteShift}
+                  disabled={deleteClockLoading}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {deleteClockLoading ? '⏳ Deleting...' : '✓ Delete Shift'}
                 </button>
               </div>
             </div>

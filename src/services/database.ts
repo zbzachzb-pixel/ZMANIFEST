@@ -28,6 +28,7 @@ export interface DatabaseService {
   getClockEvents(): Promise<ClockEvent[]>
   getClockEventsByDate(date: Date): Promise<ClockEvent[]>
   subscribeToClockEvents(callback: (events: ClockEvent[]) => void): () => void
+  deleteClockEvent(id: string): Promise<void>
   
   // LOADS
   createLoad(load: CreateLoad): Promise<Load>

@@ -136,6 +136,10 @@ export class FirebaseService implements DatabaseService {
     })
     return unsubscribe
   }
+  async deleteClockEvent(id: string): Promise<void> {
+  const eventRef = ref(this.db, `clockEvents/${id}`)
+  await remove(eventRef)
+}
 
   async createLoad(load: CreateLoad): Promise<Load> {
     const newLoad: Load = {
