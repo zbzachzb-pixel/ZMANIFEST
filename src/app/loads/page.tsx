@@ -5,7 +5,7 @@ import { useLoads, useQueue, useActiveInstructors, useAssignments, useCreateLoad
 import { getLoadCountdown } from '@/hooks/useLoadCountdown'
 import { db } from '@/services'
 import { getCurrentPeriod } from '@/lib/utils'
-import type { QueueStudent, Instructor, Load, LoadAssignment, Assignment, LoadSchedulingSettings } from '@/types'
+import type { QueueStudent, Instructor, Load, LoadAssignment, Assignment, LoadSchedulingSettings, CreateQueueStudent } from '@/types'
 
 export default function LoadBuilderPage() {
   // ============================================
@@ -244,6 +244,7 @@ export default function LoadBuilderPage() {
     setIsDragging(false)
     setDropTarget(null)
     setDragOverIndex(null)
+    setDraggedItem(null)
   }
   
   const handleDragOver = (e: React.DragEvent, targetId: string) => {
@@ -314,12 +315,18 @@ export default function LoadBuilderPage() {
       if (targetType === 'queue' && draggedItem.type === 'student' && typeof targetIndex === 'number') {
         await handleQueueReorder(draggedItem.id, targetIndex)
       } else if (targetType === 'load' && targetLoadId) {
+        const targetLoad = loads.find(l => l.id === targetLoadId)
+        if (!targetLoad) return
+        
+        // ✅ CHECK: Prevent modifications to completed loads
+        if (targetLoad.status === 'completed') {
+          alert('❌ Cannot modify completed loads')
+          return
+        }
+        
         if (draggedItem.type === 'student') {
           const student = queue.find(s => s.id === draggedItem.id)
           if (!student) return
-          
-          const targetLoad = loads.find(l => l.id === targetLoadId)
-          if (!targetLoad) return
           
           const newAssignment: LoadAssignment = {
             id: `${Date.now()}-${Math.random()}`,
@@ -344,7 +351,13 @@ export default function LoadBuilderPage() {
           await db.removeFromQueue(draggedItem.id)
         } else if (draggedItem.type === 'assignment' && draggedItem.sourceLoadId) {
           const sourceLoad = loads.find(l => l.id === draggedItem.sourceLoadId)
-          const targetLoad = loads.find(l => l.id === targetLoadId)
+          
+          // ✅ CHECK: Prevent moving from completed loads
+          if (sourceLoad?.status === 'completed') {
+            alert('❌ Cannot move assignments from completed loads')
+            return
+          }
+          
           if (!sourceLoad || !targetLoad || draggedItem.sourceLoadId === targetLoadId) return
           
           const assignment = (sourceLoad.assignments || []).find(a => a.id === draggedItem.id)
@@ -361,9 +374,44 @@ export default function LoadBuilderPage() {
       }
     } catch (error) {
       console.error('Drop failed:', error)
+      alert('Failed to complete operation')
+    } finally {
+      setDraggedItem(null)
     }
-    
-    setDraggedItem(null)
+  }
+
+  // ✅ NEW: Remove assignment and return student to queue
+  const handleRemoveAssignment = async (loadId: string, assignmentId: string) => {
+    try {
+      const load = loads.find(l => l.id === loadId)
+      if (!load) return
+      
+      const assignment = load.assignments?.find(a => a.id === assignmentId)
+      if (!assignment) return
+      
+      // Create student back in queue
+      const queueStudent: CreateQueueStudent = {
+        name: assignment.studentName,
+        weight: assignment.studentWeight,
+        jumpType: assignment.jumpType,
+        isRequest: false,
+        tandemWeightTax: assignment.tandemWeightTax,
+        tandemHandcam: assignment.tandemHandcam,
+        outsideVideo: assignment.hasOutsideVideo,
+        affLevel: assignment.affLevel
+      }
+      
+      // Add back to queue first
+      await db.addToQueue(queueStudent)
+      
+      // Then remove from load
+      await updateLoad(loadId, {
+        assignments: (load.assignments || []).filter(a => a.id !== assignmentId)
+      })
+    } catch (error) {
+      console.error('Failed to remove assignment:', error)
+      alert('Failed to remove assignment')
+    }
   }
   
   const executeOptimization = async () => {
@@ -436,8 +484,11 @@ export default function LoadBuilderPage() {
   
   if (loadsLoading || queueLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-white text-xl">Loading...</div>
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-white text-lg font-semibold">Loading...</p>
+        </div>
       </div>
     )
   }
@@ -667,6 +718,7 @@ export default function LoadBuilderPage() {
                     const isOverCapacity = totalPeople > load.capacity
                     const unassignedCount = assignments.filter(a => !a.instructorId).length
                     const isDropTarget = dropTarget === `load-${load.id}`
+                    const isCompleted = load.status === 'completed' // ✅ NEW
                     
                     const statusConfig = {
                       building: { icon: '🔨', label: 'Building', color: 'bg-slate-500' },
@@ -681,44 +733,31 @@ export default function LoadBuilderPage() {
                       <div
                         key={load.id}
                         className={`bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border-2 transition-all ${
-                          isDropTarget ? 'border-green-500 bg-green-500/10 scale-105' : 'border-white/20'
+                          isCompleted 
+                            ? 'opacity-75 border-purple-500/50' // ✅ Dimmed for completed
+                            : isDropTarget
+                              ? 'bg-green-500/20 border-2 border-green-500 scale-105'
+                              : 'border-white/20'
                         }`}
+                        onDragOver={(e) => !isCompleted && handleDragOver(e, `load-${load.id}`)} // ✅ Disabled for completed
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, 'load', load.id)}
                       >
+                        {/* Load Header */}
                         <div className="flex justify-between items-start mb-4">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                               <h3 className="text-xl font-bold text-white">{load.name}</h3>
-                              <span className={`px-3 py-1 rounded-full text-sm font-bold ${config.color} text-white`}>
+                              <span className={`${config.color} text-white px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1`}>
                                 {config.icon} {config.label}
                               </span>
+                              {isCompleted && ( // ✅ NEW: Locked badge
+                                <span className="px-2 py-1 bg-red-500/20 text-red-400 text-xs rounded font-bold">
+                                  🔒 LOCKED
+                                </span>
+                              )}
                             </div>
-                            
-                            {/* COUNTDOWN DISPLAY */}
-                            {countdown.status === 'countdown' && (
-                              <div className="flex items-center gap-2 bg-orange-500/20 px-3 py-1 rounded-full border border-orange-500/50 mb-2 inline-flex">
-                                <span className="text-orange-300 font-mono font-bold">
-                                  {countdown.displayText}
-                                </span>
-                              </div>
-                            )}
-                            
-                            {countdown.status === 'ready' && countdown.timeRemaining === 0 && (
-                              <div className="flex items-center gap-2 bg-green-500/20 px-3 py-1 rounded-full border border-green-500/50 animate-pulse mb-2 inline-flex">
-                                <span className="text-green-300 font-bold">
-                                  ✅ Clear to Depart
-                                </span>
-                              </div>
-                            )}
-                            
-                            {countdown.status === 'waiting' && load.status === 'ready' && countdown.displayText.includes('Waiting') && (
-                              <div className="flex items-center gap-2 bg-yellow-500/20 px-3 py-1 rounded-full border border-yellow-500/50 mb-2 inline-flex">
-                                <span className="text-yellow-300 text-sm">
-                                  {countdown.displayText}
-                                </span>
-                              </div>
-                            )}
-                            
-                            <div className={`text-sm font-medium mb-2 ${isOverCapacity ? 'text-red-400' : 'text-slate-400'}`}>
+                            <div className={`text-sm font-semibold ${isOverCapacity ? 'text-red-400' : 'text-slate-400'}`}>
                               {totalPeople}/{load.capacity} people ({percentFull}%)
                             </div>
                             <div className="w-full bg-white/10 rounded-full h-2">
@@ -732,7 +771,12 @@ export default function LoadBuilderPage() {
                           </div>
                           <button
                             onClick={() => handleDeleteLoad(load.id)}
-                            className="bg-red-500 hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg transition-colors text-sm ml-4"
+                            disabled={isCompleted} // ✅ Disabled for completed
+                            className={`ml-4 px-4 py-2 rounded-lg transition-colors text-sm font-bold ${
+                              isCompleted
+                                ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed'
+                                : 'bg-red-500 hover:bg-red-600 text-white'
+                            }`}
                           >
                             🗑️
                           </button>
@@ -747,33 +791,43 @@ export default function LoadBuilderPage() {
                         )}
 
                         <div
-                          onDragOver={(e) => handleDragOver(e, `load-${load.id}`)}
-                          onDragLeave={handleDragLeave}
-                          onDrop={(e) => handleDrop(e, 'load', load.id)}
                           className={`space-y-2 min-h-[200px] rounded-lg p-3 transition-colors ${
-                            isDropTarget ? 'bg-green-500/20 border-2 border-green-500' : 'bg-black/20'
+                            isDropTarget && !isCompleted ? 'bg-green-500/20 border-2 border-green-500' : 'bg-black/20'
                           }`}
                         >
                           {assignments.length === 0 ? (
                             <div className="text-center text-slate-400 py-8">
-                              <p className="text-sm">Drop students here</p>
+                              <p className="text-sm">{isCompleted ? 'No assignments' : 'Drop students here'}</p>
                             </div>
                           ) : (
                             assignments.map((assignment) => (
                               <div
                                 key={assignment.id}
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, 'assignment', assignment.id, load.id)}
+                                draggable={!isCompleted && load.status === 'building'} // ✅ Disabled for completed
+                                onDragStart={(e) => !isCompleted && handleDragStart(e, 'assignment', assignment.id, load.id)}
                                 onDragEnd={handleDragEnd}
-                                className="bg-slate-700/50 p-3 rounded-lg border border-white/10 cursor-move hover:border-white/30 transition-all"
+                                className={`bg-slate-700/50 p-3 rounded-lg border border-white/10 transition-all ${
+                                  !isCompleted && load.status === 'building' ? 'cursor-move hover:border-white/30' : 'cursor-default'
+                                }`}
                               >
                                 <div className="flex justify-between items-start mb-2">
-                                  <div className="text-white font-semibold text-sm">{assignment.studentName}</div>
-                                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                                    assignment.jumpType === 'tandem' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'
-                                  }`}>
-                                    {assignment.jumpType.toUpperCase()}
-                                  </span>
+                                  <div className="flex-1">
+                                    <div className="text-white font-semibold text-sm mb-1">{assignment.studentName}</div>
+                                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                                      assignment.jumpType === 'tandem' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'
+                                    }`}>
+                                      {assignment.jumpType.toUpperCase()}
+                                    </span>
+                                  </div>
+                                  {!isCompleted && load.status === 'building' && ( // ✅ NEW: Remove button with return to queue
+                                    <button
+                                      onClick={() => handleRemoveAssignment(load.id, assignment.id)}
+                                      className="ml-2 p-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition-colors text-xs"
+                                      title="Remove & Return to Queue"
+                                    >
+                                      ↩️
+                                    </button>
+                                  )}
                                 </div>
                                 <div className="text-xs text-slate-400 space-y-0.5">
                                   <div>👤 TI: {assignment.instructorName || '⚠️ Not assigned'}</div>
@@ -788,32 +842,34 @@ export default function LoadBuilderPage() {
                         </div>
 
                         {/* Status Transition Buttons */}
-                        <div className="mt-4 space-y-2">
-                          {load.status === 'building' && (
-                            <button
-                              onClick={() => handleStatusChange(load.id, 'ready')}
-                              className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                            >
-                              ✓ Mark Ready
-                            </button>
-                          )}
-                          {load.status === 'ready' && (
-                            <button
-                              onClick={() => handleStatusChange(load.id, 'departed')}
-                              className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                            >
-                              🛫 Mark Departed
-                            </button>
-                          )}
-                          {load.status === 'departed' && (
-                            <button
-                              onClick={() => handleStatusChange(load.id, 'completed')}
-                              className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                            >
-                              ✔️ Mark Completed
-                            </button>
-                          )}
-                        </div>
+                        {!isCompleted && ( // ✅ Hidden for completed loads
+                          <div className="mt-4 space-y-2">
+                            {load.status === 'building' && (
+                              <button
+                                onClick={() => handleStatusChange(load.id, 'ready')}
+                                className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                              >
+                                ✓ Mark Ready
+                              </button>
+                            )}
+                            {load.status === 'ready' && (
+                              <button
+                                onClick={() => handleStatusChange(load.id, 'departed')}
+                                className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                              >
+                                🛫 Mark Departed
+                              </button>
+                            )}
+                            {load.status === 'departed' && (
+                              <button
+                                onClick={() => handleStatusChange(load.id, 'completed')}
+                                className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                              >
+                                ✔️ Mark Completed
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )
                   })
@@ -839,10 +895,11 @@ export default function LoadBuilderPage() {
                 This will automatically assign <strong className="text-white">{queue.length} student(s)</strong> across{' '}
                 <strong className="text-white">{buildingLoads.length} load(s)</strong>.
               </p>
+              
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowOptimizeConfirm(false)}
-                  className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
@@ -850,7 +907,7 @@ export default function LoadBuilderPage() {
                   onClick={executeOptimization}
                   className="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
                 >
-                  ✓ Optimize
+                  Optimize
                 </button>
               </div>
             </div>

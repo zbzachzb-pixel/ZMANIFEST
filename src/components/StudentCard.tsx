@@ -7,9 +7,15 @@ interface StudentCardProps {
   student: QueueStudent
   selected: boolean
   onToggle: () => void
+  onEdit: () => void
 }
 
-export function StudentCard({ student, selected, onToggle }: StudentCardProps) {
+export function StudentCard({ student, selected, onToggle, onEdit }: StudentCardProps) {
+  const handleEditClick = (e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent selection toggle
+    onEdit()
+  }
+
   return (
     <div
       onClick={onToggle}
@@ -20,7 +26,7 @@ export function StudentCard({ student, selected, onToggle }: StudentCardProps) {
       }`}
     >
       <div className="flex justify-between items-start mb-2">
-        <div>
+        <div className="flex-1">
           <h3 className="text-lg font-bold text-white">{student.name}</h3>
           <p className="text-sm text-slate-300">
             {student.weight} lbs • {student.jumpType.toUpperCase()}
@@ -28,14 +34,24 @@ export function StudentCard({ student, selected, onToggle }: StudentCardProps) {
           </p>
         </div>
         
-        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-          selected ? 'bg-blue-500 border-blue-500' : 'border-white/40'
-        }`}>
-          {selected && (
-            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-            </svg>
-          )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleEditClick}
+            className="p-1.5 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 rounded transition-colors"
+            title="Edit Student"
+          >
+            ✏️
+          </button>
+          
+          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+            selected ? 'bg-blue-500 border-blue-500' : 'border-white/40'
+          }`}>
+            {selected && (
+              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </div>
         </div>
       </div>
       

@@ -5,6 +5,7 @@ import React, { useState } from 'react'
 import { useTandemQueue, useAFFQueue, useRemoveMultipleFromQueue } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { AddStudentModal } from '@/components/AddStudentModal'
+import { EditStudentModal } from '@/components/EditStudentModal'
 import { StudentCard } from '@/components/StudentCard'
 import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal'
 import type { QueueStudent } from '@/types'
@@ -23,10 +24,15 @@ export default function QueuePage() {
   const [searchAFF, setSearchAFF] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'tandem' | 'aff', count: number } | null>(null)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [editingStudent, setEditingStudent] = useState<QueueStudent | null>(null)
   
   const handleAddStudent = (type: 'tandem' | 'aff') => {
     setModalQueueType(type)
     setShowAddModal(true)
+  }
+  
+  const handleEditStudent = (student: QueueStudent) => {
+    setEditingStudent(student)
   }
   
   const toggleSelection = (studentId: string, type: 'tandem' | 'aff') => {
@@ -48,10 +54,6 @@ export default function QueuePage() {
   const handleRemoveSelected = (type: 'tandem' | 'aff') => {
     const selected = type === 'tandem' ? selectedTandem : selectedAFF
     
-    console.log('🗑️ Remove Selected clicked')
-    console.log('Type:', type)
-    console.log('Selected IDs:', selected)
-    
     if (selected.length === 0) {
       alert('Please select at least one student')
       return
@@ -67,27 +69,17 @@ export default function QueuePage() {
     const selected = confirmDelete.type === 'tandem' ? selectedTandem : selectedAFF
     
     try {
-      console.log('Attempting to remove students...')
-      
-      // Use the hook to remove students
       await removeMultiple(selected)
       
-      console.log('✅ Successfully removed students')
-      
-      // Clear selection after successful removal
       if (confirmDelete.type === 'tandem') {
         setSelectedTandem([])
       } else {
         setSelectedAFF([])
       }
       
-      // Close modal
       setConfirmDelete(null)
-      
-      // Show success message
-      alert(`Successfully removed ${selected.length} student(s)`)
     } catch (error) {
-      console.error('❌ Failed to remove students:', error)
+      console.error('Failed to remove students:', error)
       alert(`Failed to remove students: ${error instanceof Error ? error.message : 'Unknown error'}`)
       setConfirmDelete(null)
     }
@@ -143,18 +135,20 @@ export default function QueuePage() {
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold text-white">Tandem Queue</h2>
-              <button
-                onClick={() => handleAddStudent('tandem')}
-                className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
-              >
-                <span className="text-lg">+</span> Add Student
-              </button>
-              <button
-                 onClick={() => setShowImportModal(true)}
-                 className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-6 rounded-lg transition-colors flex items-center gap-2"
-              >
-                    📥 Import Students
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleAddStudent('tandem')}
+                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <span className="text-lg">+</span> Add Student
+                </button>
+                <button
+                  onClick={() => setShowImportModal(true)}
+                  className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  📥 Import
+                </button>
+              </div>
             </div>
             
             <div className="mb-4">
@@ -180,6 +174,7 @@ export default function QueuePage() {
                     student={student}
                     selected={selectedTandem.includes(student.id)}
                     onToggle={() => toggleSelection(student.id, 'tandem')}
+                    onEdit={() => handleEditStudent(student)}
                   />
                 ))
               )}
@@ -239,6 +234,7 @@ export default function QueuePage() {
                     student={student}
                     selected={selectedAFF.includes(student.id)}
                     onToggle={() => toggleSelection(student.id, 'aff')}
+                    onEdit={() => handleEditStudent(student)}
                   />
                 ))
               )}
@@ -272,6 +268,13 @@ export default function QueuePage() {
         />
       )}
       
+      {editingStudent && (
+        <EditStudentModal
+          student={editingStudent}
+          onClose={() => setEditingStudent(null)}
+        />
+      )}
+      
       {confirmDelete && (
         <ConfirmDeleteModal
           count={confirmDelete.count}
@@ -279,9 +282,10 @@ export default function QueuePage() {
           onCancel={() => setConfirmDelete(null)}
         />
       )}
+      
       {showImportModal && (
-  <ImportStudentsModal onClose={() => setShowImportModal(false)} />
-)}
+        <ImportStudentsModal onClose={() => setShowImportModal(false)} />
+      )}
     </div>
   )
 }
