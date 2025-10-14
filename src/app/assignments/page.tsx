@@ -3,11 +3,11 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { useAssignments, useActiveInstructors, useDeleteClockEvent } from '@/hooks/useDatabase'
 import { db } from '@/services'
-import { getCurrentPeriod } from '@/lib/utils'
-import { EditAssignmentModal } from '@/components/EditAssignmentModal'
-import type { Assignment, ClockEvent } from '@/types'
-import { calculateAssignmentPay } from '@/lib/utils'
+import { getCurrentPeriod, calculateAssignmentPay } from '@/lib/utils'
 import { PAY_RATES } from '@/lib/constants'
+import { EditAssignmentModal } from '@/components/EditAssignmentModal'
+import { EditClockEventModal } from '@/components/EditClockEventModal'  
+import type { Assignment, ClockEvent } from '@/types'
 
 export default function AssignmentsPage() {
   const { data: assignments, loading } = useAssignments()
@@ -19,6 +19,7 @@ export default function AssignmentsPage() {
   const [deleteShiftConfirm, setDeleteShiftConfirm] = useState<{ inId: string, outId: string | null } | null>(null)
   const [clockEvents, setClockEvents] = useState<ClockEvent[]>([])
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
+  const [editingClockEvent, setEditingClockEvent] = useState<ClockEvent | null>(null)
   
   const period = getCurrentPeriod()
   
@@ -88,26 +89,26 @@ export default function AssignmentsPage() {
         if (!searchTerm) return true
         const search = searchTerm.toLowerCase()
         return (
-          a.name.toLowerCase().includes(search) ||
+          a.studentName.toLowerCase().includes(search) ||
           getInstructorName(a.instructorId).toLowerCase().includes(search)
         )
       })
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
   }, [assignments, searchTerm, period, instructors])
   
-const calculatePay = (assignment: Assignment) => {
-  if (assignment.isMissedJump) return 0
-  if (assignment.isRequest) return 0
-  
-  let pay = calculateAssignmentPay(assignment)
-  
-  // Add video instructor pay if applicable
-  if (assignment.hasOutsideVideo) {
-    pay += PAY_RATES.VIDEO_INSTRUCTOR
+  const calculatePay = (assignment: Assignment) => {
+    if (assignment.isMissedJump) return 0
+    if (assignment.isRequest) return 0
+    
+    let pay = calculateAssignmentPay(assignment)
+    
+    // Add video instructor pay if applicable
+    if (assignment.hasOutsideVideo) {
+      pay += PAY_RATES.VIDEO_INSTRUCTOR
+    }
+    
+    return pay
   }
-  
-  return pay
-}
   
   const handleDelete = async (id: string) => {
     try {
@@ -119,24 +120,42 @@ const calculatePay = (assignment: Assignment) => {
     }
   }
   
-  const handleDeleteShift = async () => {
-    if (!deleteShiftConfirm) return
-    
-    try {
-      // Delete clock-in event
-      await deleteEvent(deleteShiftConfirm.inId)
-      
-      // Delete clock-out event if it exists
-      if (deleteShiftConfirm.outId) {
-        await deleteEvent(deleteShiftConfirm.outId)
-      }
-      
-      setDeleteShiftConfirm(null)
-    } catch (error) {
-      console.error('Failed to delete shift:', error)
-      alert('Failed to delete shift. Please try again.')
+// Replace the handleDeleteShift function in src/app/assignments/page.tsx with this:
+
+const handleDeleteShift = async () => {
+  if (!deleteShiftConfirm) return
+  
+  try {
+    // Find the instructor from the clock event
+    const clockEvent = clockEvents.find(e => e.id === deleteShiftConfirm.inId)
+    if (!clockEvent) {
+      throw new Error('Clock event not found')
     }
+    
+    // Delete clock-in event
+    await deleteEvent(deleteShiftConfirm.inId)
+    
+    // Delete clock-out event if it exists
+    if (deleteShiftConfirm.outId) {
+      await deleteEvent(deleteShiftConfirm.outId)
+    }
+    
+    // If the shift has no clock-out (still active), force clock out the instructor
+    if (!deleteShiftConfirm.outId) {
+      const instructor = instructors.find(i => i.id === clockEvent.instructorId)
+      if (instructor && instructor.clockedIn) {
+        await db.updateInstructor(instructor.id, {
+          clockedIn: false
+        })
+      }
+    }
+    
+    setDeleteShiftConfirm(null)
+  } catch (error) {
+    console.error('Failed to delete shift:', error)
+    alert('Failed to delete shift. Please try again.')
   }
+}
   
   if (loading) {
     return (
@@ -205,6 +224,8 @@ const calculatePay = (assignment: Assignment) => {
                       duration: string | null
                       inId: string
                       outId: string | null
+                      inEvent: ClockEvent
+                      outEvent: ClockEvent | null
                     }> = []
                     
                     for (let i = 0; i < events.length; i++) {
@@ -212,12 +233,14 @@ const calculatePay = (assignment: Assignment) => {
                         const clockIn = new Date(events[i].timestamp)
                         let clockOut: Date | null = null
                         let outId: string | null = null
+                        let outEvent: ClockEvent | null = null
                         
                         // Find matching clock-out
                         for (let j = i + 1; j < events.length; j++) {
                           if (events[j].type === 'out') {
                             clockOut = new Date(events[j].timestamp)
                             outId = events[j].id
+                            outEvent = events[j]
                             break
                           }
                         }
@@ -235,56 +258,87 @@ const calculatePay = (assignment: Assignment) => {
                           out: clockOut,
                           duration,
                           inId: events[i].id,
-                          outId
+                          outId,
+                          inEvent: events[i],
+                          outEvent
                         })
                       }
                     }
                     
                     return (
-                      <div key={instructorId} className="bg-slate-800/50 rounded-lg p-4">
-                        <h3 className="text-white font-semibold mb-3">{instructorName}</h3>
-                        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                          {shifts.map((shift, idx) => (
-                            <div 
-                              key={idx}
-                              className="relative bg-white/5 rounded-lg p-3 border border-white/10 hover:border-white/20 transition-colors group"
-                            >
-                              <div className="flex justify-between items-center">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-green-400">●</span>
-                                  <span className="text-slate-300">
-                                    {shift.in.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2">
+                      <div key={instructorId} className="bg-white/5 rounded-lg p-4">
+                        <h3 className="text-lg font-bold text-white mb-3">{instructorName}</h3>
+                        
+                        <div className="space-y-2">
+                          {shifts.map((shift) => (
+                            <div key={shift.inId} className="flex items-center justify-between bg-white/5 rounded p-3">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-4 text-sm">
+                                  <div>
+                                    <span className="text-green-400 font-semibold">⬇️ In:</span>
+                                    <span className="text-white ml-2">{shift.in.toLocaleTimeString()}</span>
+                                  </div>
+                                  
                                   {shift.out ? (
                                     <>
-                                      <span className="text-slate-300">
-                                        {shift.out.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                      </span>
-                                      <span className="text-red-400">■</span>
+                                      <div>
+                                        <span className="text-red-400 font-semibold">⬆️ Out:</span>
+                                        <span className="text-white ml-2">{shift.out.toLocaleTimeString()}</span>
+                                      </div>
+                                      <div className="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full text-xs font-semibold">
+                                        {shift.duration}
+                                      </div>
                                     </>
                                   ) : (
-                                    <span className="text-green-400 font-semibold">Active</span>
+                                    <div className="bg-yellow-500/20 text-yellow-300 px-3 py-1 rounded-full text-xs font-semibold">
+                                      Still Clocked In
+                                    </div>
                                   )}
                                 </div>
+                                
+                                {/* Notes Display */}
+                                {(shift.inEvent.notes || shift.outEvent?.notes) && (
+                                  <div className="mt-2 text-xs text-slate-400 italic">
+                                    {shift.inEvent.notes && <div>In: {shift.inEvent.notes}</div>}
+                                    {shift.outEvent?.notes && <div>Out: {shift.outEvent.notes}</div>}
+                                  </div>
+                                )}
                               </div>
-                              {shift.duration && (
-                                <div className="text-xs text-slate-400 text-center mt-1">
-                                  {shift.duration}
-                                </div>
-                              )}
                               
-                              {/* Delete button - only show for today's shifts */}
-                              {isToday && (
-                                <button
-                                  onClick={() => setDeleteShiftConfirm({ inId: shift.inId, outId: shift.outId })}
-                                  disabled={deleteClockLoading}
-                                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 hover:bg-red-600 text-white text-xs font-bold px-2 py-1 rounded disabled:opacity-50"
-                                >
-                                  🗑️
-                                </button>
-                              )}
+                              {/* Edit Buttons */}
+                              <div className="flex gap-2">
+                                {isToday && (
+                                  <>
+                                    <button
+                                      onClick={() => setEditingClockEvent(shift.inEvent)}
+                                      className="px-3 py-1 bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 rounded text-xs font-semibold transition-colors"
+                                      title="Edit clock in time"
+                                    >
+                                      ✏️ Edit In
+                                    </button>
+                                    
+                                    {shift.outEvent && (
+                                      <button
+                                        onClick={() => setEditingClockEvent(shift.outEvent!)}
+                                        className="px-3 py-1 bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 rounded text-xs font-semibold transition-colors"
+                                        title="Edit clock out time"
+                                      >
+                                        ✏️ Edit Out
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+                                
+                                {isToday && (
+                                  <button
+                                    onClick={() => setDeleteShiftConfirm({ inId: shift.inId, outId: shift.outId })}
+                                    disabled={deleteClockLoading}
+                                    className="px-3 py-1 bg-red-500/20 text-red-300 hover:bg-red-500/30 rounded text-xs font-semibold transition-colors disabled:opacity-50"
+                                  >
+                                    🗑️ Delete
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -295,7 +349,7 @@ const calculatePay = (assignment: Assignment) => {
               )
             })()
           )}
-              
+          
           {/* Daily Summary */}
           <div className="mt-6 pt-6 border-t border-white/20 grid grid-cols-3 gap-4">
             <div className="text-center">
@@ -334,7 +388,7 @@ const calculatePay = (assignment: Assignment) => {
           
           {filteredAssignments.length === 0 ? (
             <div className="text-center py-12">
-              <div className="text-6xl mb-4">📭</div>
+              <div className="text-6xl mb-4">🔭</div>
               <p className="text-slate-400">
                 {searchTerm ? 'No assignments match your search' : 'No assignments yet'}
               </p>
@@ -365,7 +419,7 @@ const calculatePay = (assignment: Assignment) => {
                           {new Date(assignment.timestamp).toLocaleString()}
                         </td>
                         <td className="px-6 py-4 text-white font-semibold">
-                          {assignment.name}
+                          {assignment.studentName}
                         </td>
                         <td className="px-6 py-4 text-slate-300">
                           <div>
@@ -397,7 +451,7 @@ const calculatePay = (assignment: Assignment) => {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-slate-300">
-                          {assignment.weight} lbs
+                          {assignment.studentWeight} lbs
                         </td>
                         <td className="px-6 py-4">
                           <span className={`font-bold ${pay === 0 ? 'text-red-400' : 'text-green-400'}`}>
@@ -473,6 +527,14 @@ const calculatePay = (assignment: Assignment) => {
           onSuccess={() => {
             setEditingAssignment(null)
           }}
+        />
+      )}
+      
+      {/* Edit Clock Event Modal */}
+      {editingClockEvent && (
+        <EditClockEventModal
+          event={editingClockEvent}
+          onClose={() => setEditingClockEvent(null)}
         />
       )}
       

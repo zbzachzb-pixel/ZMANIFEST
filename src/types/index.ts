@@ -47,9 +47,13 @@ export interface Assignment {
   // Tandem specific
   tandemWeightTax?: number
   tandemHandcam?: boolean
+  hasOutsideVideo?: boolean
   
   // AFF specific
   affLevel?: AFFLevel
+  
+  // Covering system
+  coveringFor?: string 
 }
 
 export interface CreateAssignment {
@@ -166,8 +170,8 @@ export interface LoadSchedulingSettings {
 export interface Period {
   id: string
   name: string
-  start: Date
-  end: Date
+  start: string
+  end: string
   status: 'active' | 'archived'
   finalBalances?: Record<string, number> // instructorId → finalBalance
   finalStats?: {

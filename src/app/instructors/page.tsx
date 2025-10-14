@@ -213,7 +213,7 @@ export default function InstructorsPage() {
                 <td className="px-6 py-4">
                   <div className="flex gap-2 justify-end flex-wrap">
                     <button
-                      onClick={() => handleToggleClock(instructor)}
+                      onClick={() => handleClockToggle(instructor)}
                       className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
                         instructor.clockedIn
                           ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30'

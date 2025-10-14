@@ -1,3 +1,4 @@
+// src/services/database.ts
 import type {
   Instructor,
   CreateInstructor,
@@ -31,6 +32,7 @@ export interface DatabaseService {
   getClockEvents(): Promise<ClockEvent[]>
   getClockEventsByDate(date: Date): Promise<ClockEvent[]>
   subscribeToClockEvents(callback: (events: ClockEvent[]) => void): () => void
+  updateClockEvent(id: string, updates: Partial<ClockEvent>): Promise<void>  // ✅ NEW
   deleteClockEvent(id: string): Promise<void>
   
   // LOADS
@@ -67,13 +69,12 @@ export interface DatabaseService {
   // PERIODS
   createPeriod(period: CreatePeriod): Promise<Period>
   getPeriods(): Promise<Period[]>
-  getActivePeriod(): Promise<Period | null>
   updatePeriod(id: string, updates: UpdatePeriod): Promise<void>
-  endPeriod(periodId: string, finalBalances: Record<string, number>, finalStats: any): Promise<void>
+  endPeriod(id: string, finalBalances: Record<string, number>, finalStats: any): Promise<void>
   subscribeToPeriods(callback: (periods: Period[]) => void): () => void
   
   // BULK
   getFullState(): Promise<DatabaseState>
-  importState(state: DatabaseState): Promise<void>
+  restoreFullState(state: DatabaseState): Promise<void>
   subscribeToAll(callback: (state: DatabaseState) => void): () => void
 }

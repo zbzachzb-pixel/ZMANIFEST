@@ -374,6 +374,27 @@ export function useClockEvents() {
   return useRealtimeData<ClockEvent>(db.subscribeToClockEvents)
 }
 
+export function useLogClockEvent() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const logClock = useCallback(async (instructorId: string, instructorName: string, type: 'in' | 'out') => {
+    setLoading(true)
+    setError(null)
+    try {
+      const newEvent = await db.logClockEvent(instructorId, instructorName, type)
+      return newEvent
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { logClock, loading, error }
+}
+
 export function useDeleteClockEvent() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -393,6 +414,27 @@ export function useDeleteClockEvent() {
 
   return { deleteEvent, loading, error }
 }
+
+export function useUpdateClockEvent() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const updateClockEvent = useCallback(async (id: string, updates: Partial<ClockEvent>) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.updateClockEvent(id, updates)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { updateClockEvent, loading, error }
+}
+
 
 // ==================== PERIODS ====================
 

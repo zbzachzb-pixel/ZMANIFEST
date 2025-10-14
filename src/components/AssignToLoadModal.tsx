@@ -12,36 +12,6 @@ interface AssignToLoadModalProps {
   onClose: () => void
 }
 
-function calculateBalance(instructor: Instructor, assignments: Assignment[], period: any) {
-  let balance = 0
-  
-  for (const assignment of assignments) {
-    const assignmentDate = new Date(assignment.timestamp)
-    if (assignmentDate < period.start || assignmentDate > period.end) continue
-    if (assignment.isRequest) continue
-    
-    let pay = 0
-    if (!assignment.isMissedJump) {
-      if (assignment.jumpType === 'tandem') {
-        pay = 40 + (assignment.tandemWeightTax || 0) * 20
-        if (assignment.tandemHandcam) pay += 30
-      } else if (assignment.jumpType === 'aff') {
-        pay = assignment.affLevel === 'lower' ? 55 : 45
-      } else if (assignment.jumpType === 'video') {
-        pay = 45
-      }
-    }
-    
-    if (assignment.instructorId === instructor.id) {
-      balance += pay
-    }
-    if (assignment.videoInstructorId === instructor.id && !assignment.isMissedJump) {
-      balance += 45
-    }
-  }
-  
-  return balance
-}
 
 export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
   const { data: queue } = useQueue()

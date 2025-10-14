@@ -148,7 +148,67 @@ export class FirebaseService implements DatabaseService {
     const eventRef = ref(this.db, `clockEvents/${id}`)
     await remove(eventRef)
   }
+  async updateClockEvent(id: string, updates: Partial<ClockEvent>): Promise<void> {
+  const clockEventRef = ref(this.db, `clockEvents/${id}`)
+  const cleanedUpdates = this.cleanData(updates)
+  await update(clockEventRef, cleanedUpdates)
+}
+
+// Full CLOCK EVENTS section for context:
+// ==================== CLOCK EVENTS ====================
+
+async logClockEvent(instructorId: string, instructorName: string, type: 'in' | 'out'): Promise<ClockEvent> {
+  const newEvent: ClockEvent = {
+    id: this.generateId(),
+    instructorId,
+    instructorName,
+    type,
+    timestamp: new Date().toISOString()
+  }
   
+  const eventRef = ref(this.db, `clockEvents/${newEvent.id}`)
+  await set(eventRef, newEvent)
+  
+  return newEvent
+}
+
+async getClockEvents(): Promise<ClockEvent[]> {
+  return this.getData<ClockEvent>('clockEvents')
+}
+
+async getClockEventsByDate(date: Date): Promise<ClockEvent[]> {
+  const allEvents = await this.getClockEvents()
+  const startOfDay = new Date(date)
+  startOfDay.setHours(0, 0, 0, 0)
+  const endOfDay = new Date(date)
+  endOfDay.setHours(23, 59, 59, 999)
+  
+  return allEvents.filter(event => {
+    const eventDate = new Date(event.timestamp)
+    return eventDate >= startOfDay && eventDate <= endOfDay
+  })
+}
+
+async deleteClockEvent(id: string): Promise<void> {
+  const clockEventRef = ref(this.db, `clockEvents/${id}`)
+  await remove(clockEventRef)
+}
+
+async updateClockEvent(id: string, updates: Partial<ClockEvent>): Promise<void> {
+  const clockEventRef = ref(this.db, `clockEvents/${id}`)
+  const cleanedUpdates = this.cleanData(updates)
+  await update(clockEventRef, cleanedUpdates)
+}
+
+subscribeToClockEvents(callback: (events: ClockEvent[]) => void): () => void {
+  const eventsRef = ref(this.db, 'clockEvents')
+  const unsubscribe = onValue(eventsRef, (snapshot) => {
+    const data = snapshot.val()
+    callback(data ? Object.values(data) : [])
+  })
+  return unsubscribe
+}
+
   // ==================== LOADS ====================
   
   async createLoad(load: CreateLoad): Promise<Load> {
