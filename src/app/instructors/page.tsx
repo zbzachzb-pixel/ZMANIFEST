@@ -4,12 +4,14 @@ import React, { useState } from 'react'
 import { useActiveInstructors } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { AddInstructorModal } from '@/components/AddInstructorModal'
+import { ReleaseAFFModal } from '@/components/ReleaseAFFModal'
 import type { Instructor } from '@/types'
 
 export default function InstructorsPage() {
   const { data: instructors, loading } = useActiveInstructors()
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [editingInstructor, setEditingInstructor] = useState<Instructor | null>(null)
+  const [releaseInstructor, setReleaseInstructor] = useState<Instructor | null>(null)
   
   const handleClockToggle = async (instructor: Instructor) => {
     try {
@@ -18,7 +20,6 @@ export default function InstructorsPage() {
       })
     } catch (error) {
       console.error('Failed to toggle clock:', error)
-      alert('Failed to update clock status')
     }
   }
   
@@ -28,19 +29,34 @@ export default function InstructorsPage() {
         await db.archiveInstructor(instructor.id)
       } catch (error) {
         console.error('Failed to archive:', error)
-        alert('Failed to archive instructor')
       }
     }
   }
   
   const handleEdit = (instructor: Instructor) => {
     setEditingInstructor(instructor)
-    setIsModalOpen(true)
+    setIsAddModalOpen(true)
   }
   
-  const handleCloseModal = () => {
-    setIsModalOpen(false)
+  const handleReleaseAFF = (instructor: Instructor) => {
+    if (!instructor.affLocked || !instructor.affStudents || instructor.affStudents.length === 0) {
+      alert('This instructor has no AFF students to release')
+      return
+    }
+    setReleaseInstructor(instructor)
+  }
+  
+  const handleCloseAddModal = () => {
+    setIsAddModalOpen(false)
     setEditingInstructor(null)
+  }
+  
+  const handleCloseReleaseModal = () => {
+    setReleaseInstructor(null)
+  }
+  
+  const handleReleaseSuccess = () => {
+    // Modal will close itself and data will update automatically via real-time subscription
   }
   
   if (loading) {
@@ -63,7 +79,7 @@ export default function InstructorsPage() {
             <p className="text-slate-300">Manage your instructor team</p>
           </div>
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => setIsAddModalOpen(true)}
             className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center gap-2"
           >
             <span className="text-xl">+</span> Add Instructor
@@ -72,103 +88,102 @@ export default function InstructorsPage() {
         
         {instructors.length === 0 ? (
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-12 text-center border border-white/20">
-            <div className="text-6xl mb-4">👨‍✈️</div>
+            <div className="text-6xl mb-4">👥</div>
             <p className="text-white text-xl font-semibold mb-2">No instructors yet</p>
-            <p className="text-slate-400 mb-6">Add your first instructor to get started!</p>
+            <p className="text-slate-400 mb-6">Add your first instructor to get started</p>
             <button
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => setIsAddModalOpen(true)}
               className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-lg transition-colors inline-flex items-center gap-2"
             >
               <span className="text-xl">+</span> Add Instructor
             </button>
           </div>
         ) : (
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl overflow-hidden border border-white/20">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-800/50">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Name
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Team and Depts
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Weight Limits
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700/50">
-                  {instructors.map((instructor) => (
-                    <tr key={instructor.id} className="hover:bg-white/5 transition-colors">
+          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl border border-white/20 overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-white/5">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Instructor</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Certifications</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Weight Limits</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-4 text-right text-xs font-semibold text-slate-300 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {instructors.map(instructor => {
+                  const isAFFLocked = instructor.affLocked && instructor.affStudents && instructor.affStudents.length > 0
+                  
+                  return (
+                    <tr 
+                      key={instructor.id} 
+                      className={`hover:bg-white/5 transition-colors ${isAFFLocked ? 'bg-yellow-500/10' : ''}`}
+                    >
                       <td className="px-6 py-4">
-                        <div className="text-sm font-semibold text-white">{instructor.name}</div>
-                        <div className="text-xs text-slate-400">{instructor.bodyWeight} lbs</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-2">
+                        <div className="font-semibold text-white">{instructor.name}</div>
+                        <div className="flex gap-2 mt-1">
                           {instructor.team === 'red' && (
-                            <span key="team-red" className="px-2 py-1 bg-red-500/20 text-red-300 rounded text-xs font-semibold">
-                              🔴 Red
-                            </span>
+                            <span className="px-2 py-0.5 bg-red-500/20 text-red-300 rounded text-xs font-semibold">🔴 Red</span>
                           )}
                           {instructor.team === 'blue' && (
-                            <span key="team-blue" className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">
-                              🔵 Blue
-                            </span>
+                            <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">🔵 Blue</span>
                           )}
                           {instructor.team === 'gold' && (
-                            <span key="team-gold" className="px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded text-xs font-semibold">
-                              🟡 Gold
-                            </span>
+                            <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-300 rounded text-xs font-semibold">🟡 Gold</span>
                           )}
-                          {!instructor.team && (
-                            <span key="team-none" className="px-2 py-1 bg-red-500/20 text-red-300 rounded text-xs font-semibold">
-                              ⚠️ No Team
-                            </span>
-                          )}
+                        </div>
+                      </td>
+                      
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2 flex-wrap">
                           {instructor.tandem && (
-                            <span key="dept-tandem" className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">T</span>
+                            <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">Tandem</span>
                           )}
                           {instructor.aff && (
-                            <span key="dept-aff" className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-xs font-semibold">A</span>
+                            <span className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-xs font-semibold">AFF</span>
                           )}
                           {instructor.video && (
-                            <span key="dept-video" className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs font-semibold">V</span>
+                            <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs font-semibold">Video</span>
+                          )}
+                          {isAFFLocked && (
+                            <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded text-xs font-semibold">
+                              🔒 AFF Locked
+                            </span>
                           )}
                         </div>
+                        {isAFFLocked && instructor.affStudents && (
+                          <div className="text-xs text-yellow-300 mt-1">
+                            With: {instructor.affStudents.map(s => s.name).join(', ')}
+                          </div>
+                        )}
                       </td>
+                      
+                      <td className="px-6 py-4 text-sm text-slate-300">
+                        {instructor.tandem && instructor.tandemWeightLimit && (
+                          <div>T: {instructor.tandemWeightLimit} lbs</div>
+                        )}
+                        {instructor.aff && instructor.affWeightLimit && (
+                          <div>A: {instructor.affWeightLimit} lbs</div>
+                        )}
+                        {(!instructor.tandemWeightLimit && !instructor.affWeightLimit) && (
+                          <span className="text-slate-500">No limits</span>
+                        )}
+                      </td>
+                      
                       <td className="px-6 py-4">
-                        <div className="text-sm text-slate-300">
-                          {instructor.tandem && instructor.tandemWeightLimit && (
-                            <div key="weight-tandem">T: {instructor.tandemWeightLimit} lbs</div>
-                          )}
-                          {instructor.aff && instructor.affWeightLimit && (
-                            <div key="weight-aff">A: {instructor.affWeightLimit} lbs</div>
-                          )}
+                        <div className="flex items-center gap-2">
+                          <div className={`w-3 h-3 rounded-full ${instructor.clockedIn ? 'bg-green-400' : 'bg-gray-400'}`} />
+                          <span className={`text-sm font-medium ${instructor.clockedIn ? 'text-green-400' : 'text-slate-400'}`}>
+                            {instructor.clockedIn ? 'Clocked In' : 'Clocked Out'}
+                          </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                          instructor.clockedIn 
-                            ? 'bg-green-500/20 text-green-300' 
-                            : 'bg-gray-500/20 text-gray-300'
-                        }`}>
-                          {instructor.clockedIn ? '✓ Clocked In' : 'Clocked Out'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex gap-2">
+                      
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex gap-2 justify-end">
                           <button
                             onClick={() => handleClockToggle(instructor)}
-                            className={`px-3 py-1 rounded text-xs font-bold transition-colors ${
+                            className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
                               instructor.clockedIn
                                 ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30'
                                 : 'bg-green-500/20 text-green-300 hover:bg-green-500/30'
@@ -176,33 +191,53 @@ export default function InstructorsPage() {
                           >
                             {instructor.clockedIn ? 'Clock Out' : 'Clock In'}
                           </button>
+                          
+                          {isAFFLocked && (
+                            <button
+                              onClick={() => handleReleaseAFF(instructor)}
+                              className="px-3 py-1 bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 rounded text-xs font-semibold transition-colors"
+                            >
+                              🔓 Release AFF
+                            </button>
+                          )}
+                          
                           <button
                             onClick={() => handleEdit(instructor)}
-                            className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-bold hover:bg-blue-500/30 transition-colors"
+                            className="px-3 py-1 bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 rounded text-xs font-semibold transition-colors"
                           >
-                            Edit
+                            ✏️ Edit
                           </button>
+                          
                           <button
                             onClick={() => handleArchive(instructor)}
-                            className="px-3 py-1 bg-red-500/20 text-red-300 rounded text-xs font-bold hover:bg-red-500/30 transition-colors"
+                            className="px-3 py-1 bg-red-500/20 text-red-300 hover:bg-red-500/30 rounded text-xs font-semibold transition-colors"
                           >
-                            Archive
+                            🗑️ Archive
                           </button>
                         </div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
       
-      {isModalOpen && (
+      {isAddModalOpen && (
         <AddInstructorModal
           instructor={editingInstructor}
-          onClose={handleCloseModal}
+          onClose={handleCloseAddModal}
+          onSuccess={handleCloseAddModal}
+        />
+      )}
+      
+      {releaseInstructor && (
+        <ReleaseAFFModal
+          instructor={releaseInstructor}
+          onClose={handleCloseReleaseModal}
+          onSuccess={handleReleaseSuccess}
         />
       )}
     </div>
