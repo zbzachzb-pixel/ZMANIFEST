@@ -189,48 +189,89 @@ export default function LoadBuilderPage() {
   }
   
   const handleStatusChange = async (loadId: string, newStatus: Load['status']) => {
-    console.log('🔄 handleStatusChange called:', { loadId, newStatus })
-    
-    const load = loads.find(l => l.id === loadId)
-    if (!load) {
-      console.error('❌ Load not found:', loadId)
-      return
-    }
-    
-    console.log('📦 Current load:', { name: load.name, currentStatus: load.status, targetStatus: newStatus })
-    
-    // ⚠️ SPECIAL HANDLING: Show custom modal for reopening completed loads
-    if (load.status === 'completed' && newStatus === 'departed') {
-      console.log('🔴 Attempting to reopen completed load - showing confirmation modal...')
-      setReopenConfirm({ loadId: load.id, loadName: load.name, step: 1 })
-      return // Exit here - the modal will handle the actual update
-    }
-    
-    // Regular status changes for all other transitions
-    try {
-      const updates: Partial<Load> = { status: newStatus }
-      
-      // If marking as ready, start countdown
-      if (newStatus === 'ready' && !load.countdownStartTime) {
-        updates.countdownStartTime = new Date().toISOString()
-        console.log('⏱️ Starting countdown timer')
-      }
-      
-      // If moving back from ready to building, clear countdown
-      if (newStatus === 'building' && load.countdownStartTime) {
-        updates.countdownStartTime = null
-        console.log('🔄 Clearing countdown timer')
-      }
-      
-      console.log('💾 Calling updateLoad with:', { loadId, updates })
-      await updateLoad(loadId, updates)
-      console.log('✅ Status updated successfully!')
-      
-    } catch (error) {
-      console.error('❌ Failed to update status:', error)
-      alert('Failed to update status: ' + (error as Error).message)
-    }
+  console.log('🔄 handleStatusChange called:', { loadId, newStatus })
+  
+  const load = loads.find(l => l.id === loadId)
+  if (!load) {
+    console.error('❌ Load not found:', loadId)
+    return
   }
+  
+  console.log('📦 Current load:', { 
+    name: load.name, 
+    position: load.position,
+    currentStatus: load.status, 
+    targetStatus: newStatus 
+  })
+  
+  // ⚠️ SPECIAL HANDLING: Show custom modal for reopening completed loads
+  if (load.status === 'completed' && newStatus === 'departed') {
+    console.log('🔴 Attempting to reopen completed load - showing confirmation modal...')
+    setReopenConfirm({ loadId: load.id, loadName: load.name, step: 1 })
+    return // Exit here - the modal will handle the actual update
+  }
+  
+  // Regular status changes for all other transitions
+  try {
+    const updates: Partial<Load> = { status: newStatus }
+    
+    // If marking as ready, start countdown
+    if (newStatus === 'ready' && !load.countdownStartTime) {
+      updates.countdownStartTime = new Date().toISOString()
+      console.log('⏱️ Starting countdown timer')
+    }
+    
+    // If moving back from ready to building, clear countdown
+    if (newStatus === 'building' && load.countdownStartTime) {
+      updates.countdownStartTime = null
+      console.log('🔄 Clearing countdown timer')
+    }
+    
+    console.log('💾 Calling updateLoad with:', { loadId, updates })
+    await updateLoad(loadId, updates)
+    console.log('✅ Status updated successfully!')
+    
+    // ⚡ CASCADE LOGIC: When a load departs, start next load's countdown
+    if (newStatus === 'departed') {
+      console.log('🚀 Load departed - checking for next load to cascade...')
+      
+      // Find the next load in sequence
+      const nextLoad = loads.find(l => l.position === load.position + 1)
+      
+      if (nextLoad) {
+        console.log('🔍 Found next load:', { 
+          name: nextLoad.name, 
+          position: nextLoad.position,
+          status: nextLoad.status,
+          hasCountdown: !!nextLoad.countdownStartTime 
+        })
+        
+        // If next load is ready and doesn't have a countdown yet, start it
+        if (nextLoad.status === 'ready' && !nextLoad.countdownStartTime) {
+          console.log('⏱️ Starting countdown for next load:', nextLoad.name)
+          
+          await updateLoad(nextLoad.id, {
+            countdownStartTime: new Date().toISOString()
+          })
+          
+          console.log('✅ Cascade complete - next load countdown started!')
+        } else {
+          console.log('ℹ️ No cascade needed:', {
+            reason: nextLoad.status !== 'ready' 
+              ? 'Next load not in ready status'
+              : 'Next load already has countdown'
+          })
+        }
+      } else {
+        console.log('ℹ️ No next load found to cascade to')
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Failed to update status:', error)
+    alert('Failed to update status: ' + (error as Error).message)
+  }
+}
 
   const executeReopenLoad = async (loadId: string) => {
     console.log('🔓 Executing reopen for load:', loadId)

@@ -1,3 +1,6 @@
+// src/components/LoadBuilderCard.tsx
+// THIS VERSION HAS DEBUG LOGGING TO FIND THE ISSUE
+
 'use client'
 
 import React, { useState, useMemo } from 'react'
@@ -40,8 +43,28 @@ export function LoadBuilderCard({
   const [showDelayModal, setShowDelayModal] = useState(false)
   const [delayMinutes, setDelayMinutes] = useState(20)
   
-  // Get countdown info
-  const { countdown, formattedTime, isReadyToDepart } = useLoadCountdown(load, loadSchedulingSettings)
+  // Get countdown info with debug logging
+  const { countdown, formattedTime, isReadyToDepart } = useLoadCountdown(load, loadSchedulingSettings, allLoads)
+  
+  // 🐛 DEBUG: Log everything about the timer
+  console.log('🐛 TIMER DEBUG for', load.name, {
+    status: load.status,
+    position: load.position,
+    countdownStartTime: load.countdownStartTime,
+    countdown: countdown,
+    formattedTime: formattedTime,
+    isReadyToDepart: isReadyToDepart,
+    loadSchedulingSettings: loadSchedulingSettings,
+    allLoadsCount: allLoads.length,
+    
+    // Check display conditions
+    displayConditions: {
+      isReady: load.status === 'ready',
+      hasFormattedTime: !!formattedTime,
+      formattedTimeValue: formattedTime,
+      shouldShow: load.status === 'ready' && !!formattedTime
+    }
+  })
   
   const loadAssignments = load.assignments || []
   const totalPeople = loadAssignments.length
@@ -49,6 +72,7 @@ export function LoadBuilderCard({
   const percentFull = Math.round((totalPeople / load.capacity) * 100)
   const isOverCapacity = totalPeople > load.capacity
   const availableSlots = load.capacity - totalPeople
+  const isCompleted = load.status === 'completed'
 
   // Status config
   const statusConfig = {
@@ -83,10 +107,8 @@ export function LoadBuilderCard({
   }
 
   const currentStatus = statusConfig[load.status]
-  const isCompleted = load.status === 'completed'
 
   const handleDragOver = (e: React.DragEvent) => {
-    // Prevent drops on completed loads
     if (isCompleted) return
     if (load.status !== 'building') return
     
@@ -107,52 +129,50 @@ export function LoadBuilderCard({
   }
 
   const handleStatusChangeRequest = (newStatus: Load['status']) => {
-  // ⚠️ SPECIAL HANDLING: Double confirmation for moving completed loads backwards
-  if (load.status === 'completed' && newStatus === 'departed') {
-    const firstConfirm = confirm(
-      `⚠️ WARNING: Reopen Completed Load?\n\n` +
-      `This will move "${load.name}" from COMPLETED back to DEPARTED status.\n\n` +
-      `This action should only be done if the load was marked completed by mistake.\n\n` +
-      `Do you want to continue?`
-    )
+    if (load.status === 'completed' && newStatus === 'departed') {
+      const firstConfirm = confirm(
+        `⚠️ WARNING: Reopen Completed Load?\n\n` +
+        `This will move "${load.name}" from COMPLETED back to DEPARTED status.\n\n` +
+        `This action should only be done if the load was marked completed by mistake.\n\n` +
+        `Do you want to continue?`
+      )
+      
+      if (!firstConfirm) return
+      
+      const secondConfirm = confirm(
+        `🔴 SECOND CONFIRMATION REQUIRED 🔴\n\n` +
+        `Are you absolutely sure you want to reopen this completed load?\n\n` +
+        `Load: ${load.name}\n` +
+        `Action: COMPLETED → DEPARTED\n\n` +
+        `Click OK to proceed or Cancel to abort.`
+      )
+      
+      if (!secondConfirm) return
+    }
     
-    if (!firstConfirm) return
+    if (newStatus === 'ready' && unassignedCount > 0) {
+      if (!confirm(`⚠️ ${unassignedCount} student(s) not assigned to instructors.\n\nMark as ready anyway?`)) {
+        return
+      }
+    }
     
-    const secondConfirm = confirm(
-      `🔴 SECOND CONFIRMATION REQUIRED 🔴\n\n` +
-      `Are you absolutely sure you want to reopen this completed load?\n\n` +
-      `Load: ${load.name}\n` +
-      `Action: COMPLETED → DEPARTED\n\n` +
-      `Click OK to proceed or Cancel to abort.`
-    )
-    
-    if (!secondConfirm) return
-  }
-  
-  // Standard validations for forward transitions
-  if (newStatus === 'ready' && unassignedCount > 0) {
-    if (!confirm(`⚠️ ${unassignedCount} student(s) not assigned to instructors.\n\nMark as ready anyway?`)) {
+    if (newStatus === 'ready' && isOverCapacity) {
+      alert('❌ Cannot mark as ready: Load is over capacity!')
       return
     }
+    
+    if (newStatus === 'departed' && load.status === 'building') {
+      alert('❌ Load must be "Ready" before departing')
+      return
+    }
+    
+    if (newStatus === 'completed' && load.status !== 'departed') {
+      alert('❌ Load must be "Departed" before marking complete')
+      return
+    }
+    
+    setStatusChangeConfirm(newStatus)
   }
-  
-  if (newStatus === 'ready' && isOverCapacity) {
-    alert('❌ Cannot mark as ready: Load is over capacity!')
-    return
-  }
-  
-  if (newStatus === 'departed' && load.status === 'building') {
-    alert('❌ Load must be "Ready" before departing')
-    return
-  }
-  
-  if (newStatus === 'completed' && load.status !== 'departed') {
-    alert('❌ Load must be "Departed" before marking complete')
-    return
-  }
-  
-  setStatusChangeConfirm(newStatus)
-}
   
   const confirmStatusChange = async () => {
     if (!statusChangeConfirm) return
@@ -160,12 +180,18 @@ export function LoadBuilderCard({
     try {
       const updates: Partial<Load> = { status: statusChangeConfirm }
       
-      // If marking as ready, start countdown
       if (statusChangeConfirm === 'ready' && !load.countdownStartTime) {
         updates.countdownStartTime = new Date().toISOString()
+        console.log('🐛 Setting countdownStartTime:', updates.countdownStartTime)
       }
       
+      if (statusChangeConfirm === 'building' && load.countdownStartTime) {
+        updates.countdownStartTime = null
+      }
+      
+      console.log('🐛 About to update load with:', updates)
       await update(load.id, updates)
+      console.log('🐛 Update complete')
       setStatusChangeConfirm(null)
     } catch (error) {
       console.error('Failed to update status:', error)
@@ -190,7 +216,6 @@ export function LoadBuilderCard({
       const assignment = loadAssignments.find(a => a.id === assignmentId)
       if (!assignment) return
       
-      // Create student back in queue
       const queueStudent: CreateQueueStudent = {
         name: assignment.studentName,
         weight: assignment.studentWeight,
@@ -202,10 +227,7 @@ export function LoadBuilderCard({
         affLevel: assignment.affLevel
       }
       
-      // Add back to queue first
       await db.addToQueue(queueStudent)
-      
-      // Then remove from load
       await update(load.id, {
         assignments: loadAssignments.filter(a => a.id !== assignmentId)
       })
@@ -225,43 +247,52 @@ export function LoadBuilderCard({
     setDelayMinutes(20)
   }
   
-  // Get available status transitions
   const getAvailableTransitions = () => {
-  switch (load.status) {
-    case 'building':
-      return ['ready']
-    case 'ready':
-      return ['building', 'departed']
-    case 'departed':
-      return ['ready', 'completed']
-    case 'completed':
-      return ['departed']  // ✅ NOW ALLOWS BACKWARDS TRANSITION
-    default:
-      return []
+    switch (load.status) {
+      case 'building':
+        return ['ready']
+      case 'ready':
+        return ['building', 'departed']
+      case 'departed':
+        return ['ready', 'completed']
+      case 'completed':
+        return ['departed']
+      default:
+        return []
+    }
   }
-}
   
   const availableTransitions = getAvailableTransitions()
   
-  // Get instructor availability info
   const instructorAvailability = useMemo(() => {
     const clockedInInstructors = instructors.filter(i => i.clockedIn)
     return clockedInInstructors.map(instructor => {
-      const nextAvailable = getInstructorNextAvailableLoad(instructor.id, allLoads)
+      const nextAvailable = getInstructorNextAvailableLoad(
+        instructor.id, 
+        allLoads,
+        loadSchedulingSettings.instructorCycleTime,
+        loadSchedulingSettings.minutesBetweenLoads
+      )
       return {
         instructor,
         nextAvailable,
         isAvailable: nextAvailable === null || load.position >= nextAvailable
       }
     })
-  }, [instructors, allLoads, load.position])
+  }, [instructors, allLoads, load.position, loadSchedulingSettings])
+  
+  // 🐛 DEBUG: Log if timer should be showing
+  const shouldShowTimer = load.status === 'ready' && formattedTime
+  if (load.status === 'ready') {
+    console.log('🐛 Timer should show?', shouldShowTimer, 'formattedTime:', formattedTime)
+  }
   
   return (
     <>
       <div
         className={`rounded-xl shadow-xl p-6 border-2 transition-all backdrop-blur-lg ${
           isCompleted
-            ? 'bg-purple-900/30 border-purple-500/50 opacity-90'  // Dimmed for completed
+            ? 'bg-purple-900/30 border-purple-500/50 opacity-90'
             : dragOver && load.status === 'building'
               ? 'bg-white/20 border-blue-400 scale-105'
               : `bg-white/10 ${currentStatus.borderClass}`
@@ -314,6 +345,93 @@ export function LoadBuilderCard({
             🗑️
           </button>
         </div>
+
+        {/* 🐛 DEBUG SECTION - Shows what the timer sees */}
+        {load.status === 'ready' && (
+          <div className="mb-4 p-3 bg-purple-900/30 border border-purple-500 rounded text-xs text-purple-300 font-mono">
+            <div>🐛 DEBUG INFO:</div>
+            <div>Status: {load.status}</div>
+            <div>Position: {load.position}</div>
+            <div>countdownStartTime: {load.countdownStartTime || 'NOT SET'}</div>
+            <div>formattedTime: "{formattedTime}" (length: {formattedTime?.length || 0})</div>
+            <div>countdown: {countdown}</div>
+            <div>Should show timer: {shouldShowTimer ? 'YES' : 'NO'}</div>
+          </div>
+        )}
+
+        {/* ⏱️ COUNTDOWN TIMER DISPLAY */}
+        {load.status === 'ready' && formattedTime && (
+          <div className={`mb-4 p-4 rounded-lg border-2 transition-all ${
+            isReadyToDepart 
+              ? 'bg-green-500/20 border-green-500 animate-pulse' 
+              : countdown && countdown < 60
+                ? 'bg-yellow-500/20 border-yellow-500'
+                : 'bg-blue-500/20 border-blue-500'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="text-3xl">
+                  {isReadyToDepart ? '✅' : countdown && countdown < 60 ? '⚠️' : '⏱️'}
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-300">
+                    {isReadyToDepart ? 'Clear to Depart!' : 'Countdown Timer'}
+                  </div>
+                  <div className={`text-2xl font-bold ${
+                    isReadyToDepart 
+                      ? 'text-green-300' 
+                      : countdown && countdown < 60
+                        ? 'text-yellow-300'
+                        : 'text-blue-300'
+                  }`}>
+                    {formattedTime}
+                  </div>
+                </div>
+              </div>
+              
+              {isReadyToDepart && (
+                <button
+                  onClick={() => handleStatusChangeRequest('departed')}
+                  className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  🛫 Mark Departed
+                </button>
+              )}
+            </div>
+            
+            {!isReadyToDepart && countdown !== null && (
+              <div className="mt-3">
+                <div className="w-full bg-white/10 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${
+                      countdown < 60 ? 'bg-yellow-500' : 'bg-blue-500'
+                    }`}
+                    style={{ 
+                      width: `${Math.max(0, 100 - (countdown / (loadSchedulingSettings.minutesBetweenLoads * 60)) * 100)}%` 
+                    }}
+                  />
+                </div>
+                <div className="text-xs text-slate-400 mt-1 text-center">
+                  {Math.ceil(countdown / 60)} minutes remaining
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {load.status === 'ready' && !formattedTime && !countdown && (
+          <div className="mb-4 p-4 rounded-lg border-2 bg-slate-700/20 border-slate-600">
+            <div className="flex items-center gap-3">
+              <div className="text-2xl">⏸️</div>
+              <div>
+                <div className="text-sm font-semibold text-slate-300">Waiting...</div>
+                <div className="text-lg text-slate-400">
+                  Previous load must depart first
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Assignments */}
         <div className="space-y-2 mb-4 max-h-96 overflow-y-auto">
@@ -373,7 +491,6 @@ export function LoadBuilderCard({
           )}
         </div>
 
-        {/* Stats */}
         {loadAssignments.length > 0 && (
           <div className="mb-4 pt-4 border-t border-white/20 grid grid-cols-3 gap-4 text-center">
             <div>
@@ -395,7 +512,6 @@ export function LoadBuilderCard({
           </div>
         )}
 
-        {/* Status Action Buttons */}
         {!isCompleted && (
           <div className="space-y-2">
             {availableTransitions.map(transition => {
@@ -423,7 +539,6 @@ export function LoadBuilderCard({
         )}
       </div>
 
-      {/* Status Change Confirmation Modal */}
       {statusChangeConfirm && (
         <div 
           className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50"
@@ -458,7 +573,6 @@ export function LoadBuilderCard({
         </div>
       )}
 
-      {/* Delay Modal */}
       {showDelayModal && (
         <div 
           className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50"
