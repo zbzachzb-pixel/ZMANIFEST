@@ -37,6 +37,7 @@ export default function LoadBuilderPage() {
   })
   const [currentTime, setCurrentTime] = useState(Date.now())
   const [statusFilter, setStatusFilter] = useState<'all' | Load['status']>('all')
+  const [reopenConfirm, setReopenConfirm] = useState<{ loadId: string, loadName: string, step: 1 | 2 } | null>(null)
   
   // Update current time every second for countdown
   useEffect(() => {
@@ -187,37 +188,59 @@ export default function LoadBuilderPage() {
     }
   }
   
-  const startLoadCountdown = async (loadId: string) => {
+  const handleStatusChange = async (loadId: string, newStatus: Load['status']) => {
+    console.log('🔄 handleStatusChange called:', { loadId, newStatus })
+    
+    const load = loads.find(l => l.id === loadId)
+    if (!load) {
+      console.error('❌ Load not found:', loadId)
+      return
+    }
+    
+    console.log('📦 Current load:', { name: load.name, currentStatus: load.status, targetStatus: newStatus })
+    
+    // ⚠️ SPECIAL HANDLING: Show custom modal for reopening completed loads
+    if (load.status === 'completed' && newStatus === 'departed') {
+      console.log('🔴 Attempting to reopen completed load - showing confirmation modal...')
+      setReopenConfirm({ loadId: load.id, loadName: load.name, step: 1 })
+      return // Exit here - the modal will handle the actual update
+    }
+    
+    // Regular status changes for all other transitions
     try {
-      await updateLoad(loadId, {
-        countdownStartTime: new Date().toISOString()
-      })
+      const updates: Partial<Load> = { status: newStatus }
+      
+      // If marking as ready, start countdown
+      if (newStatus === 'ready' && !load.countdownStartTime) {
+        updates.countdownStartTime = new Date().toISOString()
+        console.log('⏱️ Starting countdown timer')
+      }
+      
+      // If moving back from ready to building, clear countdown
+      if (newStatus === 'building' && load.countdownStartTime) {
+        updates.countdownStartTime = null
+        console.log('🔄 Clearing countdown timer')
+      }
+      
+      console.log('💾 Calling updateLoad with:', { loadId, updates })
+      await updateLoad(loadId, updates)
+      console.log('✅ Status updated successfully!')
+      
     } catch (error) {
-      console.error('Failed to start countdown:', error)
+      console.error('❌ Failed to update status:', error)
+      alert('Failed to update status: ' + (error as Error).message)
     }
   }
-  
-  const handleStatusChange = async (loadId: string, newStatus: Load['status']) => {
-    const load = loads.find(l => l.id === loadId)
-    if (!load) return
-    
+
+  const executeReopenLoad = async (loadId: string) => {
+    console.log('🔓 Executing reopen for load:', loadId)
     try {
-      await updateLoad(loadId, { status: newStatus })
-      
-      // If marking as Ready and it's Load #1, start countdown
-      if (newStatus === 'ready' && load.position === 1) {
-        await startLoadCountdown(loadId)
-      }
-      
-      // If marking as Departed, start next load's countdown
-      if (newStatus === 'departed') {
-        const nextLoad = loads.find(l => l.position === load.position + 1)
-        if (nextLoad && !nextLoad.countdownStartTime) {
-          await startLoadCountdown(nextLoad.id)
-        }
-      }
+      await updateLoad(loadId, { status: 'departed' })
+      console.log('✅ Load reopened successfully!')
+      setReopenConfirm(null)
     } catch (error) {
-      console.error('Failed to update status:', error)
+      console.error('❌ Failed to reopen load:', error)
+      alert('Failed to reopen load: ' + (error as Error).message)
     }
   }
   
@@ -318,7 +341,6 @@ export default function LoadBuilderPage() {
         const targetLoad = loads.find(l => l.id === targetLoadId)
         if (!targetLoad) return
         
-        // ✅ CHECK: Prevent modifications to completed loads
         if (targetLoad.status === 'completed') {
           alert('❌ Cannot modify completed loads')
           return
@@ -352,7 +374,6 @@ export default function LoadBuilderPage() {
         } else if (draggedItem.type === 'assignment' && draggedItem.sourceLoadId) {
           const sourceLoad = loads.find(l => l.id === draggedItem.sourceLoadId)
           
-          // ✅ CHECK: Prevent moving from completed loads
           if (sourceLoad?.status === 'completed') {
             alert('❌ Cannot move assignments from completed loads')
             return
@@ -380,7 +401,6 @@ export default function LoadBuilderPage() {
     }
   }
 
-  // ✅ NEW: Remove assignment and return student to queue
   const handleRemoveAssignment = async (loadId: string, assignmentId: string) => {
     try {
       const load = loads.find(l => l.id === loadId)
@@ -389,7 +409,6 @@ export default function LoadBuilderPage() {
       const assignment = load.assignments?.find(a => a.id === assignmentId)
       if (!assignment) return
       
-      // Create student back in queue
       const queueStudent: CreateQueueStudent = {
         name: assignment.studentName,
         weight: assignment.studentWeight,
@@ -401,10 +420,8 @@ export default function LoadBuilderPage() {
         affLevel: assignment.affLevel
       }
       
-      // Add back to queue first
       await db.addToQueue(queueStudent)
       
-      // Then remove from load
       await updateLoad(loadId, {
         assignments: (load.assignments || []).filter(a => a.id !== assignmentId)
       })
@@ -705,7 +722,6 @@ export default function LoadBuilderPage() {
                 filteredLoads
                   .sort((a, b) => (a.position || 0) - (b.position || 0))
                   .map((load) => {
-                    // Call regular function (not a hook) for countdown calculation
                     const countdown = getLoadCountdown(load, loads, loadSettings.minutesBetweenLoads, currentTime)
                     
                     const assignments = load.assignments || []
@@ -718,7 +734,7 @@ export default function LoadBuilderPage() {
                     const isOverCapacity = totalPeople > load.capacity
                     const unassignedCount = assignments.filter(a => !a.instructorId).length
                     const isDropTarget = dropTarget === `load-${load.id}`
-                    const isCompleted = load.status === 'completed' // ✅ NEW
+                    const isCompleted = load.status === 'completed'
                     
                     const statusConfig = {
                       building: { icon: '🔨', label: 'Building', color: 'bg-slate-500' },
@@ -734,12 +750,12 @@ export default function LoadBuilderPage() {
                         key={load.id}
                         className={`bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border-2 transition-all ${
                           isCompleted 
-                            ? 'opacity-75 border-purple-500/50' // ✅ Dimmed for completed
+                            ? 'opacity-75 border-purple-500/50'
                             : isDropTarget
                               ? 'bg-green-500/20 border-2 border-green-500 scale-105'
                               : 'border-white/20'
                         }`}
-                        onDragOver={(e) => !isCompleted && handleDragOver(e, `load-${load.id}`)} // ✅ Disabled for completed
+                        onDragOver={(e) => !isCompleted && handleDragOver(e, `load-${load.id}`)}
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDrop(e, 'load', load.id)}
                       >
@@ -751,7 +767,7 @@ export default function LoadBuilderPage() {
                               <span className={`${config.color} text-white px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1`}>
                                 {config.icon} {config.label}
                               </span>
-                              {isCompleted && ( // ✅ NEW: Locked badge
+                              {isCompleted && (
                                 <span className="px-2 py-1 bg-red-500/20 text-red-400 text-xs rounded font-bold">
                                   🔒 LOCKED
                                 </span>
@@ -771,7 +787,7 @@ export default function LoadBuilderPage() {
                           </div>
                           <button
                             onClick={() => handleDeleteLoad(load.id)}
-                            disabled={isCompleted} // ✅ Disabled for completed
+                            disabled={isCompleted}
                             className={`ml-4 px-4 py-2 rounded-lg transition-colors text-sm font-bold ${
                               isCompleted
                                 ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed'
@@ -803,7 +819,7 @@ export default function LoadBuilderPage() {
                             assignments.map((assignment) => (
                               <div
                                 key={assignment.id}
-                                draggable={!isCompleted && load.status === 'building'} // ✅ Disabled for completed
+                                draggable={!isCompleted && load.status === 'building'}
                                 onDragStart={(e) => !isCompleted && handleDragStart(e, 'assignment', assignment.id, load.id)}
                                 onDragEnd={handleDragEnd}
                                 className={`bg-slate-700/50 p-3 rounded-lg border border-white/10 transition-all ${
@@ -819,7 +835,7 @@ export default function LoadBuilderPage() {
                                       {assignment.jumpType.toUpperCase()}
                                     </span>
                                   </div>
-                                  {!isCompleted && load.status === 'building' && ( // ✅ NEW: Remove button with return to queue
+                                  {!isCompleted && load.status === 'building' && (
                                     <button
                                       onClick={() => handleRemoveAssignment(load.id, assignment.id)}
                                       className="ml-2 p-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition-colors text-xs"
@@ -842,34 +858,59 @@ export default function LoadBuilderPage() {
                         </div>
 
                         {/* Status Transition Buttons */}
-                        {!isCompleted && ( // ✅ Hidden for completed loads
-                          <div className="mt-4 space-y-2">
-                            {load.status === 'building' && (
+                        <div className="mt-4 space-y-2">
+                          {load.status === 'building' && (
+                            <button
+                              onClick={() => handleStatusChange(load.id, 'ready')}
+                              className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                            >
+                              ✓ Mark Ready
+                            </button>
+                          )}
+                          
+                          {load.status === 'ready' && (
+                            <>
                               <button
-                                onClick={() => handleStatusChange(load.id, 'ready')}
-                                className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                                onClick={() => handleStatusChange(load.id, 'building')}
+                                className="w-full bg-slate-500 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
                               >
-                                ✓ Mark Ready
+                                🔨 Back to Building
                               </button>
-                            )}
-                            {load.status === 'ready' && (
                               <button
                                 onClick={() => handleStatusChange(load.id, 'departed')}
                                 className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
                               >
                                 🛫 Mark Departed
                               </button>
-                            )}
-                            {load.status === 'departed' && (
+                            </>
+                          )}
+                          
+                          {load.status === 'departed' && (
+                            <>
+                              <button
+                                onClick={() => handleStatusChange(load.id, 'ready')}
+                                className="w-full bg-slate-500 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                              >
+                                ✅ Back to Ready
+                              </button>
                               <button
                                 onClick={() => handleStatusChange(load.id, 'completed')}
                                 className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
                               >
                                 ✔️ Mark Completed
                               </button>
-                            )}
-                          </div>
-                        )}
+                            </>
+                          )}
+                          
+                          {load.status === 'completed' && (
+                            <button
+                              onClick={() => handleStatusChange(load.id, 'departed')}
+                              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors border-2 border-red-400"
+                            >
+                              ⚠️ 🛫 Reopen Load (Move to Departed)
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )
                   })
@@ -879,6 +920,86 @@ export default function LoadBuilderPage() {
         </div>
       </div>
       
+      {/* Reopen Completed Load Confirmation Modal */}
+      {reopenConfirm && (
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[10000]"
+          onClick={() => setReopenConfirm(null)}
+        >
+          <div 
+            className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-red-500"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              {reopenConfirm.step === 1 ? (
+                <>
+                  <h2 className="text-2xl font-bold text-white mb-4">⚠️ WARNING: Reopen Completed Load?</h2>
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-4">
+                    <p className="text-red-300 text-sm mb-2">
+                      This will move <strong className="text-white">"{reopenConfirm.loadName}"</strong> from COMPLETED back to DEPARTED status.
+                    </p>
+                    <p className="text-red-300 text-sm">
+                      This action should only be done if the load was marked completed by mistake.
+                    </p>
+                  </div>
+                  <p className="text-slate-300 mb-6">
+                    Do you want to continue?
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setReopenConfirm(null)}
+                      className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => setReopenConfirm({ ...reopenConfirm, step: 2 })}
+                      className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                    >
+                      Continue →
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-2xl font-bold text-white mb-4">🔴 SECOND CONFIRMATION REQUIRED</h2>
+                  <div className="bg-red-600/20 border-2 border-red-500 rounded-lg p-4 mb-4">
+                    <p className="text-white font-bold mb-3">
+                      Are you absolutely sure you want to reopen this completed load?
+                    </p>
+                    <div className="space-y-1 text-sm">
+                      <p className="text-red-200">
+                        <strong>Load:</strong> {reopenConfirm.loadName}
+                      </p>
+                      <p className="text-red-200">
+                        <strong>Action:</strong> COMPLETED → DEPARTED
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-slate-300 mb-6 text-sm">
+                    Click "Reopen Load" to proceed or "Cancel" to abort.
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setReopenConfirm(null)}
+                      className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => executeReopenLoad(reopenConfirm.loadId)}
+                      className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition-colors border-2 border-red-400"
+                    >
+                      🔓 Reopen Load
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Optimize Confirmation Modal */}
       {showOptimizeConfirm && (
         <div 

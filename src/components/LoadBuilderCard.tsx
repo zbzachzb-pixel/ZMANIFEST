@@ -107,30 +107,52 @@ export function LoadBuilderCard({
   }
 
   const handleStatusChangeRequest = (newStatus: Load['status']) => {
-    // Validation
-    if (newStatus === 'ready' && unassignedCount > 0) {
-      if (!confirm(`⚠️ ${unassignedCount} student(s) not assigned to instructors.\n\nMark as ready anyway?`)) {
-        return
-      }
-    }
+  // ⚠️ SPECIAL HANDLING: Double confirmation for moving completed loads backwards
+  if (load.status === 'completed' && newStatus === 'departed') {
+    const firstConfirm = confirm(
+      `⚠️ WARNING: Reopen Completed Load?\n\n` +
+      `This will move "${load.name}" from COMPLETED back to DEPARTED status.\n\n` +
+      `This action should only be done if the load was marked completed by mistake.\n\n` +
+      `Do you want to continue?`
+    )
     
-    if (newStatus === 'ready' && isOverCapacity) {
-      alert('❌ Cannot mark as ready: Load is over capacity!')
-      return
-    }
+    if (!firstConfirm) return
     
-    if (newStatus === 'departed' && load.status !== 'ready') {
-      alert('❌ Load must be "Ready" before departing')
-      return
-    }
+    const secondConfirm = confirm(
+      `🔴 SECOND CONFIRMATION REQUIRED 🔴\n\n` +
+      `Are you absolutely sure you want to reopen this completed load?\n\n` +
+      `Load: ${load.name}\n` +
+      `Action: COMPLETED → DEPARTED\n\n` +
+      `Click OK to proceed or Cancel to abort.`
+    )
     
-    if (newStatus === 'completed' && load.status !== 'departed') {
-      alert('❌ Load must be "Departed" before marking complete')
-      return
-    }
-    
-    setStatusChangeConfirm(newStatus)
+    if (!secondConfirm) return
   }
+  
+  // Standard validations for forward transitions
+  if (newStatus === 'ready' && unassignedCount > 0) {
+    if (!confirm(`⚠️ ${unassignedCount} student(s) not assigned to instructors.\n\nMark as ready anyway?`)) {
+      return
+    }
+  }
+  
+  if (newStatus === 'ready' && isOverCapacity) {
+    alert('❌ Cannot mark as ready: Load is over capacity!')
+    return
+  }
+  
+  if (newStatus === 'departed' && load.status === 'building') {
+    alert('❌ Load must be "Ready" before departing')
+    return
+  }
+  
+  if (newStatus === 'completed' && load.status !== 'departed') {
+    alert('❌ Load must be "Departed" before marking complete')
+    return
+  }
+  
+  setStatusChangeConfirm(newStatus)
+}
   
   const confirmStatusChange = async () => {
     if (!statusChangeConfirm) return
@@ -205,19 +227,19 @@ export function LoadBuilderCard({
   
   // Get available status transitions
   const getAvailableTransitions = () => {
-    switch (load.status) {
-      case 'building':
-        return ['ready']
-      case 'ready':
-        return ['building', 'departed']
-      case 'departed':
-        return ['ready', 'completed']
-      case 'completed':
-        return ['departed']
-      default:
-        return []
-    }
+  switch (load.status) {
+    case 'building':
+      return ['ready']
+    case 'ready':
+      return ['building', 'departed']
+    case 'departed':
+      return ['ready', 'completed']
+    case 'completed':
+      return ['departed']  // ✅ NOW ALLOWS BACKWARDS TRANSITION
+    default:
+      return []
   }
+}
   
   const availableTransitions = getAvailableTransitions()
   
