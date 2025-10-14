@@ -47,10 +47,12 @@ export default function AssignmentsPage() {
       filtered = filtered.filter(a => {
         const instructorName = getInstructorName(a.instructorId).toLowerCase()
         const videoName = a.videoInstructorId ? getInstructorName(a.videoInstructorId).toLowerCase() : ''
+        const coveredName = a.coveringFor ? getInstructorName(a.coveringFor).toLowerCase() : ''
         return (
           a.name.toLowerCase().includes(search) ||
           instructorName.includes(search) ||
           videoName.includes(search) ||
+          coveredName.includes(search) ||
           a.jumpType.toLowerCase().includes(search)
         )
       })
@@ -140,11 +142,15 @@ export default function AssignmentsPage() {
                     const pay = calculatePay(assignment)
                     const instructorName = getInstructorName(assignment.instructorId)
                     const videoName = assignment.videoInstructorId ? getInstructorName(assignment.videoInstructorId) : null
+                    const coveredForName = assignment.coveringFor ? getInstructorName(assignment.coveringFor) : null
                     
                     return (
                       <tr 
                         key={assignment.id} 
-                        className={`hover:bg-white/5 transition-colors ${assignment.isMissedJump ? 'bg-red-500/10' : ''}`}
+                        className={`hover:bg-white/5 transition-colors ${
+                          assignment.isMissedJump ? 'bg-red-500/10' : 
+                          assignment.coveringFor ? 'bg-blue-500/5' : ''
+                        }`}
                       >
                         <td className="px-6 py-4 text-sm text-slate-300">
                           <div>{date.toLocaleDateString()}</div>
@@ -159,7 +165,19 @@ export default function AssignmentsPage() {
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-300">
-                          <div>{instructorName}</div>
+                          <div className="flex items-center gap-2">
+                            <span>{instructorName}</span>
+                            {coveredForName && (
+                              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">
+                                🤝 Covering
+                              </span>
+                            )}
+                          </div>
+                          {coveredForName && (
+                            <div className="text-xs text-blue-400 mt-1">
+                              Covered for {coveredForName}
+                            </div>
+                          )}
                           {videoName && (
                             <div className="text-xs text-slate-400">Video: {videoName}</div>
                           )}
@@ -192,6 +210,11 @@ export default function AssignmentsPage() {
                                 Missed
                               </span>
                             )}
+                            {coveredForName && (
+                              <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">
+                                Cover
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -214,6 +237,11 @@ export default function AssignmentsPage() {
         <div className="mt-6 bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
           <div className="flex justify-between items-center text-slate-300">
             <span>Total Assignments: <strong className="text-white">{filteredAssignments.length}</strong></span>
+            <span>
+              Covers: <strong className="text-blue-400">
+                {filteredAssignments.filter(a => a.coveringFor).length}
+              </strong>
+            </span>
             <span>
               Total Pay: <strong className="text-green-400">
                 ${filteredAssignments.reduce((sum, a) => sum + calculatePay(a), 0)}

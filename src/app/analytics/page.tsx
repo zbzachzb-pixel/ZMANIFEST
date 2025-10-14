@@ -5,6 +5,13 @@ import { useAssignments, useActiveInstructors } from '@/hooks/useDatabase'
 import { getCurrentPeriod } from '@/lib/utils'
 import type { Assignment, Instructor } from '@/types'
 
+interface CoverageStats {
+  timesCovered: number
+  timesCovering: number
+  missedJumps: number
+  reliabilityScore: number
+}
+
 function calculateInstructorStats(instructor: Instructor, assignments: Assignment[], period: any) {
   let totalJumps = 0
   let tandemCount = 0
@@ -14,9 +21,23 @@ function calculateInstructorStats(instructor: Instructor, assignments: Assignmen
   let totalEarnings = 0
   let missedJumps = 0
   
+  // Coverage tracking
+  let timesCovered = 0
+  let timesCovering = 0
+  
   for (const assignment of assignments) {
     const assignmentDate = new Date(assignment.timestamp)
     if (assignmentDate < period.start || assignmentDate > period.end) continue
+    
+    // Check if this instructor was covered
+    if (assignment.coveringFor === instructor.id) {
+      timesCovered++
+    }
+    
+    // Check if this instructor covered for someone
+    if (assignment.instructorId === instructor.id && assignment.coveringFor) {
+      timesCovering++
+    }
     
     if (assignment.instructorId === instructor.id || assignment.videoInstructorId === instructor.id) {
       if (assignment.isMissedJump && assignment.instructorId === instructor.id) {
@@ -53,6 +74,12 @@ function calculateInstructorStats(instructor: Instructor, assignments: Assignmen
     }
   }
   
+  // Calculate reliability score (0-100)
+  const totalWorkload = totalJumps + missedJumps + timesCovered
+  const reliabilityScore = totalWorkload > 0 
+    ? Math.round(((totalJumps + timesCovered) / totalWorkload) * 100)
+    : 100
+  
   return {
     totalJumps,
     tandemCount,
@@ -61,6 +88,9 @@ function calculateInstructorStats(instructor: Instructor, assignments: Assignmen
     balanceEarnings,
     totalEarnings,
     missedJumps,
+    timesCovered,
+    timesCovering,
+    reliabilityScore,
     avgPerJump: totalJumps > 0 ? Math.round(totalEarnings / totalJumps) : 0
   }
 }
@@ -84,8 +114,11 @@ export default function AnalyticsPage() {
     let affCount = 0
     let videoCount = 0
     let missedJumps = 0
+    let totalCovers = 0
     
     for (const a of periodAssignments) {
+      if (a.coveringFor) totalCovers++
+      
       if (a.isMissedJump) {
         missedJumps++
         let pay = 0
@@ -132,6 +165,7 @@ export default function AnalyticsPage() {
       affCount,
       videoCount,
       missedJumps,
+      totalCovers,
       avgPerJump: totalJumps > 0 ? Math.round(totalEarnings / totalJumps) : 0
     }
   }, [assignments, period])
@@ -144,6 +178,19 @@ export default function AnalyticsPage() {
       }))
       .sort((a, b) => b.stats.totalEarnings - a.stats.totalEarnings)
   }, [instructors, assignments, period])
+  
+  // Coverage leaderboards
+  const mostHelpful = useMemo(() => {
+    return [...instructorStats]
+      .sort((a, b) => b.stats.timesCovering - a.stats.timesCovering)
+      .slice(0, 5)
+  }, [instructorStats])
+  
+  const mostReliable = useMemo(() => {
+    return [...instructorStats]
+      .sort((a, b) => b.stats.reliabilityScore - a.stats.reliabilityScore)
+      .slice(0, 5)
+  }, [instructorStats])
   
   const maxEarnings = instructorStats.length > 0 ? instructorStats[0].stats.totalEarnings : 1
   
@@ -166,7 +213,7 @@ export default function AnalyticsPage() {
           <p className="text-slate-300">{period.name}</p>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
             <div className="text-xs text-slate-400 uppercase tracking-wide mb-2 font-semibold">Total Jumps</div>
             <div className="text-4xl font-bold text-white">{stats.totalJumps}</div>
@@ -175,6 +222,12 @@ export default function AnalyticsPage() {
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
             <div className="text-xs text-slate-400 uppercase tracking-wide mb-2 font-semibold">Missed Jumps</div>
             <div className="text-4xl font-bold text-red-400">{stats.missedJumps}</div>
+          </div>
+          
+          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
+            <div className="text-xs text-slate-400 uppercase tracking-wide mb-2 font-semibold">Covers</div>
+            <div className="text-4xl font-bold text-blue-400">{stats.totalCovers}</div>
+            <div className="text-xs text-slate-400 mt-1">Teammate assists</div>
           </div>
           
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
@@ -187,6 +240,60 @@ export default function AnalyticsPage() {
             <div className="text-xs text-slate-400 uppercase tracking-wide mb-2 font-semibold">Total Earnings</div>
             <div className="text-4xl font-bold text-green-400">${stats.totalEarnings}</div>
             <div className="text-xs text-slate-400 mt-1">Avg: ${stats.avgPerJump}/jump</div>
+          </div>
+        </div>
+        
+        {/* NEW: Coverage Analytics Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
+            <h2 className="text-2xl font-bold text-white mb-6">🏆 Most Helpful (Coverage)</h2>
+            <p className="text-sm text-slate-400 mb-4">Instructors who covered for teammates the most</p>
+            {mostHelpful.length === 0 ? (
+              <div className="text-center text-slate-400 py-8">No coverage data yet</div>
+            ) : (
+              <div className="space-y-3">
+                {mostHelpful.map(({ instructor, stats }, index) => (
+                  <div key={instructor.id} className="flex items-center gap-4 bg-white/5 rounded-lg p-4">
+                    <div className="text-2xl font-bold text-slate-500 w-8">#{index + 1}</div>
+                    <div className="flex-1">
+                      <div className="font-semibold text-white">{instructor.name}</div>
+                      <div className="text-xs text-slate-400">
+                        Covered {stats.timesCovering} jump{stats.timesCovering !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                    <div className="text-2xl font-bold text-blue-400">{stats.timesCovering}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
+            <h2 className="text-2xl font-bold text-white mb-6">💯 Most Reliable</h2>
+            <p className="text-sm text-slate-400 mb-4">Based on jumps completed vs. missed/covered</p>
+            {mostReliable.length === 0 ? (
+              <div className="text-center text-slate-400 py-8">No reliability data yet</div>
+            ) : (
+              <div className="space-y-3">
+                {mostReliable.map(({ instructor, stats }, index) => (
+                  <div key={instructor.id} className="flex items-center gap-4 bg-white/5 rounded-lg p-4">
+                    <div className="text-2xl font-bold text-slate-500 w-8">#{index + 1}</div>
+                    <div className="flex-1">
+                      <div className="font-semibold text-white">{instructor.name}</div>
+                      <div className="text-xs text-slate-400">
+                        {stats.missedJumps} missed • {stats.timesCovered} covered
+                      </div>
+                    </div>
+                    <div className={`text-2xl font-bold ${
+                      stats.reliabilityScore >= 95 ? 'text-green-400' :
+                      stats.reliabilityScore >= 85 ? 'text-yellow-400' : 'text-red-400'
+                    }`}>
+                      {stats.reliabilityScore}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         
@@ -230,7 +337,12 @@ export default function AnalyticsPage() {
                       )}
                     </div>
                   </div>
-                  <div className="w-20 text-right text-sm text-slate-300">{stats.totalJumps} jumps</div>
+                  <div className="w-24 text-right">
+                    <div className="text-sm text-slate-300">{stats.totalJumps} jumps</div>
+                    {stats.reliabilityScore < 100 && (
+                      <div className="text-xs text-slate-500">{stats.reliabilityScore}% reliable</div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -249,13 +361,13 @@ export default function AnalyticsPage() {
                 <thead className="bg-slate-800/50">
                   <tr>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Instructor</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Total Jumps</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Jumps</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Missed</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Tandem</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">AFF</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Video</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Covered</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Covering</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Reliability</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Balance</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Total Earnings</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Total $</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Avg/Jump</th>
                   </tr>
                 </thead>
@@ -269,9 +381,24 @@ export default function AnalyticsPage() {
                           {stats.missedJumps}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-300">{stats.tandemCount}</td>
-                      <td className="px-6 py-4 text-sm text-slate-300">{stats.affCount}</td>
-                      <td className="px-6 py-4 text-sm text-slate-300">{stats.videoCount}</td>
+                      <td className="px-6 py-4 text-sm font-semibold">
+                        <span className={stats.timesCovered > 0 ? 'text-yellow-400' : 'text-slate-300'}>
+                          {stats.timesCovered}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm font-semibold">
+                        <span className={stats.timesCovering > 0 ? 'text-blue-400' : 'text-slate-300'}>
+                          {stats.timesCovering}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm font-bold">
+                        <span className={
+                          stats.reliabilityScore >= 95 ? 'text-green-400' :
+                          stats.reliabilityScore >= 85 ? 'text-yellow-400' : 'text-red-400'
+                        }>
+                          {stats.reliabilityScore}%
+                        </span>
+                      </td>
                       <td className="px-6 py-4 text-sm text-purple-400 font-bold">${stats.balanceEarnings}</td>
                       <td className="px-6 py-4 text-sm text-green-400 font-bold">${stats.totalEarnings}</td>
                       <td className="px-6 py-4 text-sm text-slate-300">${stats.avgPerJump}</td>

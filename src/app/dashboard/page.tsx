@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react'
 import { useActiveInstructors, useAssignments } from '@/hooks/useDatabase'
 import { InstructorCard } from '@/components/InstructorCard'
 import { AddJumpModal } from '@/components/AddJumpModal'
+import { ReleaseAFFModal } from '@/components/ReleaseAFFModal'
 import { 
   getCurrentPeriod, 
   calculateInstructorEarnings, 
@@ -16,6 +17,7 @@ export default function DashboardPage() {
   const { data: instructors, loading: instructorsLoading } = useActiveInstructors()
   const { data: assignments, loading: assignmentsLoading } = useAssignments()
   const [selectedInstructor, setSelectedInstructor] = useState<Instructor | null>(null)
+  const [releaseInstructor, setReleaseInstructor] = useState<Instructor | null>(null)
   
   const period = getCurrentPeriod()
   const schedule = getScheduleDisplay()
@@ -93,9 +95,8 @@ export default function DashboardPage() {
     setSelectedInstructor(instructor)
   }
   
-  const handleReleaseAFF = async (instructor: Instructor) => {
-    // This would connect to your release AFF modal/logic
-    console.log('Release AFF for:', instructor.name)
+  const handleReleaseAFF = (instructor: Instructor) => {
+    setReleaseInstructor(instructor)
   }
   
   if (instructorsLoading || assignmentsLoading) {
@@ -243,6 +244,15 @@ export default function DashboardPage() {
         <AddJumpModal
           instructor={selectedInstructor}
           onClose={() => setSelectedInstructor(null)}
+        />
+      )}
+      
+      {/* Release AFF Modal - NOW PROPERLY CONNECTED! */}
+      {releaseInstructor && (
+        <ReleaseAFFModal
+          instructor={releaseInstructor}
+          onClose={() => setReleaseInstructor(null)}
+          onSuccess={() => setReleaseInstructor(null)}
         />
       )}
     </div>

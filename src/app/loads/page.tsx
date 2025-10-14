@@ -6,6 +6,20 @@ import { db } from '@/services'
 import { getCurrentPeriod } from '@/lib/utils'
 import type { QueueStudent, Instructor, Load, LoadAssignment, Assignment } from '@/types'
 
+interface ConflictWarning {
+  type: 'instructor_conflict' | 'capacity_exceeded' | 'no_qualified' | 'weight_violation'
+  message: string
+  severity: 'error' | 'warning'
+  loadId?: string
+}
+
+interface SmartSuggestion {
+  student: QueueStudent
+  instructor: Instructor
+  score: number
+  reason: string
+}
+
 export default function LoadBuilderPage() {
   const { data: loads, loading: loadsLoading } = useLoads()
   const { data: queue, loading: queueLoading } = useQueue()
@@ -18,9 +32,19 @@ export default function LoadBuilderPage() {
   const [selectedJumpType, setSelectedJumpType] = useState<'all' | 'tandem' | 'aff'>('all')
   const [draggedItem, setDraggedItem] = useState<{ type: 'student' | 'assignment', id: string, sourceLoadId?: string } | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [optimizing, setOptimizing] = useState(false)
 
   const period = getCurrentPeriod()
   const buildingLoads = loads.filter(l => l.status === 'building')
+  
+  // Debug logging
+  console.log('🔍 Load Builder Debug:', {
+    totalLoads: loads.length,
+    buildingLoads: buildingLoads.length,
+    queueLength: queue.length,
+    instructorsCount: instructors.length,
+    clockedInCount: instructors.filter(i => i.clockedIn).length
+  })
 
   // Calculate instructor balances
   const instructorBalances = useMemo(() => {
@@ -52,6 +76,120 @@ export default function LoadBuilderPage() {
     return balances
   }, [instructors, assignments, period])
 
+  // Detect conflicts across all loads
+  const conflicts = useMemo((): ConflictWarning[] => {
+    const warnings: ConflictWarning[] = []
+    const instructorLoadMap = new Map<string, Set<string>>()
+    
+    buildingLoads.forEach(load => {
+      const assignments = load.assignments || []
+      
+      // Check capacity
+      const totalPeople = assignments.reduce((sum, a) => {
+        let count = 2
+        if (a.hasOutsideVideo || a.videoInstructorId) count += 1
+        return sum + count
+      }, 0)
+      
+      if (totalPeople > load.capacity) {
+        warnings.push({
+          type: 'capacity_exceeded',
+          message: `${load.name} is over capacity: ${totalPeople}/${load.capacity}`,
+          severity: 'error',
+          loadId: load.id
+        })
+      }
+      
+      // Track instructors per load
+      assignments.forEach(a => {
+        if (a.instructorId) {
+          if (!instructorLoadMap.has(a.instructorId)) {
+            instructorLoadMap.set(a.instructorId, new Set())
+          }
+          instructorLoadMap.get(a.instructorId)!.add(load.id)
+        }
+        if (a.videoInstructorId) {
+          if (!instructorLoadMap.has(a.videoInstructorId)) {
+            instructorLoadMap.set(a.videoInstructorId, new Set())
+          }
+          instructorLoadMap.get(a.videoInstructorId)!.add(load.id)
+        }
+      })
+    })
+    
+    // Check for instructor conflicts
+    instructorLoadMap.forEach((loadIds, instructorId) => {
+      if (loadIds.size > 1) {
+        const instructor = instructors.find(i => i.id === instructorId)
+        const loadNames = Array.from(loadIds).map(id => 
+          buildingLoads.find(l => l.id === id)?.name || 'Unknown'
+        ).join(', ')
+        
+        warnings.push({
+          type: 'instructor_conflict',
+          message: `${instructor?.name || 'Instructor'} is on multiple loads: ${loadNames}`,
+          severity: 'error'
+        })
+      }
+    })
+    
+    return warnings
+  }, [buildingLoads, instructors])
+
+  // Smart suggestions for next student
+  const smartSuggestions = useMemo((): SmartSuggestion[] => {
+    if (buildingLoads.length === 0 || queue.length === 0) return []
+    
+    const suggestions: SmartSuggestion[] = []
+    
+    // Get all instructors already assigned
+    const assignedInstructors = new Set<string>()
+    buildingLoads.forEach(load => {
+      (load.assignments || []).forEach(a => {
+        if (a.instructorId) assignedInstructors.add(a.instructorId)
+        if (a.videoInstructorId) assignedInstructors.add(a.videoInstructorId)
+      })
+    })
+    
+    // Find available instructors
+    const availableInstructors = instructors.filter(i => 
+      i.clockedIn && !assignedInstructors.has(i.id)
+    )
+    
+    // Score each queue student
+    queue.slice(0, 5).forEach(student => {
+      const qualifiedInstructors = availableInstructors.filter(instructor => {
+        if (student.jumpType === 'tandem' && !instructor.tandem) return false
+        if (student.jumpType === 'aff' && !instructor.aff) return false
+        if (student.jumpType === 'tandem' && instructor.tandemWeightLimit && student.weight > instructor.tandemWeightLimit) return false
+        if (student.jumpType === 'aff' && instructor.affWeightLimit && student.weight > instructor.affWeightLimit) return false
+        if (student.jumpType === 'aff' && instructor.affLocked) return false
+        return true
+      })
+      
+      if (qualifiedInstructors.length > 0) {
+        // Sort by balance
+        qualifiedInstructors.sort((a, b) => {
+          const balanceA = instructorBalances.get(a.id) || 0
+          const balanceB = instructorBalances.get(b.id) || 0
+          return balanceA - balanceB
+        })
+        
+        const bestInstructor = qualifiedInstructors[0]
+        const balance = instructorBalances.get(bestInstructor.id) || 0
+        
+        suggestions.push({
+          student,
+          instructor: bestInstructor,
+          score: 100 - balance,
+          reason: `Perfect match with ${bestInstructor.name} (Balance: $${balance})`
+        })
+      }
+    })
+    
+    return suggestions.sort((a, b) => b.score - a.score).slice(0, 3)
+  }, [buildingLoads, queue, instructors, instructorBalances])
+
   const filteredQueue = useMemo(() => {
     return queue.filter(student => {
       const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -82,7 +220,6 @@ export default function LoadBuilderPage() {
     if (assignments.length > 0) {
       if (!confirm(`Delete ${load.name}? All ${assignments.length} assignments will return to queue.`)) return
       
-      // Return students to queue
       for (const assignment of assignments) {
         try {
           await db.addToQueue({
@@ -109,50 +246,96 @@ export default function LoadBuilderPage() {
     }
   }
 
-  const findBestInstructor = (student: QueueStudent, currentAssignments: LoadAssignment[]): Instructor | null => {
-    const alreadyAssignedIds = new Set(currentAssignments.map(a => a.instructorId).filter(Boolean))
+  const findBestInstructor = (student: QueueStudent, currentAssignments: LoadAssignment[], excludeIds: Set<string>): Instructor | null => {
+    const alreadyAssignedIds = new Set([...currentAssignments.map(a => a.instructorId).filter(Boolean), ...excludeIds])
     const clockedIn = instructors.filter(i => i.clockedIn)
     
+    console.log('🔍 Finding best instructor:', {
+      student: student.name,
+      studentWeight: student.weight,
+      jumpType: student.jumpType,
+      clockedInCount: clockedIn.length,
+      excludedCount: excludeIds.size,
+      alreadyAssigned: alreadyAssignedIds.size
+    })
+    
     const qualified = clockedIn.filter(instructor => {
-      if (alreadyAssignedIds.has(instructor.id)) return false
+      if (alreadyAssignedIds.has(instructor.id)) {
+        console.log(`  ❌ ${instructor.name} already assigned`)
+        return false
+      }
+      if (student.jumpType === 'tandem' && !instructor.tandem) {
+        console.log(`  ❌ ${instructor.name} not tandem certified`)
+        return false
+      }
+      if (student.jumpType === 'aff' && !instructor.aff) {
+        console.log(`  ❌ ${instructor.name} not AFF certified`)
+        return false
+      }
       
-      // Check certifications
-      if (student.jumpType === 'tandem' && !instructor.tandem) return false
-      if (student.jumpType === 'aff' && !instructor.aff) return false
+      // FIXED: Tandem weight limit is STUDENT weight only (not combined)
+      if (student.jumpType === 'tandem' && instructor.tandemWeightLimit && student.weight > instructor.tandemWeightLimit) {
+        console.log(`  ❌ ${instructor.name} tandem weight limit exceeded (Student: ${student.weight} > Limit: ${instructor.tandemWeightLimit})`)
+        return false
+      }
       
-      // Check weight limits
-      const totalWeight = instructor.bodyWeight + student.weight
-      if (student.jumpType === 'tandem' && instructor.tandemWeightLimit && totalWeight > instructor.tandemWeightLimit) return false
-      if (student.jumpType === 'aff' && instructor.affWeightLimit && totalWeight > instructor.affWeightLimit) return false
+      // FIXED: AFF weight limit is STUDENT weight only (not combined)
+      if (student.jumpType === 'aff' && instructor.affWeightLimit && student.weight > instructor.affWeightLimit) {
+        console.log(`  ❌ ${instructor.name} AFF weight limit exceeded (Student: ${student.weight} > Limit: ${instructor.affWeightLimit})`)
+        return false
+      }
       
-      // Check AFF lock
-      if (student.jumpType === 'aff' && instructor.affLocked) return false
-      
+      if (student.jumpType === 'aff' && instructor.affLocked) {
+        console.log(`  ❌ ${instructor.name} AFF locked`)
+        return false
+      }
+      console.log(`  ✅ ${instructor.name} qualified (Weight: ${student.weight} ≤ ${instructor.tandemWeightLimit || instructor.affWeightLimit || 'no limit'})`)
       return true
     })
 
-    if (qualified.length === 0) return null
+    if (qualified.length === 0) {
+      console.log('  ⚠️ No qualified instructors found')
+      return null
+    }
     
-    // Sort by balance (lowest first for fair rotation)
     qualified.sort((a, b) => {
       const balanceA = instructorBalances.get(a.id) || 0
       const balanceB = instructorBalances.get(b.id) || 0
       return balanceA - balanceB
     })
     
+    console.log(`  ✅ Best: ${qualified[0].name} (Balance: $${instructorBalances.get(qualified[0].id) || 0})`)
     return qualified[0]
   }
 
+  // FIXED: handleAssignInstructor with better error handling
   const handleAssignInstructor = async (loadId: string, assignmentId: string) => {
+    console.log('🎯 Auto-assign clicked:', { loadId, assignmentId })
+    
     const load = loads.find(l => l.id === loadId)
-    if (!load) return
+    if (!load) {
+      console.error('Load not found:', loadId)
+      alert('❌ Load not found')
+      return
+    }
     
     const assignments = load.assignments || []
     const assignment = assignments.find(a => a.id === assignmentId)
-    if (!assignment || assignment.instructorId) return
     
+    if (!assignment) {
+      console.error('Assignment not found:', assignmentId)
+      alert('❌ Assignment not found')
+      return
+    }
+    
+    if (assignment.instructorId) {
+      console.log('Already has instructor:', assignment.instructorName)
+      return
+    }
+    
+    // Build student object from assignment
     const student: QueueStudent = {
-      id: assignment.studentId,
+      id: assignment.studentId || assignmentId, // Fallback to assignmentId
       name: assignment.studentName,
       weight: assignment.studentWeight,
       jumpType: assignment.jumpType,
@@ -163,11 +346,26 @@ export default function LoadBuilderPage() {
       isRequest: assignment.isRequest
     }
     
-    const instructor = findBestInstructor(student, assignments)
+    console.log('Student data:', student)
+    
+    // Get all instructors already used across ALL loads
+    const usedInstructors = new Set<string>()
+    buildingLoads.forEach(l => {
+      (l.assignments || []).forEach(a => {
+        if (a.instructorId) usedInstructors.add(a.instructorId)
+        if (a.videoInstructorId) usedInstructors.add(a.videoInstructorId)
+      })
+    })
+    
+    console.log('Used instructors across all loads:', usedInstructors.size)
+    
+    const instructor = findBestInstructor(student, assignments, usedInstructors)
     if (!instructor) {
-      alert('❌ No qualified instructor available for this student')
+      alert('❌ No qualified instructor available (considering all loads)')
       return
     }
+    
+    console.log('✅ Assigning:', instructor.name)
     
     const updatedAssignments = assignments.map(a => 
       a.id === assignmentId 
@@ -177,58 +375,134 @@ export default function LoadBuilderPage() {
     
     try {
       await updateLoad(loadId, { assignments: updatedAssignments })
+      console.log('✅ Assignment complete')
     } catch (error) {
       console.error('Failed to assign instructor:', error)
       alert('Failed to assign instructor')
     }
   }
 
-  const handleOptimizeLoad = async (loadId: string) => {
-    const load = loads.find(l => l.id === loadId)
-    if (!load) return
+  // FIXED: handleOptimizeAll with better logic
+  const handleOptimizeAll = async () => {
+    console.log('🎯 Optimize All clicked')
     
-    const assignments = load.assignments || []
-    const optimizedAssignments = [...assignments]
-    let assignedCount = 0
-    
-    for (let i = 0; i < optimizedAssignments.length; i++) {
-      const assignment = optimizedAssignments[i]
-      if (assignment.instructorId) continue
-      
-      const student: QueueStudent = {
-        id: assignment.studentId,
-        name: assignment.studentName,
-        weight: assignment.studentWeight,
-        jumpType: assignment.jumpType,
-        timestamp: new Date().toISOString(),
-        tandemWeightTax: assignment.tandemWeightTax,
-        affLevel: assignment.affLevel,
-        isRequest: assignment.isRequest
-      }
-      
-      const currentlyAssigned = optimizedAssignments.slice(0, i).filter(a => a.instructorId)
-      const instructor = findBestInstructor(student, currentlyAssigned)
-      
-      if (instructor) {
-        optimizedAssignments[i] = {
-          ...assignment,
-          instructorId: instructor.id,
-          instructorName: instructor.name
-        }
-        assignedCount++
-      }
+    if (buildingLoads.length === 0) {
+      alert('❌ No loads to optimize. Create a load first.')
+      return
     }
     
+    if (queue.length === 0) {
+      alert('❌ Queue is empty. Add students to the queue first.')
+      return
+    }
+    
+    const clockedInInstructors = instructors.filter(i => i.clockedIn)
+    if (clockedInInstructors.length === 0) {
+      alert('❌ No instructors are clocked in.')
+      return
+    }
+    
+    console.log('Starting optimization:', {
+      loads: buildingLoads.length,
+      students: queue.length,
+      instructors: clockedInInstructors.length
+    })
+    
+    if (!confirm(`Optimize ${buildingLoads.length} load(s)? This will assign ${queue.length} student(s) for best balance.`)) {
+      return
+    }
+    
+    setOptimizing(true)
+    
     try {
-      await updateLoad(loadId, { assignments: optimizedAssignments })
-      if (assignedCount > 0) {
-        alert(`✅ Assigned ${assignedCount} instructor${assignedCount !== 1 ? 's' : ''}!`)
-      } else {
-        alert('⚠️ No available instructors could be assigned')
+      const usedInstructors = new Set<string>()
+      const eligibleStudents = [...queue] // Copy array
+      const updates: { loadId: string, assignments: LoadAssignment[] }[] = []
+      
+      // Prepare all loads
+      buildingLoads.forEach(load => {
+        updates.push({
+          loadId: load.id,
+          assignments: [...(load.assignments || [])]
+        })
+      })
+      
+      let assignedCount = 0
+      const studentsToRemove: string[] = []
+      
+      // Assign students globally
+      for (const student of eligibleStudents) {
+        // Skip requests if needed
+        if (student.isRequest) {
+          console.log('Skipping request:', student.name)
+          continue
+        }
+        
+        // Find a load with space
+        const loadWithSpace = updates.find(u => {
+          const load = buildingLoads.find(l => l.id === u.loadId)
+          if (!load) return false
+          const totalPeople = u.assignments.reduce((sum, a) => {
+            let count = 2
+            if (a.hasOutsideVideo || a.videoInstructorId) count += 1
+            return sum + count
+          }, 0)
+          return totalPeople + 2 <= load.capacity
+        })
+        
+        if (!loadWithSpace) {
+          console.log('No space for:', student.name)
+          break
+        }
+        
+        const instructor = findBestInstructor(student, loadWithSpace.assignments, usedInstructors)
+        if (!instructor) {
+          console.log('No instructor for:', student.name)
+          continue
+        }
+        
+        usedInstructors.add(instructor.id)
+        
+        const newAssignment: LoadAssignment = {
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          studentId: student.id,
+          studentName: student.name,
+          studentWeight: student.weight,
+          jumpType: student.jumpType,
+          isRequest: student.isRequest,
+          instructorId: instructor.id,
+          instructorName: instructor.name,
+          tandemWeightTax: student.tandemWeightTax,
+          tandemHandcam: student.tandemHandcam,
+          affLevel: student.affLevel,
+          hasOutsideVideo: student.outsideVideo
+        }
+        
+        loadWithSpace.assignments.push(newAssignment)
+        studentsToRemove.push(student.id)
+        assignedCount++
+        
+        console.log(`✅ Assigned ${student.name} to ${instructor.name}`)
       }
+      
+      console.log('Applying updates...')
+      
+      // Apply all updates
+      for (const update of updates) {
+        await updateLoad(update.loadId, { assignments: update.assignments })
+      }
+      
+      // Remove assigned students from queue
+      for (const studentId of studentsToRemove) {
+        await db.removeFromQueue(studentId)
+      }
+      
+      alert(`✅ Optimization complete! Assigned ${assignedCount} student(s) across ${buildingLoads.length} load(s).`)
     } catch (error) {
-      console.error('Failed to optimize load:', error)
-      alert('Failed to optimize load')
+      console.error('Global optimization failed:', error)
+      alert('❌ Optimization failed. Check console for details.')
+    } finally {
+      setOptimizing(false)
     }
   }
 
@@ -236,7 +510,7 @@ export default function LoadBuilderPage() {
     let totalPeople = 0
     const assignments = load.assignments || []
     assignments.forEach(a => {
-      totalPeople += 2 // Student + instructor
+      totalPeople += 2
       if (a.hasOutsideVideo || a.videoInstructorId) totalPeople += 1
     })
     return totalPeople
@@ -263,7 +537,6 @@ export default function LoadBuilderPage() {
     
     if (!draggedItem) return
 
-    // Student from queue to load
     if (draggedItem.type === 'student' && targetType === 'load' && targetLoadId) {
       const student = queue.find(s => s.id === draggedItem.id)
       if (!student) return
@@ -305,7 +578,6 @@ export default function LoadBuilderPage() {
       }
     }
     
-    // Assignment from load to queue
     else if (draggedItem.type === 'assignment' && targetType === 'queue') {
       const sourceLoad = loads.find(l => l.id === draggedItem.sourceLoadId)
       if (!sourceLoad) return
@@ -335,7 +607,6 @@ export default function LoadBuilderPage() {
       }
     }
     
-    // Assignment between loads
     else if (draggedItem.type === 'assignment' && targetType === 'load' && targetLoadId) {
       if (draggedItem.sourceLoadId === targetLoadId) return
       
@@ -356,11 +627,10 @@ export default function LoadBuilderPage() {
       }
       
       try {
-        // Remove instructor assignment when moving between loads
         const movedAssignment = { 
           ...assignment, 
-          instructorId: undefined, 
-          instructorName: undefined 
+          instructorId: '',
+          instructorName: '' 
         }
         
         await updateLoad(draggedItem.sourceLoadId!, { 
@@ -390,21 +660,107 @@ export default function LoadBuilderPage() {
     )
   }
 
+  // Show helpful message if conditions aren't met
+  const canOptimize = buildingLoads.length > 0 && queue.length > 0 && instructors.filter(i => i.clockedIn).length > 0
+  
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-8">
       <div className="max-w-[1920px] mx-auto">
-        <div className="mb-8 flex justify-between items-center">
+        <div className="mb-8 flex justify-between items-start">
           <div>
-            <h1 className="text-4xl font-bold text-white mb-2">✈️ Load Builder</h1>
-            <p className="text-slate-300">Drag students from queue into loads. Smart assignment included!</p>
+            <h1 className="text-4xl font-bold text-white mb-2">✈️ Smart Load Builder</h1>
+            <p className="text-slate-300">AI-powered load optimization with conflict detection</p>
           </div>
-          <button
-            onClick={handleCreateLoad}
-            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center gap-2"
-          >
-            <span className="text-xl">+</span> New Load
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleOptimizeAll}
+              disabled={optimizing || !canOptimize}
+              className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={!canOptimize ? 'Need: loads, students in queue, and clocked-in instructors' : ''}
+            >
+              {optimizing ? '⏳ Optimizing...' : '🎯 Optimize All Loads'}
+            </button>
+            <button
+              onClick={handleCreateLoad}
+              className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <span className="text-xl">+</span> New Load
+            </button>
+          </div>
         </div>
+        
+        {/* Debug info when optimization is disabled */}
+        {!canOptimize && !optimizing && (
+          <div className="mb-6 bg-blue-500/20 border border-blue-500/50 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">ℹ️</span>
+              <div>
+                <div className="font-bold text-blue-300 mb-2">Optimize All is disabled because:</div>
+                <ul className="text-sm text-slate-300 space-y-1">
+                  {buildingLoads.length === 0 && <li>• No loads created (click "+ New Load")</li>}
+                  {queue.length === 0 && <li>• Queue is empty (add students to queue)</li>}
+                  {instructors.filter(i => i.clockedIn).length === 0 && <li>• No instructors clocked in</li>}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Conflict Warnings */}
+        {conflicts.length > 0 && (
+          <div className="mb-6 space-y-2">
+            {conflicts.map((conflict, index) => (
+              <div 
+                key={index}
+                className={`p-4 rounded-lg border-2 ${
+                  conflict.severity === 'error' 
+                    ? 'bg-red-500/20 border-red-500' 
+                    : 'bg-yellow-500/20 border-yellow-500'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">
+                    {conflict.severity === 'error' ? '🚨' : '⚠️'}
+                  </span>
+                  <div>
+                    <div className={`font-bold ${
+                      conflict.severity === 'error' ? 'text-red-300' : 'text-yellow-300'
+                    }`}>
+                      {conflict.type === 'instructor_conflict' ? 'Instructor Conflict' :
+                       conflict.type === 'capacity_exceeded' ? 'Capacity Exceeded' :
+                       conflict.type === 'no_qualified' ? 'No Qualified Instructors' :
+                       'Weight Violation'}
+                    </div>
+                    <div className="text-sm text-slate-300">{conflict.message}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Smart Suggestions */}
+        {smartSuggestions.length > 0 && (
+          <div className="mb-6 bg-gradient-to-r from-purple-500/20 to-blue-500/20 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-purple-500/30">
+            <h3 className="text-xl font-bold text-white mb-4">💡 Smart Suggestions</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {smartSuggestions.map((suggestion, index) => (
+                <div key={index} className="bg-white/10 rounded-lg p-4 border border-white/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-2xl">⭐</span>
+                    <span className="font-bold text-white">{suggestion.student.name}</span>
+                  </div>
+                  <div className="text-sm text-slate-300 mb-2">
+                    {suggestion.student.weight} lbs • {suggestion.student.jumpType.toUpperCase()}
+                  </div>
+                  <div className="text-xs text-green-400 font-semibold">
+                    {suggestion.reason}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-12 gap-6">
           {/* Queue Sidebar */}
@@ -533,7 +889,7 @@ export default function LoadBuilderPage() {
                         <div className="flex-1">
                           <h3 className="text-xl font-bold text-white mb-1">{load.name}</h3>
                           <div className={`text-sm font-medium mb-2 ${isOverCapacity ? 'text-red-400' : 'text-slate-400'}`}>
-                            {totalPeople}/{load.capacity} people ({percentFull}%) {isOverCapacity && '⚠️ OVER CAPACITY'}
+                            {totalPeople}/{load.capacity} people ({percentFull}%) {isOverCapacity && '⚠️ OVER'}
                           </div>
                           <div className="w-full bg-white/10 rounded-full h-2">
                             <div 
@@ -544,29 +900,18 @@ export default function LoadBuilderPage() {
                             />
                           </div>
                         </div>
-                        <div className="flex gap-2 ml-4">
-                          {assignments.length > 0 && (
-                            <button
-                              onClick={() => handleOptimizeLoad(load.id)}
-                              className="bg-green-500 hover:bg-green-600 text-white font-bold px-4 py-2 rounded-lg transition-colors text-sm whitespace-nowrap"
-                              title="Auto-assign all unassigned students"
-                            >
-                              ⚡ Optimize
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleDeleteLoad(load.id)}
-                            className="bg-red-500 hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg transition-colors text-sm"
-                          >
-                            🗑️
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => handleDeleteLoad(load.id)}
+                          className="bg-red-500 hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg transition-colors text-sm ml-4"
+                        >
+                          🗑️
+                        </button>
                       </div>
 
                       {unassignedCount > 0 && (
                         <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-3 mb-4">
                           <div className="text-yellow-300 font-semibold text-sm">
-                            ⚠️ {unassignedCount} student{unassignedCount !== 1 ? 's' : ''} need instructor assignment
+                            ⚠️ {unassignedCount} student{unassignedCount !== 1 ? 's' : ''} need instructor
                           </div>
                         </div>
                       )}
@@ -612,15 +957,18 @@ export default function LoadBuilderPage() {
                               {assignment.instructorId ? (
                                 <div className="bg-green-500/20 rounded px-3 py-2 text-xs border border-green-500/30">
                                   <span className="text-green-300 font-semibold">
-                                    ✓ Instructor: {assignment.instructorName}
+                                    ✓ {assignment.instructorName}
                                   </span>
                                 </div>
                               ) : (
                                 <button
-                                  onClick={() => handleAssignInstructor(load.id, assignment.id)}
+                                  onClick={() => {
+                                    console.log('Button clicked!', { loadId: load.id, assignmentId: assignment.id })
+                                    handleAssignInstructor(load.id, assignment.id)
+                                  }}
                                   className="w-full bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded px-3 py-2 text-xs font-semibold transition-colors border border-blue-500/30"
                                 >
-                                  🎯 Assign Best Instructor
+                                  🎯 Auto-Assign
                                 </button>
                               )}
                             </div>

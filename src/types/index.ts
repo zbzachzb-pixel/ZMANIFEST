@@ -102,16 +102,15 @@ export interface Assignment {
   // Missed jumps
   isMissedJump?: boolean
   
-  // ⭐ NEW: Covering for system - add this line
+  // Covering for system
   coveringFor?: string  // ID of instructor being covered for
 }
-
-// Rest of your types remain unchanged
 
 // ==================== LOAD ====================
 
 export interface LoadAssignment {
   id: string
+  studentId: string  // ⭐ ADDED THIS - needed for tracking
   instructorId: string
   instructorName: string
   videoInstructorId?: string
