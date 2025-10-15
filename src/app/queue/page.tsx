@@ -581,8 +581,7 @@ export default function QueuePage() {
 
       {confirmDelete && (
         <ConfirmDeleteModal
-          title={`Remove ${confirmDelete.count} student${confirmDelete.count > 1 ? 's' : ''}?`}
-          message="This will permanently remove these students from the queue."
+          count={confirmDelete.count}
           onConfirm={confirmRemoval}
           onCancel={() => setConfirmDelete(null)}
         />

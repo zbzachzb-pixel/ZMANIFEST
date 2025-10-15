@@ -1,6 +1,8 @@
-// src/components/LoadBuilderCard.tsx - COMPLETE FILE WITH NEW TIMER LOGIC
-// ✅ NEW: Cascading timer system - loads marked ready get staggered timers
-// ✅ NEW: When first load departs, all subsequent loads reset to base intervals
+// src/components/LoadBuilderCard.tsx - COMPLETE FILE WITH INSTRUCTOR AVAILABILITY FIX
+// ✅ NEW: 40-minute instructor cycle time enforcement
+// ✅ NEW: Instructors can only be on loads with proper spacing (e.g., 1,3,5,7 not 1,2,3,4)
+// ✅ Cascading timer system - loads marked ready get staggered timers
+// ✅ When first load departs, all subsequent loads reset to base intervals
 // ✅ Bidirectional transitions at all stages
 // ✅ Confirmation for moving from completed
 // ✅ Allow deletion of completed loads with extra confirmation
@@ -11,7 +13,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react'
 import { useUpdateLoad, useDeleteLoad, useGroups } from '@/hooks/useDatabase'
-import { useLoadCountdown } from '@/hooks/useLoadCountdown'
+import { useLoadCountdown, isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
 import { db } from '@/services'
 import type { Load, Instructor, LoadSchedulingSettings, CreateQueueStudent } from '@/types'
 
@@ -70,9 +72,9 @@ export function LoadBuilderCard({
   }, 0)
   
   const unassignedCount = loadAssignments.filter(a => !a.instructorId).length
-  const percentFull = Math.round((totalPeople / load.capacity) * 100)
-  const isOverCapacity = totalPeople > load.capacity
-  const availableSlots = load.capacity - totalPeople
+  const percentFull = Math.round((totalPeople / (load.capacity || 18)) * 100)
+  const isOverCapacity = totalPeople > (load.capacity || 18)
+  const availableSlots = (load.capacity || 18) - totalPeople
   const isCompleted = load.status === 'completed'
 
   const statusConfig = {
@@ -107,6 +109,8 @@ export function LoadBuilderCard({
     return transitions
   }, [load.status])
 
+  // ==================== DRAG AND DROP HANDLERS ====================
+  
   const handleDragOver = (e: React.DragEvent) => {
     if (isCompleted) return
     if (load.status !== 'building') return
@@ -125,6 +129,8 @@ export function LoadBuilderCard({
     setDragOver(false)
     onDrop(load.id)
   }
+
+  // ==================== STATUS CHANGE HANDLERS ====================
 
   const handleStatusChangeRequest = (newStatus: Load['status']) => {
     if (newStatus === 'ready' && isOverCapacity) {
@@ -145,7 +151,6 @@ export function LoadBuilderCard({
     setStatusChangeConfirm(newStatus)
   }
   
-  // ==================== NEW TIMER LOGIC ====================
   const confirmStatusChange = async () => {
     if (!statusChangeConfirm) return
     
@@ -180,31 +185,11 @@ export function LoadBuilderCard({
           const isFirstReadyLoad = firstReadyLoad && firstReadyLoad.id === load.id
           
           if (isFirstReadyLoad) {
-            // This is the first ready load - start its timer
+            // This is the first ready load - start a timer
             (updates as any).countdownStartTime = new Date().toISOString()
           } else {
-            // This is NOT the first ready load - check if first ready load has active timer
-            const firstLoadHasTimer = firstReadyLoad && (firstReadyLoad as any).countdownStartTime
-            
-            if (firstLoadHasTimer) {
-              // First load has timer - calculate cascading timer for this load
-              const firstLoadStartTime = new Date((firstReadyLoad as any).countdownStartTime).getTime()
-              const firstLoadTargetTime = firstLoadStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
-              const firstLoadRemainingMs = Math.max(0, firstLoadTargetTime - Date.now())
-              
-              // Calculate position difference
-              const positionDiff = (load.position || 0) - (firstReadyLoad.position || 0)
-              
-              // This load's total remaining time = first load remaining + (20 min × position difference)
-              const thisLoadRemainingMs = firstLoadRemainingMs + (positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
-              
-              // Calculate startTime such that remaining time equals thisLoadRemainingMs
-              const thisLoadStartTime = Date.now() + thisLoadRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000);
-              (updates as any).countdownStartTime = new Date(thisLoadStartTime).toISOString()
-            } else {
-              // First ready load has no timer - don't set timer for this load
-              (updates as any).countdownStartTime = null
-            }
+            // There's another load that's ready before this one - don't set timer for this load
+            (updates as any).countdownStartTime = null
           }
         }
       }
@@ -296,6 +281,8 @@ export function LoadBuilderCard({
     }
   }
   
+  // ==================== DELETE HANDLERS ====================
+  
   const handleDelete = () => {
     setShowDeleteConfirm(true)
   }
@@ -383,6 +370,8 @@ export function LoadBuilderCard({
     }
   }
 
+  // ==================== ASSIGNMENT HANDLERS ====================
+  
   const removeFromLoad = async (assignmentId: string) => {
     try {
       const assignment = loadAssignments.find(a => a.id === assignmentId)
@@ -396,7 +385,7 @@ export function LoadBuilderCard({
         name: assignment.studentName,
         weight: assignment.studentWeight,
         jumpType: assignment.jumpType,
-        isRequest: assignment.isRequest,
+        isRequest: assignment.isRequest || false,
         tandemWeightTax: assignment.tandemWeightTax,
         tandemHandcam: assignment.tandemHandcam || false,
         outsideVideo: assignment.hasOutsideVideo,
@@ -420,6 +409,8 @@ export function LoadBuilderCard({
     setShowDelayModal(false)
     setDelayMinutes(20)
   }
+  
+  // ==================== INSTRUCTOR ASSIGNMENT LOGIC ====================
   
   const handleAssignInstructors = async () => {
     setAssignLoading(true)
@@ -453,9 +444,21 @@ export function LoadBuilderCard({
     }
   }
   
+  // 🔥 NEW: Check instructor availability based on load position and 40-minute cycle
   const getQualifiedInstructors = (assignment: typeof loadAssignments[0]) => {
     const clockedIn = instructors.filter(i => i.clockedIn)
     const qualified = clockedIn.filter(instructor => {
+      // 🔥 Check availability based on load position and cycle time
+      const isAvailable = isInstructorAvailableForLoad(
+        instructor.id,
+        load.position || 0,
+        allLoads,
+        loadSchedulingSettings.instructorCycleTime,
+        loadSchedulingSettings.minutesBetweenLoads
+      )
+      
+      if (!isAvailable) return false
+      
       const canTandem = (instructor as any).canTandem ?? (instructor as any).tandem
       const canAFF = (instructor as any).canAFF ?? (instructor as any).aff
       if (assignment.jumpType === 'tandem' && !canTandem) return false
@@ -476,10 +479,22 @@ export function LoadBuilderCard({
     })
   }
   
+  // 🔥 NEW: Check video instructor availability
   const getVideoInstructors = () => {
     return instructors.filter(i => {
       const canVideo = (i as any).canVideo ?? (i as any).video
-      return i.clockedIn && canVideo
+      if (!i.clockedIn || !canVideo) return false
+      
+      // 🔥 Check availability based on load position
+      const isAvailable = isInstructorAvailableForLoad(
+        i.id,
+        load.position || 0,
+        allLoads,
+        loadSchedulingSettings.instructorCycleTime,
+        loadSchedulingSettings.minutesBetweenLoads
+      )
+      
+      return isAvailable
     }).sort((a, b) => {
       const balanceA = instructorBalances.get(a.id) || 0
       const balanceB = instructorBalances.get(b.id) || 0
@@ -487,6 +502,7 @@ export function LoadBuilderCard({
     })
   }
   
+  // 🔥 NEW: Auto-select instructors with availability checking
   const autoSelectInstructors = useMemo(() => {
     if (!showAssignModal) return {}
     
@@ -494,19 +510,16 @@ export function LoadBuilderCard({
     const usedMainInstructors = new Set<string>()
     const usedVideoInstructors = new Set<string>()
     
-    allLoads.forEach(otherLoad => {
-      if (otherLoad.status === 'completed') return
-      
-      const assignments = otherLoad.assignments || []
-      assignments.forEach(a => {
-        if (a.instructorId) {
-          usedMainInstructors.add(a.instructorId)
-        }
-        if (a.videoInstructorId) {
-          usedVideoInstructors.add(a.videoInstructorId)
-          usedMainInstructors.add(a.videoInstructorId)
-        }
-      })
+    // 🔥 Only track instructors already assigned on THIS load
+    const assignments = loadAssignments || []
+    assignments.forEach(a => {
+      if (a.instructorId) {
+        usedMainInstructors.add(a.instructorId)
+      }
+      if (a.videoInstructorId) {
+        usedVideoInstructors.add(a.videoInstructorId)
+        usedMainInstructors.add(a.videoInstructorId)
+      }
     })
     
     const unassignedAssignments = loadAssignments.filter(a => !a.instructorId)
@@ -515,7 +528,19 @@ export function LoadBuilderCard({
       const clockedIn = instructors.filter(i => i.clockedIn)
       
       const qualified = clockedIn.filter(instructor => {
+        // Only exclude if already used on THIS load
         if (usedMainInstructors.has(instructor.id)) return false
+        
+        // 🔥 Check if instructor is available for this load based on 40-minute cycle
+        const isAvailable = isInstructorAvailableForLoad(
+          instructor.id,
+          load.position || 0,
+          allLoads,
+          loadSchedulingSettings.instructorCycleTime,
+          loadSchedulingSettings.minutesBetweenLoads
+        )
+        
+        if (!isAvailable) return false
         
         const canTandem = (instructor as any).canTandem ?? (instructor as any).tandem
         const canAFF = (instructor as any).canAFF ?? (instructor as any).aff
@@ -550,7 +575,17 @@ export function LoadBuilderCard({
             if (i.id === selectedInstructor.id) return false
             if (usedVideoInstructors.has(i.id)) return false
             if (usedMainInstructors.has(i.id)) return false
-            return true
+            
+            // 🔥 Check if video instructor is available for this load
+            const isAvailable = isInstructorAvailableForLoad(
+              i.id,
+              load.position || 0,
+              allLoads,
+              loadSchedulingSettings.instructorCycleTime,
+              loadSchedulingSettings.minutesBetweenLoads
+            )
+            
+            return isAvailable
           }).sort((a, b) => {
             const balanceA = instructorBalances.get(a.id) || 0
             const balanceB = instructorBalances.get(b.id) || 0
@@ -568,7 +603,7 @@ export function LoadBuilderCard({
     })
     
     return selections
-  }, [showAssignModal, loadAssignments, instructors, instructorBalances, allLoads])
+  }, [showAssignModal, loadAssignments, instructors, instructorBalances, allLoads, load.position, loadSchedulingSettings])
   
   useEffect(() => {
     if (showAssignModal && Object.keys(autoSelectInstructors).length > 0) {
@@ -638,81 +673,57 @@ export function LoadBuilderCard({
       return {
         bg: 'bg-orange-900/20',
         border: 'border-orange-500/60',
-        glow: showBreathing ? 'shadow-[0_0_30px_rgba(249,115,22,0.6)]' : ''
+        glow: showBreathing ? 'shadow-[0_0_30px_rgba(251,146,60,0.6)]' : ''
       }
     } else {
       // < 10 minutes: Red
       return {
         bg: 'bg-red-900/20',
         border: 'border-red-500/60',
-        glow: showBreathing ? 'shadow-[0_0_30px_rgba(239,68,68,0.6)]' : ''
+        glow: showBreathing ? 'shadow-[0_0_30px_rgba(239,68,68,0.6)]' : 'shadow-[0_0_20px_rgba(239,68,68,0.4)]'
       }
     }
   }
 
-  const loadColors = getLoadColors()
+  const colors = getLoadColors()
 
+  // ==================== RENDER ====================
+  
   return (
     <>
-      <style>{`
-        @keyframes breathe {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.02); }
-        }
-        .breathing {
-          animation: breathe 1s ease-in-out;
-        }
-      `}</style>
-      
       <div
-        className={`rounded-xl shadow-2xl p-6 border-2 backdrop-blur-lg transition-all duration-300 ${
-          loadColors.bg
-        } ${
-          loadColors.border
-        } ${
-          loadColors.glow
-        } ${
-          showBreathing ? 'breathing' : ''
-        } ${
-          dragOver && load.status === 'building' ? 'scale-105' : ''
-        }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        className={`rounded-xl shadow-xl p-6 border-2 transition-all ${colors.bg} ${colors.border} ${colors.glow} ${
+          dragOver && load.status === 'building' ? 'scale-105 ring-4 ring-blue-500/50' : ''
+        } ${dropTarget === load.id && load.status === 'building' ? 'ring-2 ring-blue-500' : ''}`}
       >
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
-              <h3 className="text-xl font-bold text-white">{load.name}</h3>
-              <span className={`px-3 py-1 rounded-full text-sm font-bold ${currentStatus.bgClass} ${currentStatus.textClass}`}>
+        {/* Header */}
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h3 className="text-xl font-bold text-white">{load.name || `Load ${load.position}`}</h3>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`px-3 py-1 rounded-full text-sm font-semibold ${currentStatus.bgClass} ${currentStatus.textClass}`}>
                 {currentStatus.icon} {currentStatus.label}
               </span>
-            </div>
-            <div className="flex items-center gap-4 text-sm">
-              <div className={`font-semibold ${isOverCapacity ? 'text-red-400' : 'text-slate-400'}`}>
-                {totalPeople}/{load.capacity} people ({percentFull}%)
-              </div>
-              <div className="w-full bg-white/10 rounded-full h-2 max-w-[200px]">
-                <div
-                  className={`h-2 rounded-full transition-all ${
-                    isOverCapacity ? 'bg-red-500' : percentFull > 80 ? 'bg-yellow-500' : 'bg-green-500'
-                  }`}
-                  style={{ width: `${Math.min(percentFull, 100)}%` }}
-                />
-              </div>
+              <span className={`text-sm font-semibold ${isOverCapacity ? 'text-red-400' : 'text-blue-400'}`}>
+                {totalPeople}/{load.capacity || 18} ({percentFull}%)
+              </span>
             </div>
           </div>
           <button
             onClick={handleDelete}
-            className="ml-4 p-2 rounded-lg transition-colors bg-red-500/20 hover:bg-red-500/30 text-red-400"
-            title="Delete Load"
+            className="text-red-400 hover:text-red-300 transition-colors p-2"
+            title="Delete load"
           >
             🗑️
           </button>
         </div>
 
-        {load.status === 'ready' && formattedTime && (
-          <div className={`mb-4 p-4 rounded-lg border-2 transition-all duration-300 ${
+        {/* Countdown Timer */}
+        {load.status === 'ready' && countdown !== null && (
+          <div className={`mb-4 p-4 rounded-lg border-2 ${
             isReadyToDepart ? 'bg-green-500/20 border-green-500 animate-pulse' : 
             countdown && countdown < 600 ? 'bg-red-500/20 border-red-500' : 
             countdown && countdown < 1200 ? 'bg-orange-500/20 border-orange-500' : 
@@ -752,6 +763,7 @@ export function LoadBuilderCard({
           </div>
         )}
 
+        {/* Assignments List */}
         <div className="space-y-2 mb-4 max-h-[400px] overflow-y-auto">
           {loadAssignments.length === 0 ? (
             <div className="text-center py-8 text-slate-400 border-2 border-dashed border-slate-600 rounded-lg">
@@ -875,6 +887,7 @@ export function LoadBuilderCard({
           )}
         </div>
 
+        {/* Unassigned Warning */}
         {unassignedCount > 0 && (
           <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
             <div className="flex items-center justify-between">
@@ -892,6 +905,7 @@ export function LoadBuilderCard({
           </div>
         )}
 
+        {/* Action Buttons */}
         <div className="space-y-2">
           {load.status === 'building' && unassignedCount > 0 && (
             <button
@@ -911,41 +925,43 @@ export function LoadBuilderCard({
                 className={`w-full font-bold py-2 px-4 rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
                   transition === 'ready' ? 'bg-green-500 hover:bg-green-600 text-white' :
                   transition === 'departed' ? 'bg-yellow-500 hover:bg-yellow-600 text-white' :
-                  transition === 'completed' ? 'bg-blue-500 hover:bg-blue-600 text-white' :
-                  'bg-slate-500 hover:bg-slate-600 text-white'
+                  transition === 'building' ? 'bg-blue-500 hover:bg-blue-600 text-white' :
+                  transition === 'completed' ? 'bg-purple-500 hover:bg-purple-600 text-white' :
+                  'bg-slate-600 hover:bg-slate-500 text-white'
                 }`}
               >
-                {transitionConfig.icon} {transition === 'building' ? 'Mark Building' : 
-                 transition === 'ready' ? 'Mark Ready' :
-                 transition === 'departed' ? 'Mark Departed' : 'Mark Completed'}
+                {transitionConfig.icon} Mark as {transitionConfig.label}
               </button>
             )
           })}
         </div>
       </div>
 
-      {/* MODALS */}
+      {/* Status Change Confirmation Modal */}
       {statusChangeConfirm && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setStatusChangeConfirm(null)}>
           <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-blue-500" onClick={(e) => e.stopPropagation()}>
             <div className="p-6">
               <h2 className="text-2xl font-bold text-white mb-4">Confirm Status Change</h2>
-              <p className="text-slate-300 mb-6">Change load status from <strong>{load.status}</strong> to <strong>{statusChangeConfirm}</strong>?</p>
+              <p className="text-slate-300 mb-6">
+                Are you sure you want to mark <strong>{load.name}</strong> as <strong className="text-blue-400">{statusConfig[statusChangeConfirm].label}</strong>?
+              </p>
               <div className="flex gap-3">
                 <button onClick={() => setStatusChangeConfirm(null)} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors">Cancel</button>
-                <button onClick={confirmStatusChange} disabled={loading} className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50">Confirm</button>
+                <button onClick={confirmStatusChange} className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors">Confirm</button>
               </div>
             </div>
           </div>
         </div>
       )}
 
+      {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setShowDeleteConfirm(false)}>
           <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-red-500" onClick={(e) => e.stopPropagation()}>
             <div className="p-6">
-              <h2 className="text-2xl font-bold text-white mb-4">🗑️ Delete Load</h2>
-              <p className="text-slate-300 mb-2">Are you sure you want to delete <strong className="text-white">{load.name}</strong>?</p>
+              <h2 className="text-2xl font-bold text-white mb-4">⚠️ Delete Load</h2>
+              <p className="text-slate-300 mb-4">Are you sure you want to delete <strong>{load.name}</strong>?</p>
               {loadAssignments.length > 0 && <p className="text-slate-400 text-sm mb-4">{loadAssignments.length} assignment(s) will be moved back to the queue.</p>}
               <div className="flex gap-3 mt-6">
                 <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors">Cancel</button>
@@ -956,6 +972,7 @@ export function LoadBuilderCard({
         </div>
       )}
 
+      {/* Delay Modal */}
       {showDelayModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setShowDelayModal(false)}>
           <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-orange-500" onClick={(e) => e.stopPropagation()}>
@@ -976,6 +993,7 @@ export function LoadBuilderCard({
         </div>
       )}
 
+      {/* Assign Instructors Modal */}
       {showAssignModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setShowAssignModal(false)}>
           <div className="bg-slate-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-purple-500" onClick={(e) => e.stopPropagation()}>
@@ -997,13 +1015,13 @@ export function LoadBuilderCard({
                       <div className="text-sm text-slate-400">
                         {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
                         {assignment.tandemWeightTax && ` • Tax: ${assignment.tandemWeightTax}`}
-                        {assignment.hasOutsideVideo && ' • 🎥 Outside Video'}
+                        {assignment.hasOutsideVideo && ' • 🎥 Video'}
                       </div>
                     </div>
                     
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Tandem Instructor *</label>
+                        <label className="block text-sm font-semibold text-white mb-2">Main Instructor</label>
                         <select
                           value={selection?.instructorId || ''}
                           onChange={(e) => setAssignmentSelections(prev => ({
@@ -1022,11 +1040,14 @@ export function LoadBuilderCard({
                             </option>
                           ))}
                         </select>
+                        {qualifiedInstructors.length === 0 && (
+                          <p className="text-xs text-red-400 mt-1">⚠️ No qualified instructors available for this load position</p>
+                        )}
                       </div>
                       
                       {assignment.hasOutsideVideo && assignment.jumpType === 'tandem' && (
                         <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-2">Video Instructor (Optional)</label>
+                          <label className="block text-sm font-semibold text-white mb-2">Video Instructor</label>
                           <select
                             value={selection?.videoInstructorId || ''}
                             onChange={(e) => setAssignmentSelections(prev => ({

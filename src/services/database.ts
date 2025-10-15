@@ -1,4 +1,4 @@
-// src/services/database.ts - COMPLETE WITH STUDENT ACCOUNTS
+// src/services/database.ts - COMPLETE INTERFACE
 import type {
   Instructor,
   CreateInstructor,
@@ -16,9 +16,10 @@ import type {
   Period,
   CreatePeriod,
   UpdatePeriod,
-  StudentAccount,           // ✅ NEW
-  CreateStudentAccount,     // ✅ NEW
-  UpdateStudentAccount      // ✅ NEW
+  StudentAccount,
+  CreateStudentAccount,
+  UpdateStudentAccount,
+  LoadSchedulingSettings
 } from '@/types'
 
 export interface DatabaseService {
@@ -30,7 +31,7 @@ export interface DatabaseService {
   archiveInstructor(id: string): Promise<void>
   subscribeToInstructors(callback: (instructors: Instructor[]) => void): () => void
   
-  // ==================== STUDENT ACCOUNTS (NEW) ====================
+  // ==================== STUDENT ACCOUNTS ====================
   createStudentAccount(account: CreateStudentAccount): Promise<StudentAccount>
   getStudentAccounts(): Promise<StudentAccount[]>
   getActiveStudentAccounts(): Promise<StudentAccount[]>
@@ -78,9 +79,9 @@ export interface DatabaseService {
   getGroups(): Promise<Group[]>
   updateGroup(id: string, updates: Partial<Group>): Promise<void>
   deleteGroup(id: string): Promise<void>
-  removeStudentFromGroup(groupId: string, studentId: string): Promise<void>  // ✅ ADD THIS LINE
-  subscribeToGroups(callback: (groups: Group[]) => void): () => void
+  removeStudentFromGroup(groupId: string, studentId: string): Promise<void>
   addStudentToGroup(groupId: string, studentId: string): Promise<void>
+  subscribeToGroups(callback: (groups: Group[]) => void): () => void
   
   // ==================== PERIODS ====================
   createPeriod(period: CreatePeriod): Promise<Period>
@@ -88,6 +89,11 @@ export interface DatabaseService {
   updatePeriod(id: string, updates: UpdatePeriod): Promise<void>
   endPeriod(id: string, finalBalances: Record<string, number>, finalStats: any): Promise<void>
   subscribeToPeriods(callback: (periods: Period[]) => void): () => void
+  
+  // ==================== SETTINGS ====================
+  saveLoadSchedulingSettings(settings: LoadSchedulingSettings): Promise<void>
+  getLoadSchedulingSettings(): Promise<LoadSchedulingSettings | null>
+  subscribeToLoadSchedulingSettings(callback: (settings: LoadSchedulingSettings | null) => void): () => void
   
   // ==================== BULK ====================
   getFullState(): Promise<DatabaseState>

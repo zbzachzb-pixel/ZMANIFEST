@@ -29,7 +29,8 @@ import type {
   UpdatePeriod,
   StudentAccount,
   CreateStudentAccount,
-  UpdateStudentAccount
+  UpdateStudentAccount,
+  LoadSchedulingSettings
 } from '@/types'
 
 export class FirebaseService implements DatabaseService {
@@ -243,13 +244,13 @@ export class FirebaseService implements DatabaseService {
   }
   
   subscribeToClockEvents(callback: (events: ClockEvent[]) => void): () => void {
-    const eventsRef = ref(this.db, 'clockEvents')
-    const unsubscribe = onValue(eventsRef, (snapshot) => {
-      const data = snapshot.val()
-      callback(data ? Object.values(data) : [])
-    })
-    return unsubscribe
-  }
+  const eventsRef = ref(this.db, 'clockEvents')
+  const unsubscribe = onValue(eventsRef, (snapshot) => {
+    const data = snapshot.val()
+    callback(data ? Object.values(data) : [])
+  })
+  return unsubscribe
+}
   
   // ==================== LOADS ====================
   
@@ -550,10 +551,6 @@ export class FirebaseService implements DatabaseService {
     await update(studentRef, { groupId: groupId })
   }
 
-  // Also add this to the DatabaseService interface in src/services/database.ts:
-  // In the GROUPS section, add this line:
-  addStudentToGroup(groupId: string, studentId: string): Promise<void>
-
   
   subscribeToGroups(callback: (groups: Group[]) => void): () => void {
     const groupsRef = ref(this.db, 'groups')
@@ -616,7 +613,28 @@ export class FirebaseService implements DatabaseService {
     })
     return unsubscribe
   }
-  
+  // ==================== SETTINGS ====================
+
+async saveLoadSchedulingSettings(settings: LoadSchedulingSettings): Promise<void> {
+  const settingsRef = ref(this.db, 'settings/loadScheduling')
+  const cleanedSettings = this.cleanData(settings)
+  await set(settingsRef, cleanedSettings)
+}
+
+async getLoadSchedulingSettings(): Promise<LoadSchedulingSettings | null> {
+  const settingsRef = ref(this.db, 'settings/loadScheduling')
+  const snapshot = await get(settingsRef)
+  return snapshot.exists() ? snapshot.val() : null
+}
+
+subscribeToLoadSchedulingSettings(callback: (settings: LoadSchedulingSettings | null) => void): () => void {
+  const settingsRef = ref(this.db, 'settings/loadScheduling')
+  const unsubscribe = onValue(settingsRef, (snapshot) => {
+    const data = snapshot.val()
+    callback(data || null)
+  })
+  return unsubscribe
+}
   // ==================== BULK ====================
   
   async getFullState(): Promise<DatabaseState> {
