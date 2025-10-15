@@ -159,22 +159,35 @@ export default function LoadBuilderPage() {
   // ============================================
   
   const handleCreateLoad = async () => {
-    try {
-      const nextPosition = Math.max(0, ...loads.map(l => l.position || 0)) + 1
-      const loadNumber = loads.length + 1
-      
-      await createLoad({
-        name: `Load ${loadNumber}`,
-        status: 'building',
-        capacity: 18,
-        assignments: [],
-        position: nextPosition
-      })
-    } catch (error) {
-      console.error('Failed to create load:', error)
-      alert('Failed to create load')
+  try {
+    // Get current load scheduling settings
+    const savedSettings = localStorage.getItem('loadSchedulingSettings')
+    let defaultCapacity = 18 // fallback default
+    
+    if (savedSettings) {
+      try {
+        const settings = JSON.parse(savedSettings)
+        defaultCapacity = settings.defaultPlaneCapacity || 18
+      } catch (e) {
+        console.error('Failed to parse load settings, using default capacity')
+      }
     }
+    
+    const nextPosition = Math.max(0, ...loads.map(l => l.position || 0)) + 1
+    const loadNumber = loads.length + 1
+    
+    await createLoad({
+      name: `Load ${loadNumber}`,
+      status: 'building',
+      capacity: defaultCapacity, // ✅ NOW USES THE SETTING!
+      assignments: [],
+      position: nextPosition
+    })
+  } catch (error) {
+    console.error('Failed to create load:', error)
+    alert('Failed to create load')
   }
+}
   
   const handleDelayLoad = async (loadId: string, minutes: number) => {
     try {

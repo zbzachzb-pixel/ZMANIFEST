@@ -1,4 +1,9 @@
-// src/components/LoadBuilderCard.tsx - COMPLETE FILE WITH ALL FEATURES AND FIXED GROUP HANDLING
+// src/components/LoadBuilderCard.tsx - COMPLETE FILE WITH ALL FEATURES
+// ✅ Bidirectional transitions at all stages
+// ✅ Confirmation for moving from completed
+// ✅ Allow deletion of completed loads with extra confirmation
+// ✅ Fixed property names for backwards compatibility
+// ✅ Drag/drop disabled for completed loads (safety)
 
 'use client'
 
@@ -75,18 +80,31 @@ export function LoadBuilderCard({
 
   const currentStatus = statusConfig[load.status]
 
+  // ✅ BIDIRECTIONAL TRANSITIONS
   const availableTransitions = useMemo(() => {
     const transitions: Load['status'][] = []
-    if (load.status === 'building') transitions.push('ready')
+    
+    if (load.status === 'building') {
+      transitions.push('ready')
+    }
+    
     if (load.status === 'ready') {
       transitions.push('building', 'departed')
     }
-    if (load.status === 'departed') transitions.push('completed')
-    if (load.status === 'completed') transitions.push('departed')
+    
+    if (load.status === 'departed') {
+      transitions.push('ready', 'completed')
+    }
+    
+    if (load.status === 'completed') {
+      transitions.push('departed')
+    }
+    
     return transitions
   }, [load.status])
 
   const handleDragOver = (e: React.DragEvent) => {
+    // ✅ Keep drag/drop disabled for completed loads (safety)
     if (isCompleted) return
     if (load.status !== 'building') return
     e.preventDefault()
@@ -105,7 +123,9 @@ export function LoadBuilderCard({
     onDrop(load.id)
   }
 
+  // ✅ CONFIRMATION FOR COMPLETED LOADS
   const handleStatusChangeRequest = (newStatus: Load['status']) => {
+    // Validation checks for forward movements
     if (newStatus === 'ready' && isOverCapacity) {
       alert('❌ Cannot mark as ready: Load is over capacity!')
       return
@@ -114,32 +134,51 @@ export function LoadBuilderCard({
       alert('❌ Cannot mark as ready: All students must have instructors assigned!')
       return
     }
-    if (newStatus === 'departed' && load.status === 'building') {
-      alert('❌ Load must be "Ready" before departing')
-      return
+    
+    // ✅ Special confirmation for moving backwards from completed
+    if (load.status === 'completed' && newStatus !== 'completed') {
+      if (!confirm('⚠️ This load is COMPLETED. Are you sure you want to move it back to "' + newStatus + '"? This should only be done to fix errors.')) {
+        return
+      }
     }
-    if (newStatus === 'completed' && load.status !== 'departed') {
-      alert('❌ Load must be "Departed" before marking complete')
-      return
-    }
+    
     setStatusChangeConfirm(newStatus)
   }
   
   const confirmStatusChange = async () => {
     if (!statusChangeConfirm) return
+    
     try {
       const updates: Partial<Load> = { status: statusChangeConfirm }
-      if (statusChangeConfirm === 'ready' && !load.countdownStartTime) {
-        const previousLoad = allLoads.find(l => l.position === (load.position || 0) - 1)
-        if (!previousLoad || previousLoad.status === 'departed' || previousLoad.status === 'completed') {
-          updates.countdownStartTime = new Date().toISOString()
+      
+      // Handle countdown timer logic
+      if (statusChangeConfirm === 'ready') {
+        if (!load.countdownStartTime) {
+          const previousLoad = allLoads.find(l => l.position === (load.position || 0) - 1)
+          if (!previousLoad || previousLoad.status === 'departed' || previousLoad.status === 'completed') {
+            updates.countdownStartTime = new Date().toISOString()
+          }
         }
       }
-      if (statusChangeConfirm === 'building' && load.countdownStartTime) {
-        updates.countdownStartTime = null
+      
+      if (statusChangeConfirm === 'building') {
+        if (load.countdownStartTime) {
+          updates.countdownStartTime = null
+        }
       }
+      
+      if (statusChangeConfirm === 'departed') {
+        updates.departedAt = new Date().toISOString()
+      }
+      
+      if (statusChangeConfirm === 'completed') {
+        updates.completedAt = new Date().toISOString()
+      }
+      
       await update(load.id, updates)
       setStatusChangeConfirm(null)
+      
+      // Trigger next load countdown if this load just departed
       if (statusChangeConfirm === 'departed') {
         const nextLoad = allLoads.find(l => l.position === (load.position || 0) + 1)
         if (nextLoad && nextLoad.status === 'ready' && !nextLoad.countdownStartTime) {
@@ -156,48 +195,67 @@ export function LoadBuilderCard({
     setShowDeleteConfirm(true)
   }
   
+  // ✅ ALLOW DELETION WITH EXTRA CONFIRMATION FOR COMPLETED
   const confirmDelete = async () => {
     setShowDeleteConfirm(false)
-    try {
-      for (const assignment of loadAssignments) {
-        if (assignment.groupId) {
-          const group = groups.find(g => g.id === assignment.groupId)
-          if (group && !group.studentIds.includes(assignment.studentId)) {
-            await db.updateGroup(assignment.groupId, { 
-              studentIds: [...group.studentIds, assignment.studentId]
-            })
-          }
-        }
-        const queueStudent: CreateQueueStudent = {
-          name: assignment.studentName,
-          weight: assignment.studentWeight,
-          jumpType: assignment.jumpType,
-          isRequest: false,
-          tandemWeightTax: assignment.tandemWeightTax || 0,
-          tandemHandcam: assignment.tandemHandcam || false,
-          outsideVideo: assignment.hasOutsideVideo,
-          affLevel: assignment.affLevel,
-          groupId: assignment.groupId
-        }
-        const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-        await db.addToQueue(queueStudent, priorityTimestamp)
+    
+    // ✅ Extra warning for completed loads
+    if (load.status === 'completed') {
+      if (!confirm('⚠️ This load is COMPLETED. Are you sure you want to DELETE it? This cannot be undone!')) {
+        return
       }
+    }
+    
+    try {
+      if (loadAssignments.length > 0) {
+        for (const assignment of loadAssignments) {
+          if (assignment.groupId) {
+            const group = groups.find(g => g.id === assignment.groupId)
+            if (group) {
+              await db.updateGroup(assignment.groupId, {
+                studentIds: [...group.studentIds, assignment.studentId]
+              })
+            }
+          }
+          
+          const queueStudent: CreateQueueStudent = {
+            name: assignment.studentName,
+            weight: assignment.studentWeight,
+            jumpType: assignment.jumpType,
+            isRequest: false,
+            tandemWeightTax: assignment.tandemWeightTax || 0,
+            tandemHandcam: assignment.tandemHandcam || false,
+            outsideVideo: assignment.hasOutsideVideo,
+            affLevel: assignment.affLevel,
+            groupId: assignment.groupId
+          }
+          
+          const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+          await db.addToQueue(queueStudent, priorityTimestamp)
+        }
+      }
+      
       await deleteLoad(load.id)
     } catch (error) {
       console.error('Failed to delete load:', error)
-      alert('Failed to delete load: ' + (error as Error).message)
+      alert('Failed to delete load')
     }
   }
-  
-  const handleRemoveAssignment = async (assignmentId: string) => {
+
+  const removeFromLoad = async (assignmentId: string) => {
+    if (isCompleted) {
+      alert('Cannot modify completed loads')
+      return
+    }
+    
     try {
       const assignment = loadAssignments.find(a => a.id === assignmentId)
       if (!assignment) return
       
       if (assignment.groupId) {
         const group = groups.find(g => g.id === assignment.groupId)
-        if (group && !group.studentIds.includes(assignment.studentId)) {
-          await db.updateGroup(assignment.groupId, { 
+        if (group) {
+          await db.updateGroup(assignment.groupId, {
             studentIds: [...group.studentIds, assignment.studentId]
           })
         }
@@ -267,6 +325,7 @@ export function LoadBuilderCard({
     }
   }
   
+  // ✅ FIXED PROPERTY NAMES FOR BACKWARDS COMPATIBILITY
   const getQualifiedInstructors = (assignment: typeof loadAssignments[0]) => {
     const clockedIn = instructors.filter(i => i.clockedIn)
     const qualified = clockedIn.filter(instructor => {
@@ -301,145 +360,88 @@ export function LoadBuilderCard({
     })
   }
   
-  // 🔧 CRITICAL FIX: Replace autoSelectInstructors in LoadBuilderCard.tsx
-// This version checks instructors on ALL loads, not just the current load
-
-const autoSelectInstructors = useMemo(() => {
-  if (!showAssignModal) return {}
-  
-  const selections: Record<string, {instructorId: string, videoInstructorId?: string}> = {}
-  
-  // 🔧 CRITICAL FIX: Track instructors used across ALL loads, not just this one
-  const usedMainInstructors = new Set<string>()
-  const usedVideoInstructors = new Set<string>()
-  
-  // 🔧 NEW: Check ALL loads to see which instructors are already assigned
-  allLoads.forEach(otherLoad => {
-    // Skip completed loads - those instructors are available again
-    if (otherLoad.status === 'completed') return
+  const autoSelectInstructors = useMemo(() => {
+    if (!showAssignModal) return {}
     
-    const assignments = otherLoad.assignments || []
-    assignments.forEach(a => {
-      if (a.instructorId) {
-        usedMainInstructors.add(a.instructorId)
-      }
-      if (a.videoInstructorId) {
-        usedVideoInstructors.add(a.videoInstructorId)
-        usedMainInstructors.add(a.videoInstructorId)  // ⚡ NEW: Video instructors can't be main instructors either
-      }
-    })
-  })
-  
-  console.log('🔍 Starting auto-select for', load.name)
-  console.log('Instructors already on ANY load:', Array.from(usedMainInstructors))
-  
-  // Process each unassigned student sequentially
-  const unassignedAssignments = loadAssignments.filter(a => !a.instructorId)
-  
-  unassignedAssignments.forEach((assignment, index) => {
-    console.log(`\n--- Processing student ${index + 1}: ${assignment.studentName} ---`)
+    const selections: Record<string, {instructorId: string, videoInstructorId?: string}> = {}
+    const usedMainInstructors = new Set<string>()
+    const usedVideoInstructors = new Set<string>()
     
-    // Get qualified instructors
-    const clockedIn = instructors.filter(i => i.clockedIn)
-    
-    // 🔧 CRITICAL FIX: Filter out instructors already used on ANY load
-    const qualified = clockedIn.filter(instructor => {
-      // Skip if already used on ANY load
-      if (usedMainInstructors.has(instructor.id)) {
-        console.log(`⏭️  Skipping ${instructor.name} - already on another load`)
-        return false
-      }
+    allLoads.forEach(otherLoad => {
+      if (otherLoad.status === 'completed') return
       
-      const canTandem = (instructor as any).canTandem ?? (instructor as any).tandem
-      const canAFF = (instructor as any).canAFF ?? (instructor as any).aff
-      
-      if (assignment.jumpType === 'tandem' && !canTandem) return false
-      if (assignment.jumpType === 'aff' && !canAFF) return false
-      
-      if (assignment.jumpType === 'tandem' && instructor.tandemWeightLimit) {
-        const totalWeight = assignment.studentWeight + (assignment.tandemWeightTax || 0)
-        if (totalWeight > instructor.tandemWeightLimit) return false
-      }
-      
-      if (assignment.jumpType === 'aff' && instructor.affWeightLimit) {
-        if (assignment.studentWeight > instructor.affWeightLimit) return false
-      }
-      
-      return true
+      const assignments = otherLoad.assignments || []
+      assignments.forEach(a => {
+        if (a.instructorId) {
+          usedMainInstructors.add(a.instructorId)
+        }
+        if (a.videoInstructorId) {
+          usedVideoInstructors.add(a.videoInstructorId)
+          usedMainInstructors.add(a.videoInstructorId)
+        }
+      })
     })
     
-    // Sort by balance (lowest first)
-    const sortedQualified = qualified.sort((a, b) => {
-      const balanceA = instructorBalances.get(a.id) || 0
-      const balanceB = instructorBalances.get(b.id) || 0
-      return balanceA - balanceB
-    })
+    const unassignedAssignments = loadAssignments.filter(a => !a.instructorId)
     
-    if (sortedQualified.length > 0) {
-      const selectedInstructor = sortedQualified[0]
-      console.log(`✅ Selected ${selectedInstructor.name} (balance: $${instructorBalances.get(selectedInstructor.id)})`)
+    unassignedAssignments.forEach((assignment) => {
+      const clockedIn = instructors.filter(i => i.clockedIn)
       
-      selections[assignment.id] = {
-        instructorId: selectedInstructor.id
-      }
-      
-      // 🔧 CRITICAL FIX: Mark this instructor as used immediately
-      usedMainInstructors.add(selectedInstructor.id)
-      
-      // Handle video instructor if needed
-      if (assignment.hasOutsideVideo) {
-        // 🔧 CRITICAL FIX: Filter out video instructors used on ANY load
-        const videoQualified = instructors.filter(i => {
-          const canVideo = (i as any).canVideo ?? (i as any).video
-          
-          // Must be clocked in and can do video
-          if (!i.clockedIn || !canVideo) return false
-          
-          // Can't be the same as main instructor
-          if (i.id === selectedInstructor.id) return false
-          
-          // 🔧 CRITICAL FIX: Can't be already used as video on ANY load
-          if (usedVideoInstructors.has(i.id)) {
-            console.log(`⏭️  Skipping video instructor ${i.name} - already on another load`)
-            return false
-          }
-          
-          // ⚡ NEW: Can't be used as a main instructor either (on this load or any other)
-          if (usedMainInstructors.has(i.id)) {
-            console.log(`⏭️  Skipping video instructor ${i.name} - already assigned as main instructor`)
-            return false
-          }
-          
-          return true
-        }).sort((a, b) => {
-          const balanceA = instructorBalances.get(a.id) || 0
-          const balanceB = instructorBalances.get(b.id) || 0
-          return balanceA - balanceB
-        })
+      const qualified = clockedIn.filter(instructor => {
+        if (usedMainInstructors.has(instructor.id)) return false
         
-        if (videoQualified.length > 0) {
-          const selectedVideo = videoQualified[0]
-          console.log(`✅ Selected video instructor ${selectedVideo.name} (balance: ${instructorBalances.get(selectedVideo.id)})`)
+        const canTandem = (instructor as any).canTandem ?? (instructor as any).tandem
+        const canAFF = (instructor as any).canAFF ?? (instructor as any).aff
+        
+        if (assignment.jumpType === 'tandem' && !canTandem) return false
+        if (assignment.jumpType === 'aff' && !canAFF) return false
+        
+        if (assignment.jumpType === 'tandem' && instructor.tandemWeightLimit) {
+          const totalWeight = assignment.studentWeight + (assignment.tandemWeightTax || 0)
+          if (totalWeight > instructor.tandemWeightLimit) return false
+        }
+        if (assignment.jumpType === 'aff' && instructor.affWeightLimit) {
+          if (assignment.studentWeight > instructor.affWeightLimit) return false
+        }
+        
+        return true
+      }).sort((a, b) => {
+        const balanceA = instructorBalances.get(a.id) || 0
+        const balanceB = instructorBalances.get(b.id) || 0
+        return balanceA - balanceB
+      })
+      
+      if (qualified.length > 0) {
+        const selectedInstructor = qualified[0]
+        selections[assignment.id] = { instructorId: selectedInstructor.id }
+        usedMainInstructors.add(selectedInstructor.id)
+        
+        if (assignment.hasOutsideVideo && assignment.jumpType === 'tandem') {
+          const videoQualified = clockedIn.filter(i => {
+            const canVideo = (i as any).canVideo ?? (i as any).video
+            if (!i.clockedIn || !canVideo) return false
+            if (i.id === selectedInstructor.id) return false
+            if (usedVideoInstructors.has(i.id)) return false
+            if (usedMainInstructors.has(i.id)) return false
+            return true
+          }).sort((a, b) => {
+            const balanceA = instructorBalances.get(a.id) || 0
+            const balanceB = instructorBalances.get(b.id) || 0
+            return balanceA - balanceB
+          })
           
-          selections[assignment.id].videoInstructorId = selectedVideo.id
-          
-          // 🔧 CRITICAL FIX: Mark video instructor as used for BOTH video AND main
-          usedVideoInstructors.add(selectedVideo.id)
-          usedMainInstructors.add(selectedVideo.id)  // ⚡ NEW: Also block from main instructor selection
-        } else {
-          console.log('⚠️  No video instructors available')
+          if (videoQualified.length > 0) {
+            const selectedVideo = videoQualified[0]
+            selections[assignment.id].videoInstructorId = selectedVideo.id
+            usedVideoInstructors.add(selectedVideo.id)
+            usedMainInstructors.add(selectedVideo.id)
+          }
         }
       }
-    } else {
-      console.log(`⚠️  No qualified instructors available for ${assignment.studentName}`)
-    }
-  })
-  
-  console.log('\n✅ Auto-selection complete for', load.name)
-  console.log('Final selections:', selections)
-  
-  return selections
-}, [showAssignModal, loadAssignments, instructors, instructorBalances, allLoads, load.name])
+    })
+    
+    return selections
+  }, [showAssignModal, loadAssignments, instructors, instructorBalances, allLoads])
   
   useEffect(() => {
     if (showAssignModal && Object.keys(autoSelectInstructors).length > 0) {
@@ -474,9 +476,6 @@ const autoSelectInstructors = useMemo(() => {
               <span className={`px-3 py-1 rounded-full text-sm font-bold ${currentStatus.bgClass} ${currentStatus.textClass}`}>
                 {currentStatus.icon} {currentStatus.label}
               </span>
-              {isCompleted && (
-                <span className="px-2 py-1 bg-red-500/20 text-red-400 text-xs rounded font-bold">🔒 LOCKED</span>
-              )}
             </div>
             <div className="flex items-center gap-4 text-sm">
               <div className={`font-semibold ${isOverCapacity ? 'text-red-400' : 'text-slate-400'}`}>
@@ -494,11 +493,8 @@ const autoSelectInstructors = useMemo(() => {
           </div>
           <button
             onClick={handleDelete}
-            disabled={isCompleted}
-            className={`ml-4 p-2 rounded-lg transition-colors ${
-              isCompleted ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed' : 'bg-red-500/20 hover:bg-red-500/30 text-red-400'
-            }`}
-            title={isCompleted ? 'Cannot delete completed loads' : 'Delete Load'}
+            className="ml-4 p-2 rounded-lg transition-colors bg-red-500/20 hover:bg-red-500/30 text-red-400"
+            title="Delete Load"
           >
             🗑️
           </button>
@@ -558,49 +554,45 @@ const autoSelectInstructors = useMemo(() => {
                         onDragStart={() => !isCompleted && load.status === 'building' && onDragStart('group', groupId, load.id)}
                         onDragEnd={onDragEnd}
                         className={`bg-gradient-to-br from-purple-500/10 to-blue-500/10 border-2 border-purple-500/40 rounded-xl p-3 space-y-2 transition-all ${
-                          !isCompleted && load.status === 'building' ? 'cursor-move hover:scale-102 hover:border-purple-500' : ''
+                          !isCompleted && load.status === 'building' ? 'cursor-move hover:border-purple-400 hover:shadow-lg' : 'cursor-default'
                         }`}
                       >
-                        <div className="flex items-center justify-between mb-2 pb-2 border-b border-purple-500/30">
+                        <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <span className="text-purple-400 font-bold">👥 {group.name}</span>
-                            <span className="text-xs text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded">
+                            <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full">
                               {groupAssignments.length} students
                             </span>
                           </div>
                         </div>
-                        {groupAssignments.map((assignment) => (
-                          <div
-                            key={assignment.id}
-                            className={`p-2 rounded-lg border transition-all ml-4 ${
-                              assignment.instructorId ? 'bg-slate-700/50 border-slate-600' : 'bg-yellow-900/20 border-yellow-600'
-                            }`}
-                          >
+                        {groupAssignments.map(assignment => (
+                          <div key={assignment.id} className="bg-white/5 rounded-lg p-2 border border-white/10">
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
+                                <div className="flex items-center gap-2">
                                   <span className="font-semibold text-white text-sm">{assignment.studentName}</span>
-                                  <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
-                                    assignment.jumpType === 'tandem' ? 'bg-green-500/20 text-green-300' :
-                                    assignment.jumpType === 'aff' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'
-                                  }`}>{assignment.jumpType.toUpperCase()}</span>
+                                  {assignment.isRequest && <span className="text-xs text-yellow-400">⭐</span>}
                                 </div>
-                                <div className="text-xs text-slate-400 space-y-0.5">
-                                  <div className={assignment.instructorId ? 'text-green-400' : 'text-yellow-400'}>
-                                    👤 TI: {assignment.instructorName || '⚠️ Not assigned'}
+                                <div className="text-xs text-slate-400 mt-1">
+                                  {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
+                                  {assignment.tandemWeightTax && ` • Tax: ${assignment.tandemWeightTax}`}
+                                </div>
+                                {assignment.instructorId ? (
+                                  <div className="text-xs text-green-400 mt-1">
+                                    TI: {assignment.instructorName}
+                                    {assignment.videoInstructorId && ` • 📹 ${assignment.videoInstructorName}`}
                                   </div>
-                                  {assignment.hasOutsideVideo && assignment.videoInstructorName && (
-                                    <div className="text-purple-400">📹 VI: {assignment.videoInstructorName}</div>
-                                  )}
-                                  <div>⚖️ {assignment.studentWeight} lbs</div>
-                                </div>
+                                ) : (
+                                  <div className="text-xs text-red-400 mt-1">TI: 🔴 Not assigned</div>
+                                )}
                               </div>
                               {!isCompleted && load.status === 'building' && (
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); handleRemoveAssignment(assignment.id) }}
-                                  className="ml-2 p-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition-colors"
-                                  title="Remove & Return to Queue"
-                                >↩️</button>
+                                  onClick={() => removeFromLoad(assignment.id)}
+                                  className="ml-2 p-1 text-red-400 hover:text-red-300 transition-colors"
+                                >
+                                  ✕
+                                </button>
                               )}
                             </div>
                           </div>
@@ -608,41 +600,46 @@ const autoSelectInstructors = useMemo(() => {
                       </div>
                     )
                   })}
-                  {individual.map((assignment) => (
+                  
+                  {individual.map(assignment => (
                     <div
                       key={assignment.id}
                       draggable={!isCompleted && load.status === 'building'}
                       onDragStart={() => !isCompleted && load.status === 'building' && onDragStart('assignment', assignment.id, load.id)}
                       onDragEnd={onDragEnd}
-                      className={`p-3 rounded-lg border transition-all ${
-                        assignment.instructorId ? 'bg-slate-700 border-slate-600' : 'bg-yellow-900/30 border-yellow-600'
-                      } ${!isCompleted && load.status === 'building' ? 'cursor-move hover:scale-102 hover:border-blue-500' : ''}`}
+                      className={`bg-white/5 rounded-lg p-3 border border-white/10 transition-all ${
+                        !isCompleted && load.status === 'building' ? 'cursor-move hover:bg-white/10 hover:border-white/20' : 'cursor-default'
+                      }`}
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2">
                             <span className="font-semibold text-white">{assignment.studentName}</span>
-                            <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
-                              assignment.jumpType === 'tandem' ? 'bg-green-500/20 text-green-300' :
-                              assignment.jumpType === 'aff' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'
-                            }`}>{assignment.jumpType.toUpperCase()}</span>
+                            {assignment.isRequest && <span className="text-yellow-400 text-sm">⭐</span>}
                           </div>
-                          <div className="text-xs text-slate-400 space-y-0.5">
-                            <div className={assignment.instructorId ? 'text-green-400' : 'text-yellow-400'}>
-                              👤 TI: {assignment.instructorName || '⚠️ Not assigned'}
+                          <div className="text-sm text-slate-400 mt-1">
+                            {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
+                            {assignment.tandemWeightTax && ` • Tax: ${assignment.tandemWeightTax}`}
+                            {assignment.tandemHandcam && ' • 📹 Handcam'}
+                            {assignment.hasOutsideVideo && ' • 🎥 Video'}
+                            {assignment.affLevel && ` • ${assignment.affLevel}`}
+                          </div>
+                          {assignment.instructorId ? (
+                            <div className="text-sm text-green-400 mt-1">
+                              TI: {assignment.instructorName}
+                              {assignment.videoInstructorId && ` • 📹 ${assignment.videoInstructorName}`}
                             </div>
-                            {assignment.hasOutsideVideo && assignment.videoInstructorName && (
-                              <div className="text-purple-400">📹 VI: {assignment.videoInstructorName}</div>
-                            )}
-                            <div>⚖️ {assignment.studentWeight} lbs</div>
-                          </div>
+                          ) : (
+                            <div className="text-sm text-red-400 mt-1">TI: 🔴 Not assigned</div>
+                          )}
                         </div>
                         {!isCompleted && load.status === 'building' && (
                           <button
-                            onClick={() => handleRemoveAssignment(assignment.id)}
-                            className="ml-2 p-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition-colors"
-                            title="Remove & Return to Queue"
-                          >↩️</button>
+                            onClick={() => removeFromLoad(assignment.id)}
+                            className="ml-2 p-1 text-red-400 hover:text-red-300 transition-colors"
+                          >
+                            ✕
+                          </button>
                         )}
                       </div>
                     </div>
@@ -653,57 +650,58 @@ const autoSelectInstructors = useMemo(() => {
           )}
         </div>
 
-        {loadAssignments.length > 0 && (
-          <div className="mb-4 pt-4 border-t border-white/20 grid grid-cols-3 gap-4 text-center">
-            <div>
-              <div className="text-xs text-slate-400 mb-1">Students</div>
-              <div className="text-lg font-bold text-white">{loadAssignments.length}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-400 mb-1">Assigned</div>
-              <div className="text-lg font-bold text-green-400">{loadAssignments.filter(a => a.instructorId).length}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-400 mb-1">Slots Left</div>
-              <div className={`text-lg font-bold ${availableSlots < 0 ? 'text-red-400' : 'text-blue-400'}`}>
-                {Math.max(0, availableSlots)}
+        {totalPeople > 0 && (
+          <div className="bg-white/5 rounded-lg p-3 mb-4">
+            <div className="grid grid-cols-3 gap-4 text-sm">
+              <div>
+                <div className="text-slate-400">Students</div>
+                <div className="text-white font-bold text-lg">{loadAssignments.length}</div>
+              </div>
+              <div>
+                <div className="text-slate-400">Assigned</div>
+                <div className="text-white font-bold text-lg">{loadAssignments.length - unassignedCount}</div>
+              </div>
+              <div>
+                <div className={`${isOverCapacity ? 'text-red-400' : 'text-blue-400'}`}>Slots Left</div>
+                <div className={`font-bold text-lg ${isOverCapacity ? 'text-red-400' : 'text-blue-400'}`}>
+                  {Math.max(0, availableSlots)}
+                </div>
               </div>
             </div>
           </div>
         )}
 
-        {!isCompleted && (
-          <div className="space-y-2">
-            {load.status === 'building' && unassignedCount > 0 && (
+        {/* ✅ REMOVED !isCompleted WRAPPER - BUTTONS NOW ALWAYS VISIBLE */}
+        <div className="space-y-2">
+          {load.status === 'building' && unassignedCount > 0 && (
+            <button
+              onClick={() => setShowAssignModal(true)}
+              className="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm"
+            >
+              👤 Assign Instructors ({unassignedCount} unassigned)
+            </button>
+          )}
+          {availableTransitions.map(transition => {
+            const transitionConfig = statusConfig[transition as Load['status']]
+            return (
               <button
-                onClick={() => setShowAssignModal(true)}
-                className="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm"
+                key={transition}
+                onClick={() => handleStatusChangeRequest(transition as Load['status'])}
+                disabled={loading}
+                className={`w-full font-bold py-2 px-4 rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                  transition === 'ready' ? 'bg-green-500 hover:bg-green-600 text-white' :
+                  transition === 'departed' ? 'bg-yellow-500 hover:bg-yellow-600 text-white' :
+                  transition === 'completed' ? 'bg-blue-500 hover:bg-blue-600 text-white' :
+                  'bg-slate-500 hover:bg-slate-600 text-white'
+                }`}
               >
-                👤 Assign Instructors ({unassignedCount} unassigned)
+                {transitionConfig.icon} {transition === 'building' ? 'Mark Building' : 
+                 transition === 'ready' ? 'Mark Ready' :
+                 transition === 'departed' ? 'Mark Departed' : 'Mark Completed'}
               </button>
-            )}
-            {availableTransitions.map(transition => {
-              const transitionConfig = statusConfig[transition as Load['status']]
-              return (
-                <button
-                  key={transition}
-                  onClick={() => handleStatusChangeRequest(transition as Load['status'])}
-                  disabled={loading}
-                  className={`w-full font-bold py-2 px-4 rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
-                    transition === 'ready' ? 'bg-green-500 hover:bg-green-600 text-white' :
-                    transition === 'departed' ? 'bg-yellow-500 hover:bg-yellow-600 text-white' :
-                    transition === 'completed' ? 'bg-blue-500 hover:bg-blue-600 text-white' :
-                    'bg-slate-500 hover:bg-slate-600 text-white'
-                  }`}
-                >
-                  {transitionConfig.icon} {transition === 'building' ? 'Mark Building' : 
-                   transition === 'ready' ? 'Mark Ready' :
-                   transition === 'departed' ? 'Mark Departed' : 'Mark Completed'}
-                </button>
-              )
-            })}
-          </div>
-        )}
+            )
+          })}
+        </div>
       </div>
 
       {/* MODALS */}
@@ -759,106 +757,99 @@ const autoSelectInstructors = useMemo(() => {
       )}
 
       {showAssignModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[70]" onClick={() => setShowAssignModal(false)}>
-          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-y-auto border-2 border-purple-500" onClick={(e) => e.stopPropagation()}>
-            <div className="p-6">
-              <h2 className="text-2xl font-bold text-white mb-4">👤 Assign Instructors - {load.name}</h2>
-              <div className="space-y-6 mb-6">
-                {loadAssignments.filter(a => !a.instructorId).map(assignment => {
-                  const qualifiedInstructors = getQualifiedInstructors(assignment)
-                  const videoInstructors = getVideoInstructors()
-                  const selectedInstructor = assignmentSelections[assignment.id]?.instructorId
-                  const selectedVideo = assignmentSelections[assignment.id]?.videoInstructorId
-                  return (
-                    <div key={assignment.id} className="bg-slate-700 p-4 rounded-lg">
-                      <div className="mb-4">
-                        <div className="text-white font-semibold text-lg">{assignment.studentName}</div>
-                        <div className="text-sm text-slate-400">
-                          {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
-                          {assignment.tandemWeightTax && assignment.tandemWeightTax > 0 && ` +${assignment.tandemWeightTax} tax`}
-                        </div>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setShowAssignModal(false)}>
+          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-purple-500" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
+              <h2 className="text-2xl font-bold text-white">👤 Assign Instructors - {load.name}</h2>
+              <p className="text-sm text-slate-400 mt-1">{unassignedCount} student(s) need instructor assignment</p>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              {loadAssignments.filter(a => !a.instructorId).map(assignment => {
+                const qualifiedInstructors = getQualifiedInstructors(assignment)
+                const videoInstructors = getVideoInstructors()
+                const selection = assignmentSelections[assignment.id]
+                
+                return (
+                  <div key={assignment.id} className="bg-white/5 border border-white/10 rounded-lg p-4">
+                    <div className="mb-3">
+                      <div className="font-bold text-white">{assignment.studentName}</div>
+                      <div className="text-sm text-slate-400">
+                        {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
+                        {assignment.tandemWeightTax && ` • Tax: ${assignment.tandemWeightTax}`}
+                        {assignment.hasOutsideVideo && ' • 🎥 Outside Video'}
                       </div>
-                      <div className="space-y-3">
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-300 mb-2">Main Instructor</label>
+                        <select
+                          value={selection?.instructorId || ''}
+                          onChange={(e) => setAssignmentSelections(prev => ({
+                            ...prev,
+                            [assignment.id]: {
+                              ...prev[assignment.id],
+                              instructorId: e.target.value
+                            }
+                          }))}
+                          className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                        >
+                          <option value="">Select instructor...</option>
+                          {qualifiedInstructors.map(instructor => (
+                            <option key={instructor.id} value={instructor.id}>
+                              {instructor.name} (Balance: ${instructorBalances.get(instructor.id) || 0})
+                            </option>
+                          ))}
+                        </select>
+                        {qualifiedInstructors.length === 0 && (
+                          <p className="text-red-400 text-xs mt-1">No qualified instructors available</p>
+                        )}
+                      </div>
+                      
+                      {assignment.hasOutsideVideo && assignment.jumpType === 'tandem' && (
                         <div>
-                          <label className="block text-sm font-semibold text-slate-300 mb-2">
-                            Main Instructor *
-                            {qualifiedInstructors[0] && (
-                              <span className="text-xs font-normal text-green-400 ml-2">
-                                ✓ Best: {qualifiedInstructors[0].name} (${instructorBalances.get(qualifiedInstructors[0].id) || 0})
-                              </span>
-                            )}
-                          </label>
+                          <label className="block text-sm font-semibold text-slate-300 mb-2">Video Instructor</label>
                           <select
-                            value={selectedInstructor || ''}
+                            value={selection?.videoInstructorId || ''}
                             onChange={(e) => setAssignmentSelections(prev => ({
                               ...prev,
-                              [assignment.id]: { ...prev[assignment.id], instructorId: e.target.value }
+                              [assignment.id]: {
+                                ...prev[assignment.id],
+                                videoInstructorId: e.target.value
+                              }
                             }))}
-                            className="w-full px-4 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                            className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
                           >
-                            <option value="">Select instructor...</option>
-                            {qualifiedInstructors.map(instructor => (
+                            <option value="">Select video instructor...</option>
+                            {videoInstructors.map(instructor => (
                               <option key={instructor.id} value={instructor.id}>
-                                {instructor.name} - Balance: ${instructorBalances.get(instructor.id) || 0}
+                                {instructor.name} (Balance: ${instructorBalances.get(instructor.id) || 0})
                               </option>
                             ))}
                           </select>
-                          {qualifiedInstructors.length === 0 && (
-                            <p className="text-xs text-red-400 mt-1">⚠️ No qualified instructors available</p>
-                          )}
                         </div>
-                        {assignment.hasOutsideVideo && (
-                          <div>
-                            <label className="block text-sm font-semibold text-slate-300 mb-2">
-                              Video Instructor
-                              {videoInstructors[0] && (
-                                <span className="text-xs font-normal text-green-400 ml-2">
-                                  ✓ Best: {videoInstructors[0].name} (${instructorBalances.get(videoInstructors[0].id) || 0})
-                                </span>
-                              )}
-                            </label>
-                            <select
-                              value={selectedVideo || ''}
-                              onChange={(e) => setAssignmentSelections(prev => ({
-                                ...prev,
-                                [assignment.id]: { ...prev[assignment.id], videoInstructorId: e.target.value }
-                              }))}
-                              className="w-full px-4 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white focus:outline-none focus:border-purple-500"
-                            >
-                              <option value="">Select video instructor...</option>
-                              {videoInstructors.map(instructor => (
-                                <option key={instructor.id} value={instructor.id}>
-                                  {instructor.name} - Balance: ${instructorBalances.get(instructor.id) || 0}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
+                      )}
                     </div>
-                  )
-                })}
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowAssignModal(false)}
-                  disabled={assignLoading}
-                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAssignInstructors}
-                  disabled={assignLoading || Object.keys(assignmentSelections).length === 0}
-                  className="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {assignLoading ? 'Assigning...' : 
-                   Object.keys(assignmentSelections).length > 0 ? 
-                     `✓ Assign ${Object.keys(assignmentSelections).length} Instructor(s)` :
-                     'Select Instructors'
-                  }
-                </button>
-              </div>
+                  </div>
+                )
+              })}
+            </div>
+            
+            <div className="border-t border-slate-700 p-6 sticky bottom-0 bg-slate-800 flex gap-3">
+              <button
+                onClick={() => setShowAssignModal(false)}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAssignInstructors}
+                disabled={assignLoading || Object.keys(assignmentSelections).length === 0}
+                className="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {assignLoading ? '⏳ Assigning...' : '✓ Assign Instructors'}
+              </button>
             </div>
           </div>
         </div>

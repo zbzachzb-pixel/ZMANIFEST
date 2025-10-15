@@ -1,3 +1,4 @@
+// src/app/settings/page.tsx - UPDATED with Plane Capacity setting
 'use client'
 
 import React, { useState, useEffect } from 'react'
@@ -26,7 +27,8 @@ export default function SettingsPage() {
   
   const [loadSettings, setLoadSettings] = useState<LoadSchedulingSettings>({
     minutesBetweenLoads: 20,
-    instructorCycleTime: 40
+    instructorCycleTime: 40,
+    defaultPlaneCapacity: 18  // NEW: Default plane capacity
   })
   
   const [exportLoading, setExportLoading] = useState(false)
@@ -55,7 +57,12 @@ export default function SettingsPage() {
     const savedLoadSettings = localStorage.getItem('loadSchedulingSettings')
     if (savedLoadSettings) {
       try {
-        setLoadSettings(JSON.parse(savedLoadSettings))
+        const parsed = JSON.parse(savedLoadSettings)
+        setLoadSettings({
+          minutesBetweenLoads: parsed.minutesBetweenLoads || 20,
+          instructorCycleTime: parsed.instructorCycleTime || 40,
+          defaultPlaneCapacity: parsed.defaultPlaneCapacity || 18  // NEW: Load with default
+        })
       } catch (e) {
         console.error('Failed to load load scheduling settings')
       }
@@ -84,85 +91,76 @@ export default function SettingsPage() {
     const newSettings = { ...loadSettings, ...updates }
     setLoadSettings(newSettings)
     localStorage.setItem('loadSchedulingSettings', JSON.stringify(newSettings))
+    
+    // Also save to Firebase
+    db.saveLoadSchedulingSettings(newSettings).catch(error => {
+      console.error('Failed to save load settings to Firebase:', error)
+    })
   }
   
-  const handleExportData = async () => {
+  const handleExport = async () => {
+    setExportLoading(true)
     try {
-      setExportLoading(true)
-      
-      const state = await db.getFullState()
-      
-      const dataStr = JSON.stringify(state, null, 2)
-      const blob = new Blob([dataStr], { type: 'application/json' })
+      const data = await db.getFullState()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
-      
       const a = document.createElement('a')
       a.href = url
       a.download = `instructor-rotation-backup-${new Date().toISOString().split('T')[0]}.json`
-      document.body.appendChild(a)
       a.click()
-      document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      
-      alert('✅ Data exported successfully!')
     } catch (error) {
       console.error('Export failed:', error)
-      alert('❌ Failed to export data. Check console for details.')
+      alert('Failed to export data')
     } finally {
       setExportLoading(false)
     }
   }
   
-  const handleImportData = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
     
-    if (!confirm('⚠️ This will replace ALL current data with the backup. Continue?')) {
-      event.target.value = ''
-      return
-    }
-    
+    setImportLoading(true)
     try {
-      setImportLoading(true)
-      
       const text = await file.text()
       const data = JSON.parse(text)
       
-      await db.restoreFullState(data)
-      
-      alert('✅ Data imported successfully! Refreshing page...')
-      window.location.reload()
+      if (confirm('⚠️ This will replace ALL current data. Are you sure?')) {
+        await db.importState(data)
+        alert('✅ Data imported successfully!')
+        window.location.reload()
+      }
     } catch (error) {
       console.error('Import failed:', error)
-      alert('❌ Failed to import data. Check console for details.')
-      event.target.value = ''
+      alert('❌ Failed to import data. Check file format.')
     } finally {
       setImportLoading(false)
+      event.target.value = ''
     }
   }
-
+  
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-8">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-4xl font-bold text-white mb-8">⚙️ Settings</h1>
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-white mb-2">⚙️ Settings</h1>
+          <p className="text-slate-300">Configure system preferences and behavior</p>
+        </div>
         
         <div className="space-y-6">
-          {/* Period Management */}
+          {/* Period Info */}
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
-            <h2 className="text-2xl font-bold text-white mb-6">📅 Period Management</h2>
-            
-            <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-4 mb-4">
-              <p className="text-blue-300 text-sm mb-2">
-                <strong>Current Period:</strong> {period.name}
-              </p>
-              <p className="text-blue-300 text-sm">
-                {period.start.toLocaleDateString()} - {period.end.toLocaleDateString()}
-              </p>
+            <h2 className="text-2xl font-bold text-white mb-4">📅 Current Period</h2>
+            <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-4">
+              <div className="text-white font-semibold mb-2">{period.name}</div>
+              <div className="text-sm text-blue-300">
+                {new Date(period.start).toLocaleDateString()} - {new Date(period.end).toLocaleDateString()}
+              </div>
             </div>
-            
             <button
               onClick={() => setShowEndPeriodModal(true)}
-              className="bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+              className="mt-4 w-full bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold py-3 px-6 rounded-lg transition-colors"
             >
               🔒 End Current Period
             </button>
@@ -173,6 +171,25 @@ export default function SettingsPage() {
             <h2 className="text-2xl font-bold text-white mb-6">⏱️ Load Scheduling</h2>
             
             <div className="space-y-4">
+              <div>
+                <label className="block text-white font-semibold mb-2">
+                  ✈️ Default Plane Capacity
+                </label>
+                <input
+                  type="number"
+                  min="10"
+                  max="30"
+                  value={loadSettings.defaultPlaneCapacity}
+                  onChange={(e) => handleLoadSettingsChange({ 
+                    defaultPlaneCapacity: parseInt(e.target.value) || 18 
+                  })}
+                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  Default capacity for new loads (typically 18 for Caravan, 23 for Twin Otter)
+                </p>
+              </div>
+              
               <div>
                 <label className="block text-white font-semibold mb-2">
                   Minutes Between Loads
@@ -267,10 +284,10 @@ export default function SettingsPage() {
                       id="skipRequests"
                       checked={autoAssignSettings.skipRequests}
                       onChange={(e) => handleAutoAssignChange({ skipRequests: e.target.checked })}
-                      className="w-5 h-5 rounded border-slate-600 bg-slate-700"
+                      className="w-5 h-5 rounded border-slate-600"
                     />
                     <label htmlFor="skipRequests" className="text-white">
-                      Skip request students
+                      Skip requested jumps
                     </label>
                   </div>
                   
@@ -280,17 +297,17 @@ export default function SettingsPage() {
                       id="batchMode"
                       checked={autoAssignSettings.batchMode}
                       onChange={(e) => handleAutoAssignChange({ batchMode: e.target.checked })}
-                      className="w-5 h-5 rounded border-slate-600 bg-slate-700"
+                      className="w-5 h-5 rounded border-slate-600"
                     />
                     <label htmlFor="batchMode" className="text-white">
-                      Batch mode (wait for multiple students)
+                      Wait for multiple students (batch mode)
                     </label>
                   </div>
                   
                   {autoAssignSettings.batchMode && (
                     <div>
                       <label className="block text-white font-semibold mb-2">
-                        Batch Size
+                        Batch size
                       </label>
                       <input
                         type="number"
@@ -307,52 +324,14 @@ export default function SettingsPage() {
             </div>
           </div>
           
-          {/* Data Management */}
+          {/* Appearance */}
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
-            <h2 className="text-2xl font-bold text-white mb-6">💾 Data Management</h2>
-            
-            <div className="space-y-4">
-              <div className="p-4 bg-slate-800/50 rounded-lg">
-                <h3 className="text-white font-semibold mb-2">Export Full Backup</h3>
-                <p className="text-sm text-slate-400 mb-4">
-                  Download complete system data (instructors, assignments, queue, loads, periods)
-                </p>
-                <button
-                  onClick={handleExportData}
-                  disabled={exportLoading}
-                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {exportLoading ? '⏳ Exporting...' : '📥 Export Data (JSON)'}
-                </button>
-              </div>
-              
-              <div className="p-4 bg-slate-800/50 rounded-lg">
-                <h3 className="text-white font-semibold mb-2">Import Backup</h3>
-                <p className="text-sm text-slate-400 mb-4">
-                  ⚠️ This will replace all current data with the backup file
-                </p>
-                <label className="inline-block bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-lg transition-colors cursor-pointer">
-                  {importLoading ? '⏳ Importing...' : '📤 Import Data (JSON)'}
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleImportData}
-                    disabled={importLoading}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-            </div>
-          </div>
-          
-          {/* Display Settings */}
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
-            <h2 className="text-2xl font-bold text-white mb-6">🎨 Display Settings</h2>
+            <h2 className="text-2xl font-bold text-white mb-6">🎨 Appearance</h2>
             
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-white font-semibold">Dark Mode</h3>
-                <p className="text-sm text-slate-400">Toggle dark/light theme</p>
+                <p className="text-sm text-slate-400">Toggle dark theme</p>
               </div>
               <button
                 onClick={handleDarkModeToggle}
@@ -366,6 +345,40 @@ export default function SettingsPage() {
                   }`}
                 />
               </button>
+            </div>
+          </div>
+          
+          {/* Data Management */}
+          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
+            <h2 className="text-2xl font-bold text-white mb-6">💾 Data Management</h2>
+            
+            <div className="space-y-3">
+              <button
+                onClick={handleExport}
+                disabled={exportLoading}
+                className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {exportLoading ? '⏳ Exporting...' : '📥 Export All Data'}
+              </button>
+              
+              <label className="block">
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleImport}
+                  disabled={importLoading}
+                  className="hidden"
+                />
+                <div className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg transition-colors text-center cursor-pointer">
+                  {importLoading ? '⏳ Importing...' : '📤 Import Data'}
+                </div>
+              </label>
+              
+              <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg p-4">
+                <p className="text-sm text-yellow-300">
+                  ⚠️ <strong>Warning:</strong> Importing will replace all current data. Export a backup first!
+                </p>
+              </div>
             </div>
           </div>
         </div>

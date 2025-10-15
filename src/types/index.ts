@@ -155,8 +155,9 @@ export type UpdateLoad = Partial<Omit<Load, 'id' | 'createdAt'>>
 
 // ✅ FIXED #1: Single LoadSchedulingSettings definition (removed duplicate)
 export interface LoadSchedulingSettings {
-  cycleTime: number
   minutesBetweenLoads: number
+  instructorCycleTime: number
+  defaultPlaneCapacity: number  // NEW
 }
 
 // ==================== ANALYTICS ====================

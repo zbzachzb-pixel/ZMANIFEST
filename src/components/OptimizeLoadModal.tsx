@@ -1,4 +1,4 @@
-// src/components/OptimizeLoadModal.tsx
+// src/components/OptimizeLoadModal.tsx - COMPLETE FIXED VERSION
 'use client'
 
 import React, { useState, useMemo } from 'react'
@@ -53,7 +53,7 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
   const { data: queue } = useQueue()
   const { data: allInstructors } = useActiveInstructors()
   const { data: assignments } = useAssignments()
-  const { data: allLoads } = useLoads()  // 🔧 NEW: Get all loads
+  const { data: allLoads } = useLoads()
   const { update, loading } = useUpdateLoad()
   const [skipRequests, setSkipRequests] = useState(true)
   
@@ -69,13 +69,12 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
   const availableSeats = load.capacity - totalPeople
   const maxStudents = Math.floor(availableSeats / 2)
   
-  // 🔧 CRITICAL FIX: Get instructors already on ANY load (not just this one)
+  // Get instructors already on ANY load (not just this one)
   const instructorsOnAnyLoad = useMemo(() => {
     const usedMain = new Set<string>()
     const usedVideo = new Set<string>()
     
     allLoads.forEach(otherLoad => {
-      // Skip completed loads - those instructors are available
       if (otherLoad.status === 'completed') return
       
       const assignments = otherLoad.assignments || []
@@ -85,7 +84,7 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
         }
         if (a.videoInstructorId) {
           usedVideo.add(a.videoInstructorId)
-          usedMain.add(a.videoInstructorId)  // Video instructors also blocked from main
+          usedMain.add(a.videoInstructorId)
         }
       })
     })
@@ -97,13 +96,11 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
   const optimizationPlan = useMemo((): OptimizationPlan[] => {
     const plan: OptimizationPlan[] = []
     
-    // 🔧 FIXED: Start with instructors on ANY load, not just this one
     const usedInstructors = new Set(instructorsOnAnyLoad.usedMain)
     const usedVideoInstructors = new Set(instructorsOnAnyLoad.usedVideo)
     
     const instructorBalances = new Map<string, number>()
     
-    // Calculate initial balances
     clockedInInstructors.forEach(instructor => {
       instructorBalances.set(instructor.id, calculateBalance(instructor, assignments, period))
     })
@@ -111,7 +108,6 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
     console.log('🎯 Starting optimization for', load.name)
     console.log('Instructors already on ANY load:', Array.from(usedInstructors))
     
-    // Filter queue
     const eligibleStudents = queue.filter(student => {
       if (skipRequests && student.isRequest) return false
       return true
@@ -125,32 +121,52 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
       // Find qualified instructors
       const qualifiedInstructors = clockedInInstructors
         .filter(instructor => {
-          // 🔧 CRITICAL FIX: Check if already used on ANY load
           if (usedInstructors.has(instructor.id)) {
-            console.log(`⏭️  Skipping ${instructor.name} - already on another load`)
+            console.log(`⏭️  ${instructor.name}: already on another load`)
             return false
           }
           
-          // Check department qualification
-          if (student.jumpType === 'tandem' && !instructor.canTandem) return false
-          if (student.jumpType === 'aff' && !instructor.canAFF) return false
-          if (student.jumpType === 'video' && !instructor.canVideo) return false
+          // 🔧 CRITICAL FIX: Check BOTH old and new property names
+          const canTandem = (instructor as any).canTandem ?? (instructor as any).tandem
+          const canAFF = (instructor as any).canAFF ?? (instructor as any).aff
+          const canVideo = (instructor as any).canVideo ?? (instructor as any).video
           
-          // Check weight limits
+          if (student.jumpType === 'tandem' && !canTandem) {
+            console.log(`❌ ${instructor.name}: can't do tandem`)
+            return false
+          }
+          if (student.jumpType === 'aff' && !canAFF) {
+            console.log(`❌ ${instructor.name}: can't do AFF`)
+            return false
+          }
+          if (student.jumpType === 'video' && !canVideo) {
+            console.log(`❌ ${instructor.name}: can't do video`)
+            return false
+          }
+          
           const totalWeight = student.weight + (student.tandemWeightTax || 0)
           if (student.jumpType === 'tandem' && instructor.tandemWeightLimit) {
-            if (totalWeight > instructor.tandemWeightLimit) return false
+            if (totalWeight > instructor.tandemWeightLimit) {
+              console.log(`❌ ${instructor.name}: weight limit exceeded`)
+              return false
+            }
           }
           if (student.jumpType === 'aff' && instructor.affWeightLimit) {
-            if (student.weight > instructor.affWeightLimit) return false
+            if (student.weight > instructor.affWeightLimit) {
+              console.log(`❌ ${instructor.name}: AFF weight limit exceeded`)
+              return false
+            }
           }
           
-          // Check AFF locked
           if (student.jumpType === 'aff' && instructor.affLocked) {
             const isTheirStudent = instructor.affStudents?.some(s => s.name === student.name)
-            if (!isTheirStudent) return false
+            if (!isTheirStudent) {
+              console.log(`❌ ${instructor.name}: AFF locked`)
+              return false
+            }
           }
           
+          console.log(`✅ ${instructor.name}: QUALIFIED!`)
           return true
         })
         .sort((a, b) => {
@@ -165,33 +181,26 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
       }
       
       const bestInstructor = qualifiedInstructors[0]
-      console.log(`✅ Selected ${bestInstructor.name} (balance: $${instructorBalances.get(bestInstructor.id)})`)
+      console.log(`✅ Selected ${bestInstructor.name}`)
       
-      // 🔧 Mark as used immediately
       usedInstructors.add(bestInstructor.id)
       
       // Find video instructor if needed
       let videoInstructor: Instructor | undefined
       if (student.outsideVideo && student.jumpType === 'tandem') {
         const videoInstructors = clockedInInstructors.filter(i => {
-          if (!i.canVideo) return false
+          // 🔧 CRITICAL FIX: Check BOTH old and new property names
+          const canVideo = (i as any).canVideo ?? (i as any).video
+          
+          if (!canVideo) return false
           if (i.id === bestInstructor.id) return false
+          if (usedVideoInstructors.has(i.id)) return false
+          if (usedInstructors.has(i.id)) return false
           
-          // 🔧 CRITICAL FIX: Check both video and main instructor sets
-          if (usedVideoInstructors.has(i.id)) {
-            console.log(`⏭️  Skipping video ${i.name} - already video on another load`)
-            return false
-          }
-          if (usedInstructors.has(i.id)) {
-            console.log(`⏭️  Skipping video ${i.name} - already main on another load`)
-            return false
-          }
-          
-          // Check video weight restrictions
-          if (i.videoRestricted) {
+          if ((i as any).videoRestricted) {
             const combinedWeight = bestInstructor.bodyWeight + student.weight
-            if (i.videoMinWeight && combinedWeight < i.videoMinWeight) return false
-            if (i.videoMaxWeight && combinedWeight > i.videoMaxWeight) return false
+            if ((i as any).videoMinWeight && combinedWeight < (i as any).videoMinWeight) return false
+            if ((i as any).videoMaxWeight && combinedWeight > (i as any).videoMaxWeight) return false
           }
           
           return true
@@ -203,13 +212,8 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
         
         if (videoInstructors.length > 0) {
           videoInstructor = videoInstructors[0]
-          console.log(`✅ Selected video ${videoInstructor.name} (balance: $${instructorBalances.get(videoInstructor.id)})`)
-          
-          // 🔧 CRITICAL FIX: Mark video instructor as used for BOTH roles
           usedVideoInstructors.add(videoInstructor.id)
           usedInstructors.add(videoInstructor.id)
-        } else {
-          console.log('⚠️  No video instructors available')
         }
       }
       
@@ -218,21 +222,13 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
     
     console.log(`\n✅ Optimization complete: ${plan.length} assignments`)
     return plan
-  }, [queue, clockedInInstructors, assignments, period, maxStudents, skipRequests, instructorsOnAnyLoad, load.name])
+  }, [queue, clockedInInstructors, assignments, period, skipRequests, maxStudents, instructorsOnAnyLoad, load.name])
   
   const handleOptimize = async () => {
-    if (optimizationPlan.length === 0) {
-      alert('No students can be assigned')
-      return
-    }
-    
-    if (!confirm(`Assign ${optimizationPlan.length} student(s) to this load?`)) {
-      return
-    }
-    
     try {
-      const newAssignments = optimizationPlan.map((plan, index) => ({
-        id: `${Date.now()}_${index}`,
+      const currentAssignments = load.assignments || []
+      const newAssignments = optimizationPlan.map(plan => ({
+        id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         studentId: plan.student.id,
         instructorId: plan.instructor.id,
         instructorName: plan.instructor.name,
@@ -240,32 +236,25 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
         studentWeight: plan.student.weight,
         jumpType: plan.student.jumpType,
         isRequest: plan.student.isRequest,
-        ...(plan.student.jumpType === 'tandem' && {
-          tandemWeightTax: plan.student.tandemWeightTax,
-          tandemHandcam: plan.student.tandemHandcam,
-        }),
-        ...(plan.student.jumpType === 'aff' && {
-          affLevel: plan.student.affLevel,
-        }),
-        ...(plan.videoInstructor && {
-          hasOutsideVideo: true,
-          videoInstructorId: plan.videoInstructor.id,
-          videoInstructorName: plan.videoInstructor.name,
-        }),
+        tandemWeightTax: plan.student.tandemWeightTax,
+        tandemHandcam: plan.student.tandemHandcam,
+        hasOutsideVideo: !!plan.videoInstructor,
+        videoInstructorId: plan.videoInstructor?.id || null,
+        videoInstructorName: plan.videoInstructor?.name,
+        affLevel: plan.student.affLevel
       }))
       
-      // Update load with new assignments
-      const updatedAssignments = [...(load.assignments || []), ...newAssignments]
-      await update(load.id, { assignments: updatedAssignments })
+      await update(load.id, {
+        assignments: [...currentAssignments, ...newAssignments]
+      })
       
-      // Remove assigned students from queue
-      await Promise.all(
-        optimizationPlan.map(plan => db.removeFromQueue(plan.student.id))
-      )
+      for (const plan of optimizationPlan) {
+        await db.removeFromQueue(plan.student.id)
+      }
       
       onClose()
     } catch (error) {
-      console.error('Failed to optimize load:', error)
+      console.error('Optimization failed:', error)
       alert('Failed to optimize load. Please try again.')
     }
   }
