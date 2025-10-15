@@ -1,22 +1,31 @@
+// src/components/GroupCard.tsx - FIXED VERSION
+
 'use client'
 
 import React, { useState } from 'react'
-import { useUpdateGroup, useDeleteGroup, useQueue } from '@/hooks/useDatabase'
-import type { Group } from '@/types'
+import { useUpdateGroup, useDeleteGroup } from '@/hooks/useDatabase'
+import type { Group, QueueStudent } from '@/types'
 
 interface GroupCardProps {
-  group: Group
+  group: Group & { students?: QueueStudent[] }  // 🔥 Accept students directly
   onAssignGroup: (groupId: string) => void
+  draggable?: boolean
+  onDragStart?: (e: React.DragEvent, groupId: string) => void
 }
 
-export function GroupCard({ group, onAssignGroup }: GroupCardProps) {
-  const { data: allQueue } = useQueue()
+export function GroupCard({ 
+  group, 
+  onAssignGroup, 
+  draggable = false,
+  onDragStart 
+}: GroupCardProps) {
   const { update } = useUpdateGroup()
   const { deleteGroup, loading } = useDeleteGroup()
   const [showEdit, setShowEdit] = useState(false)
   const [editName, setEditName] = useState(group.name)
 
-  const students = allQueue.filter(s => group.studentIds.includes(s.id))
+  // 🔥 FIXED: Use students passed directly from parent instead of fetching
+  const students = group.students || []
   const totalCapacity = students.length * 2 + students.filter(s => s.outsideVideo).length
   const overCapacity = totalCapacity > 18
 
@@ -53,30 +62,46 @@ export function GroupCard({ group, onAssignGroup }: GroupCardProps) {
       const remainingCount = updatedStudentIds.length
       const studentName = students.find(s => s.id === studentId)?.name || 'this student'
       const message = remainingCount === 1 
-        ? `Remove ${studentName} from "${group.name}"?\n\nThis will leave only 1 person, so the group will be deleted.`
-        : `Remove ${studentName} from "${group.name}"?\n\nThis is the last person, so the group will be deleted.`
+        ? `Removing ${studentName} will leave only 1 student. Groups need at least 2 students.\n\nDo you want to delete the entire group?`
+        : `Removing ${studentName} will empty the group.\n\nDo you want to delete the entire group?`
       
       if (confirm(message)) {
-        // User confirmed - delete the group
         await handleDelete()
       }
-      // If they cancel, nothing happens - student stays in group
       return
     }
-
-    // Otherwise just remove the student from the group
+    
     try {
       await update(group.id, { studentIds: updatedStudentIds })
     } catch (error) {
-      console.error('Failed to remove student:', error)
+      console.error('Failed to remove student from group:', error)
       alert('Failed to remove student from group')
     }
   }
 
+  const handleDragStart = (e: React.DragEvent) => {
+    if (onDragStart) {
+      onDragStart(e, group.id)
+    }
+  }
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '1'
+    }
+  }
+
   return (
-    <div className="bg-gradient-to-br from-purple-500/20 to-blue-500/20 border-2 border-purple-500/50 rounded-xl p-4 shadow-lg">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-3">
+    <div 
+      draggable={draggable}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      className={`bg-gradient-to-br from-purple-500/20 to-blue-500/20 border-2 border-purple-500/50 rounded-lg p-4 ${
+        draggable ? 'cursor-move hover:scale-105 hover:shadow-xl' : ''
+      } transition-all`}
+    >
+      {/* Group Header */}
+      <div className="flex items-center justify-between mb-3">
         <div className="flex-1">
           {showEdit ? (
             <div className="flex gap-2">
@@ -84,12 +109,19 @@ export function GroupCard({ group, onAssignGroup }: GroupCardProps) {
                 type="text"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                className="flex-1 px-3 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white text-sm flex-1"
                 autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveName()
+                  if (e.key === 'Escape') {
+                    setEditName(group.name)
+                    setShowEdit(false)
+                  }
+                }}
               />
               <button
                 onClick={handleSaveName}
-                className="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-sm rounded"
+                className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
               >
                 ✓
               </button>
@@ -98,17 +130,17 @@ export function GroupCard({ group, onAssignGroup }: GroupCardProps) {
                   setEditName(group.name)
                   setShowEdit(false)
                 }}
-                className="px-3 py-1 bg-slate-600 hover:bg-slate-700 text-white text-sm rounded"
+                className="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1 rounded text-sm"
               >
                 ✕
               </button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <h3 className="text-lg font-bold text-white">👥 {group.name}</h3>
+              <span className="font-bold text-purple-300 text-lg">👥 {group.name}</span>
               <button
                 onClick={() => setShowEdit(true)}
-                className="text-slate-400 hover:text-white text-sm"
+                className="text-slate-400 hover:text-slate-300 text-sm"
                 title="Edit group name"
               >
                 ✏️
@@ -116,7 +148,8 @@ export function GroupCard({ group, onAssignGroup }: GroupCardProps) {
             </div>
           )}
           <div className="text-xs text-slate-400 mt-1">
-            {students.length} students • <span className={overCapacity ? 'text-red-400 font-bold' : 'text-green-400'}>
+            {students.length} students • Capacity: {' '}
+            <span className={overCapacity ? 'text-red-400 font-bold' : 'text-green-400'}>
               {totalCapacity} slots
             </span>
             {overCapacity && <span className="text-red-400 ml-2">⚠️ Over capacity!</span>}
@@ -141,6 +174,7 @@ export function GroupCard({ group, onAssignGroup }: GroupCardProps) {
               <div className="text-xs text-slate-400">
                 {student.jumpType.toUpperCase()} • {student.weight} lbs
                 {student.outsideVideo && <span className="text-purple-400 ml-2">📹</span>}
+                {student.affLevel && <span className="text-blue-400 ml-2">({student.affLevel})</span>}
               </div>
             </div>
             <button
