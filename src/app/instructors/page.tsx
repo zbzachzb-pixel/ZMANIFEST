@@ -14,7 +14,7 @@ export default function InstructorsPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [editingInstructor, setEditingInstructor] = useState<Instructor | null>(null)
   const [releaseInstructor, setReleaseInstructor] = useState<Instructor | null>(null)
-  const [activeTab, setActiveTab] = useState<'roster' | 'teams'>('roster')
+  const [activeTab, setActiveTab] = useState<'roster' | 'teams'>('teams')
 
   
 // Replace your existing handleClockToggle function with this:

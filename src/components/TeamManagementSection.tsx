@@ -4,14 +4,14 @@
 import React, { useState } from 'react'
 import { useInstructors } from '@/hooks/useDatabase'
 import { db } from '@/services'
-import { getScheduleDisplay, getCurrentWeekRotation } from '@/lib/utils'
+import { getWeekSchedule, getCurrentWeekRotation } from '@/lib/utils'
 import type { Instructor, Team } from '@/types'
 
 export function TeamManagementSection() {
   const { data: instructors } = useInstructors()
   const [loading, setLoading] = useState(false)
   
-  const schedule = getScheduleDisplay()
+  const schedule = getWeekSchedule()
   const currentRotation = getCurrentWeekRotation()
   
   // Group instructors by team

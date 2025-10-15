@@ -601,3 +601,22 @@ export function useLogClockEvent() {
 
   return { log, loading, error }
 }
+export function useDeleteClockEvent() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const deleteEvent = useCallback(async (id: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.deleteClockEvent(id)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { deleteEvent, loading, error }
+}

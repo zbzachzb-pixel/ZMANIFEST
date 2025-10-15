@@ -9,7 +9,7 @@ import {
   getCurrentPeriod, 
   calculateInstructorEarnings, 
   calculateInstructorTotalEarnings,
-  getScheduleDisplay 
+  getWeekSchedule 
 } from '@/lib/utils'
 import type { Instructor, Assignment } from '@/types'
 
@@ -20,7 +20,7 @@ export default function DashboardPage() {
   const [releaseInstructor, setReleaseInstructor] = useState<Instructor | null>(null)
   
   const period = getCurrentPeriod()
-  const schedule = getScheduleDisplay()
+  const schedule = getWeekSchedule()
   
   // Calculate stats for each instructor
   const instructorStats = useMemo(() => {
