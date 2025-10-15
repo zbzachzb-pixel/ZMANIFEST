@@ -1,4 +1,7 @@
-// src/hooks/useLoadCountdown.ts
+// src/hooks/useLoadCountdown.ts - FIXED VERSION
+// ✅ Timers cascade from the FIRST ready load (lowest position)
+// ✅ Shows "WAITING" if first ready load doesn't have active timer yet
+
 import { useState, useEffect } from 'react'
 import type { Load, LoadSchedulingSettings } from '@/types'
 
@@ -37,48 +40,122 @@ export function getLoadCountdown(
     }
   }
   
-  // Find previous load
-  const previousLoad = allLoads.find(l => l.position === load.position - 1)
-  
-  // Load is Ready but waiting for previous load to depart
-  if (load.status === 'ready' && previousLoad && previousLoad.status !== 'departed' && previousLoad.status !== 'completed') {
-    return {
-      countdown: null,
-      formattedTime: '',
-      isReadyToDepart: false,
-      displayText: `⏸️ Waiting for Load #${previousLoad.position}`
-    }
-  }
-  
-  // Calculate countdown based on load's countdownStartTime
-  if (load.countdownStartTime && load.status === 'ready') {
-    const startTime = new Date(load.countdownStartTime).getTime()
-    const targetTime = startTime + (minutesBetweenLoads * 60 * 1000)
-    const remaining = Math.max(0, Math.floor((targetTime - currentTime) / 1000))
+  // For ready loads, find the FIRST ready load (lowest position, not departed/completed)
+  if (load.status === 'ready') {
+    // Check if there are any loads with LOWER position that are still building
+    const loadsBeforeThis = allLoads
+      .filter(l => (l.position || 0) < (load.position || 0))
+      .filter(l => l.status !== 'departed' && l.status !== 'completed')
     
-    if (remaining === 0) {
+    const hasUnreadyLoadsBefore = loadsBeforeThis.some(l => l.status === 'building')
+    
+    if (hasUnreadyLoadsBefore) {
+      // There are building loads before this one - show waiting message
+      const firstBuildingLoad = loadsBeforeThis.find(l => l.status === 'building')
       return {
-        countdown: 0,
-        formattedTime: '0:00',
-        isReadyToDepart: true,
-        displayText: '✅ Clear to Depart'
+        countdown: null,
+        formattedTime: '',
+        isReadyToDepart: false,
+        displayText: `⏸️ Waiting on Load #${firstBuildingLoad?.position}`
       }
     }
     
-    const minutes = Math.floor(remaining / 60)
-    const seconds = remaining % 60
-    const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`
+    // No building loads before this one - proceed with normal timer logic
+    // Find all ready loads that are before or at this load's position
+    const readyLoads = allLoads
+      .filter(l => l.status === 'ready')
+      .sort((a, b) => (a.position || 0) - (b.position || 0))
     
-    return {
-      countdown: remaining,
-      formattedTime: formatted,
-      isReadyToDepart: false,
-      displayText: `⏱️ ${formatted}`
+    // Find the first ready load
+    const firstReadyLoad = readyLoads[0]
+    
+    // If this IS the first ready load
+    if (firstReadyLoad && firstReadyLoad.id === load.id) {
+      // Check if it has a countdown started
+      if ((load as any).countdownStartTime) {
+        const startTime = new Date((load as any).countdownStartTime).getTime()
+        const targetTime = startTime + (minutesBetweenLoads * 60 * 1000)
+        const remaining = Math.max(0, Math.floor((targetTime - currentTime) / 1000))
+        
+        if (remaining === 0) {
+          return {
+            countdown: 0,
+            formattedTime: '0:00',
+            isReadyToDepart: true,
+            displayText: '✅ Clear to Depart'
+          }
+        }
+        
+        const minutes = Math.floor(remaining / 60)
+        const seconds = remaining % 60
+        const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`
+        
+        return {
+          countdown: remaining,
+          formattedTime: formatted,
+          isReadyToDepart: false,
+          displayText: `⏱️ ${formatted}`
+        }
+      } else {
+        // First ready load but no timer started yet
+        return {
+          countdown: null,
+          formattedTime: '',
+          isReadyToDepart: false,
+          displayText: '✅ Ready'
+        }
+      }
     }
-  }
-  
-  // Default ready state (no countdown started yet)
-  if (load.status === 'ready') {
+    
+    // This is NOT the first ready load - check if first ready load has active timer
+    if (firstReadyLoad && (firstReadyLoad as any).countdownStartTime) {
+      // Calculate this load's timer based on first ready load
+      if ((load as any).countdownStartTime) {
+        const startTime = new Date((load as any).countdownStartTime).getTime()
+        const targetTime = startTime + (minutesBetweenLoads * 60 * 1000)
+        const remaining = Math.max(0, Math.floor((targetTime - currentTime) / 1000))
+        
+        if (remaining === 0) {
+          return {
+            countdown: 0,
+            formattedTime: '0:00',
+            isReadyToDepart: true,
+            displayText: '✅ Clear to Depart'
+          }
+        }
+        
+        const minutes = Math.floor(remaining / 60)
+        const seconds = remaining % 60
+        const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`
+        
+        return {
+          countdown: remaining,
+          formattedTime: formatted,
+          isReadyToDepart: false,
+          displayText: `⏱️ ${formatted}`
+        }
+      } else {
+        // This load is ready but doesn't have timer - show waiting
+        return {
+          countdown: null,
+          formattedTime: '',
+          isReadyToDepart: false,
+          displayText: `⏸️ Waiting on Load #${firstReadyLoad.position}`
+        }
+      }
+    }
+    
+    // First ready load exists but has no active timer yet
+    if (firstReadyLoad) {
+      return {
+        countdown: null,
+        formattedTime: '',
+        isReadyToDepart: false,
+        displayText: `⏸️ Waiting on Load #${firstReadyLoad.position}`
+      }
+    }
+    
+    // No ready loads found (shouldn't happen)
     return {
       countdown: null,
       formattedTime: '',

@@ -178,16 +178,11 @@ export interface Load {
   departedAt?: string
   completedAt?: string
   delayMinutes?: number
+  countdownStartTime?: string  // ✅ ADDED: Timer start time for countdown
 }
 
 export type CreateLoad = Omit<Load, 'id' | 'createdAt'>
 export type UpdateLoad = Partial<Omit<Load, 'id' | 'createdAt'>>
-
-export interface LoadSchedulingSettings {
-  minutesBetweenLoads: number
-  instructorCycleTime: number
-  defaultPlaneCapacity: number
-}
 
 // ==================== ANALYTICS ====================
 

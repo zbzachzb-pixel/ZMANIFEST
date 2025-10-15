@@ -1,4 +1,6 @@
-// src/components/LoadBuilderCard.tsx - COMPLETE FILE WITH ALL FEATURES
+// src/components/LoadBuilderCard.tsx - COMPLETE FILE WITH NEW TIMER LOGIC
+// ✅ NEW: Cascading timer system - loads marked ready get staggered timers
+// ✅ NEW: When first load departs, all subsequent loads reset to base intervals
 // ✅ Bidirectional transitions at all stages
 // ✅ Confirmation for moving from completed
 // ✅ Allow deletion of completed loads with extra confirmation
@@ -52,6 +54,8 @@ export function LoadBuilderCard({
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [assignmentSelections, setAssignmentSelections] = useState<Record<string, {instructorId: string, videoInstructorId?: string}>>({})
   const [assignLoading, setAssignLoading] = useState(false)
+  const [showBreathing, setShowBreathing] = useState(false)
+  const [lastMilestone, setLastMilestone] = useState<number | null>(null)
   
   const { countdown, formattedTime, isReadyToDepart } = useLoadCountdown(load, loadSchedulingSettings, allLoads)
   
@@ -104,7 +108,6 @@ export function LoadBuilderCard({
   }, [load.status])
 
   const handleDragOver = (e: React.DragEvent) => {
-    // ✅ Keep drag/drop disabled for completed loads (safety)
     if (isCompleted) return
     if (load.status !== 'building') return
     e.preventDefault()
@@ -123,9 +126,7 @@ export function LoadBuilderCard({
     onDrop(load.id)
   }
 
-  // ✅ CONFIRMATION FOR COMPLETED LOADS
   const handleStatusChangeRequest = (newStatus: Load['status']) => {
-    // Validation checks for forward movements
     if (newStatus === 'ready' && isOverCapacity) {
       alert('❌ Cannot mark as ready: Load is over capacity!')
       return
@@ -135,7 +136,6 @@ export function LoadBuilderCard({
       return
     }
     
-    // ✅ Special confirmation for moving backwards from completed
     if (load.status === 'completed' && newStatus !== 'completed') {
       if (!confirm('⚠️ This load is COMPLETED. Are you sure you want to move it back to "' + newStatus + '"? This should only be done to fix errors.')) {
         return
@@ -145,25 +145,73 @@ export function LoadBuilderCard({
     setStatusChangeConfirm(newStatus)
   }
   
+  // ==================== NEW TIMER LOGIC ====================
   const confirmStatusChange = async () => {
     if (!statusChangeConfirm) return
     
     try {
       const updates: Partial<Load> = { status: statusChangeConfirm }
       
-      // Handle countdown timer logic
+      // ==================== HANDLE COUNTDOWN TIMER LOGIC ====================
+      
       if (statusChangeConfirm === 'ready') {
-        if (!load.countdownStartTime) {
-          const previousLoad = allLoads.find(l => l.position === (load.position || 0) - 1)
-          if (!previousLoad || previousLoad.status === 'departed' || previousLoad.status === 'completed') {
-            updates.countdownStartTime = new Date().toISOString()
+        // Check if there are any loads with LOWER position that are not departed/completed
+        const loadsBeforeThis = allLoads
+          .filter(l => (l.position || 0) < (load.position || 0))
+          .filter(l => l.status !== 'departed' && l.status !== 'completed')
+        
+        // Check if any loads before this one are still building
+        const hasUnreadyLoadsBefore = loadsBeforeThis.some(l => l.status === 'building')
+        
+        if (hasUnreadyLoadsBefore) {
+          // There are loads before this one that aren't ready yet - don't start timer
+          (updates as any).countdownStartTime = null
+        } else {
+          // No unready loads before this one - check if we should start/cascade timer
+          
+          // Find the FIRST ready load (lowest position)
+          const allReadyLoads = allLoads
+            .filter(l => l.status === 'ready' || l.id === load.id) // Include this load since we're marking it ready
+            .sort((a, b) => (a.position || 0) - (b.position || 0))
+          
+          const firstReadyLoad = allReadyLoads[0]
+          
+          // Check if THIS load is the first ready load
+          const isFirstReadyLoad = firstReadyLoad && firstReadyLoad.id === load.id
+          
+          if (isFirstReadyLoad) {
+            // This is the first ready load - start its timer
+            (updates as any).countdownStartTime = new Date().toISOString()
+          } else {
+            // This is NOT the first ready load - check if first ready load has active timer
+            const firstLoadHasTimer = firstReadyLoad && (firstReadyLoad as any).countdownStartTime
+            
+            if (firstLoadHasTimer) {
+              // First load has timer - calculate cascading timer for this load
+              const firstLoadStartTime = new Date((firstReadyLoad as any).countdownStartTime).getTime()
+              const firstLoadTargetTime = firstLoadStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+              const firstLoadRemainingMs = Math.max(0, firstLoadTargetTime - Date.now())
+              
+              // Calculate position difference
+              const positionDiff = (load.position || 0) - (firstReadyLoad.position || 0)
+              
+              // This load's total remaining time = first load remaining + (20 min × position difference)
+              const thisLoadRemainingMs = firstLoadRemainingMs + (positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+              
+              // Calculate startTime such that remaining time equals thisLoadRemainingMs
+              const thisLoadStartTime = Date.now() + thisLoadRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000);
+              (updates as any).countdownStartTime = new Date(thisLoadStartTime).toISOString()
+            } else {
+              // First ready load has no timer - don't set timer for this load
+              (updates as any).countdownStartTime = null
+            }
           }
         }
       }
       
       if (statusChangeConfirm === 'building') {
-        if (load.countdownStartTime) {
-          updates.countdownStartTime = null
+        if ((load as any).countdownStartTime) {
+          (updates as any).countdownStartTime = null
         }
       }
       
@@ -175,14 +223,71 @@ export function LoadBuilderCard({
         updates.completedAt = new Date().toISOString()
       }
       
+      // Update this load's status
       await update(load.id, updates)
       setStatusChangeConfirm(null)
       
-      // Trigger next load countdown if this load just departed
+      // ==================== UPDATE SUBSEQUENT READY LOADS WHEN MARKING READY ====================
+      
+      if (statusChangeConfirm === 'ready') {
+        // Check if we started a timer for this load
+        const startedTimer = (updates as any).countdownStartTime
+        
+        if (startedTimer) {
+          // This load got a timer - cascade to all ready loads that come after this one
+          
+          // Find all subsequent ready loads (including those that were waiting)
+          const subsequentReadyLoads = allLoads
+            .filter(l => l.status === 'ready' && l.position > (load.position || 0))
+            .sort((a, b) => (a.position || 0) - (b.position || 0))
+          
+          if (subsequentReadyLoads.length > 0) {
+            // Calculate remaining time for THIS load (the one we just marked ready)
+            const thisLoadStartTime = new Date(startedTimer).getTime()
+            const thisLoadTargetTime = thisLoadStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+            const thisLoadRemainingMs = Math.max(0, thisLoadTargetTime - Date.now())
+            
+            // Update each subsequent ready load
+            for (const subsequentLoad of subsequentReadyLoads) {
+              const positionDiff = subsequentLoad.position - (load.position || 0)
+              
+              // Calculate target remaining time based on position difference from THIS load
+              const targetRemainingMs = thisLoadRemainingMs + (positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+              
+              // Calculate startTime for this remaining time
+              const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+              
+              await update(subsequentLoad.id, {
+                countdownStartTime: new Date(newStartTime).toISOString()
+              } as any)
+            }
+          }
+        }
+      }
+      
+      // ==================== RESET TIMERS WHEN LOAD DEPARTS ====================
+      
       if (statusChangeConfirm === 'departed') {
-        const nextLoad = allLoads.find(l => l.position === (load.position || 0) + 1)
-        if (nextLoad && nextLoad.status === 'ready' && !nextLoad.countdownStartTime) {
-          await update(nextLoad.id, { countdownStartTime: new Date().toISOString() })
+        // Find all subsequent ready loads and reset their timers to staggered intervals
+        const subsequentReadyLoads = allLoads
+          .filter(l => l.status === 'ready' && l.position > (load.position || 0))
+          .sort((a, b) => (a.position || 0) - (b.position || 0))
+        
+        // Reset each subsequent load's timer
+        for (let i = 0; i < subsequentReadyLoads.length; i++) {
+          const subsequentLoad = subsequentReadyLoads[i]
+          const positionDiff = i + 1 // 1st load after = 1, 2nd load after = 2, etc.
+          
+          // Calculate target remaining time: 20min, 40min, 60min, etc.
+          const targetRemainingMs = positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
+          
+          // Calculate startTime for this remaining time
+          // Formula: startTime = now + remaining - duration
+          const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+          
+          await update(subsequentLoad.id, {
+            countdownStartTime: new Date(newStartTime).toISOString()
+          } as any)
         }
       }
     } catch (error) {
@@ -195,11 +300,9 @@ export function LoadBuilderCard({
     setShowDeleteConfirm(true)
   }
   
-  // ✅ ALLOW DELETION WITH EXTRA CONFIRMATION FOR COMPLETED
   const confirmDelete = async () => {
     setShowDeleteConfirm(false)
     
-    // ✅ Extra warning for completed loads
     if (load.status === 'completed') {
       if (!confirm('⚠️ This load is COMPLETED. Are you sure you want to DELETE it? This cannot be undone!')) {
         return
@@ -207,35 +310,73 @@ export function LoadBuilderCard({
     }
     
     try {
-      if (loadAssignments.length > 0) {
-        for (const assignment of loadAssignments) {
-          if (assignment.groupId) {
-            const group = groups.find(g => g.id === assignment.groupId)
-            if (group) {
-              await db.updateGroup(assignment.groupId, {
-                studentIds: [...group.studentIds, assignment.studentId]
-              })
+      await deleteLoad(load.id)
+      
+      // ==================== RECALCULATE TIMERS FOR SUBSEQUENT LOADS ====================
+      
+      // If the deleted load was ready with an active timer, recalculate subsequent loads
+      if (load.status === 'ready' && (load as any).countdownStartTime) {
+        // Find all ready loads that came after this one
+        const subsequentReadyLoads = allLoads
+          .filter(l => l.status === 'ready' && l.position > (load.position || 0))
+          .sort((a, b) => (a.position || 0) - (b.position || 0))
+        
+        if (subsequentReadyLoads.length > 0) {
+          // Find the NEW first ready load after deletion
+          const allRemainingReadyLoads = allLoads
+            .filter(l => l.id !== load.id && l.status === 'ready')
+            .sort((a, b) => (a.position || 0) - (b.position || 0))
+          
+          const newFirstReadyLoad = allRemainingReadyLoads[0]
+          
+          if (newFirstReadyLoad) {
+            // Check if the new first ready load has an active timer
+            const firstHasTimer = (newFirstReadyLoad as any).countdownStartTime
+            
+            if (firstHasTimer) {
+              // Recalculate all subsequent loads based on the new first ready load
+              const firstLoadStartTime = new Date((newFirstReadyLoad as any).countdownStartTime).getTime()
+              const firstLoadTargetTime = firstLoadStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+              const firstLoadRemainingMs = Math.max(0, firstLoadTargetTime - Date.now())
+              
+              for (const subsequentLoad of allRemainingReadyLoads.slice(1)) {
+                const positionDiff = subsequentLoad.position - newFirstReadyLoad.position
+                
+                // Calculate target remaining time
+                const targetRemainingMs = firstLoadRemainingMs + (positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+                
+                // Calculate new startTime
+                const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+                
+                await update(subsequentLoad.id, {
+                  countdownStartTime: new Date(newStartTime).toISOString()
+                } as any)
+              }
+            } else if (newFirstReadyLoad.id === subsequentReadyLoads[0]?.id) {
+              // The deleted load was the first ready load, and the next one doesn't have a timer
+              // Start a timer for the new first ready load
+              await update(newFirstReadyLoad.id, {
+                countdownStartTime: new Date().toISOString()
+              } as any)
+              
+              // Then cascade to subsequent loads
+              const nowStartTime = Date.now()
+              const nowTargetTime = nowStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+              const nowRemainingMs = loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
+              
+              for (const subsequentLoad of allRemainingReadyLoads.slice(1)) {
+                const positionDiff = subsequentLoad.position - newFirstReadyLoad.position
+                const targetRemainingMs = nowRemainingMs + (positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+                const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+                
+                await update(subsequentLoad.id, {
+                  countdownStartTime: new Date(newStartTime).toISOString()
+                } as any)
+              }
             }
           }
-          
-          const queueStudent: CreateQueueStudent = {
-            name: assignment.studentName,
-            weight: assignment.studentWeight,
-            jumpType: assignment.jumpType,
-            isRequest: false,
-            tandemWeightTax: assignment.tandemWeightTax || 0,
-            tandemHandcam: assignment.tandemHandcam || false,
-            outsideVideo: assignment.hasOutsideVideo,
-            affLevel: assignment.affLevel,
-            groupId: assignment.groupId
-          }
-          
-          const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-          await db.addToQueue(queueStudent, priorityTimestamp)
         }
       }
-      
-      await deleteLoad(load.id)
     } catch (error) {
       console.error('Failed to delete load:', error)
       alert('Failed to delete load')
@@ -243,33 +384,20 @@ export function LoadBuilderCard({
   }
 
   const removeFromLoad = async (assignmentId: string) => {
-    if (isCompleted) {
-      alert('Cannot modify completed loads')
-      return
-    }
-    
     try {
       const assignment = loadAssignments.find(a => a.id === assignmentId)
       if (!assignment) return
-      
-      if (assignment.groupId) {
-        const group = groups.find(g => g.id === assignment.groupId)
-        if (group) {
-          await db.updateGroup(assignment.groupId, {
-            studentIds: [...group.studentIds, assignment.studentId]
-          })
-        }
-      }
       
       const updatedAssignments = loadAssignments.filter(a => a.id !== assignmentId)
       await update(load.id, { assignments: updatedAssignments })
       
       const queueStudent: CreateQueueStudent = {
+        studentAccountId: assignment.studentId,
         name: assignment.studentName,
         weight: assignment.studentWeight,
         jumpType: assignment.jumpType,
-        isRequest: false,
-        tandemWeightTax: assignment.tandemWeightTax || 0,
+        isRequest: assignment.isRequest,
+        tandemWeightTax: assignment.tandemWeightTax,
         tandemHandcam: assignment.tandemHandcam || false,
         outsideVideo: assignment.hasOutsideVideo,
         affLevel: assignment.affLevel,
@@ -325,7 +453,6 @@ export function LoadBuilderCard({
     }
   }
   
-  // ✅ FIXED PROPERTY NAMES FOR BACKWARDS COMPATIBILITY
   const getQualifiedInstructors = (assignment: typeof loadAssignments[0]) => {
     const clockedIn = instructors.filter(i => i.clockedIn)
     const qualified = clockedIn.filter(instructor => {
@@ -455,15 +582,99 @@ export function LoadBuilderCard({
     }
   }, [showAssignModal])
 
+  // ==================== MILESTONE BREATHING EFFECTS ====================
+  useEffect(() => {
+    if (load.status !== 'ready' || !countdown) {
+      setLastMilestone(null)
+      return
+    }
+
+    const minutes = Math.floor(countdown / 60)
+    
+    // Check for 20-minute milestone
+    if (minutes === 19 && lastMilestone !== 20) {
+      setLastMilestone(20)
+      setShowBreathing(true)
+      setTimeout(() => setShowBreathing(false), 1000)
+    }
+    
+    // Check for 10-minute milestone
+    if (minutes === 9 && lastMilestone !== 10) {
+      setLastMilestone(10)
+      setShowBreathing(true)
+      setTimeout(() => setShowBreathing(false), 1000)
+    }
+  }, [countdown, load.status, lastMilestone])
+
+  // Determine load card colors based on timer
+  const getLoadColors = () => {
+    if (isCompleted) {
+      return {
+        bg: 'bg-purple-900/30',
+        border: 'border-purple-500/50',
+        glow: ''
+      }
+    }
+    
+    if (load.status !== 'ready' || !countdown) {
+      return {
+        bg: 'bg-white/10',
+        border: currentStatus.borderClass,
+        glow: ''
+      }
+    }
+
+    const minutes = Math.floor(countdown / 60)
+    
+    if (minutes >= 20) {
+      // > 20 minutes: Blue/Default
+      return {
+        bg: 'bg-white/10',
+        border: 'border-blue-500/50',
+        glow: showBreathing ? 'shadow-[0_0_30px_rgba(59,130,246,0.6)]' : ''
+      }
+    } else if (minutes >= 10) {
+      // 10-20 minutes: Orange
+      return {
+        bg: 'bg-orange-900/20',
+        border: 'border-orange-500/60',
+        glow: showBreathing ? 'shadow-[0_0_30px_rgba(249,115,22,0.6)]' : ''
+      }
+    } else {
+      // < 10 minutes: Red
+      return {
+        bg: 'bg-red-900/20',
+        border: 'border-red-500/60',
+        glow: showBreathing ? 'shadow-[0_0_30px_rgba(239,68,68,0.6)]' : ''
+      }
+    }
+  }
+
+  const loadColors = getLoadColors()
+
   return (
     <>
+      <style>{`
+        @keyframes breathe {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.02); }
+        }
+        .breathing {
+          animation: breathe 1s ease-in-out;
+        }
+      `}</style>
+      
       <div
-        className={`rounded-xl shadow-2xl p-6 border-2 backdrop-blur-lg transition-all ${
-          isCompleted
-            ? 'bg-purple-900/30 border-purple-500/50 opacity-90'
-            : dragOver && load.status === 'building'
-              ? 'bg-white/20 border-blue-400 scale-105'
-              : `bg-white/10 ${currentStatus.borderClass}`
+        className={`rounded-xl shadow-2xl p-6 border-2 backdrop-blur-lg transition-all duration-300 ${
+          loadColors.bg
+        } ${
+          loadColors.border
+        } ${
+          loadColors.glow
+        } ${
+          showBreathing ? 'breathing' : ''
+        } ${
+          dragOver && load.status === 'building' ? 'scale-105' : ''
         }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -501,16 +712,32 @@ export function LoadBuilderCard({
         </div>
 
         {load.status === 'ready' && formattedTime && (
-          <div className={`mb-4 p-4 rounded-lg border-2 transition-all ${
+          <div className={`mb-4 p-4 rounded-lg border-2 transition-all duration-300 ${
             isReadyToDepart ? 'bg-green-500/20 border-green-500 animate-pulse' : 
-            countdown && countdown < 60 ? 'bg-yellow-500/20 border-yellow-500' : 'bg-blue-500/20 border-blue-500'
+            countdown && countdown < 600 ? 'bg-red-500/20 border-red-500' : 
+            countdown && countdown < 1200 ? 'bg-orange-500/20 border-orange-500' : 
+            'bg-blue-500/20 border-blue-500'
           }`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="text-3xl">{isReadyToDepart ? '✅' : countdown && countdown < 60 ? '⏰' : '⏱️'}</div>
+                <div className="text-3xl">
+                  {isReadyToDepart ? '✅' : 
+                   countdown && countdown < 600 ? '🚨' : 
+                   countdown && countdown < 1200 ? '⏰' : 
+                   '⏱️'}
+                </div>
                 <div>
-                  <div className="text-sm text-slate-300">{isReadyToDepart ? 'READY TO DEPART!' : 'Departs in'}</div>
-                  <div className="text-2xl font-bold text-white">{formattedTime}</div>
+                  <div className="text-sm text-slate-300">
+                    {isReadyToDepart ? 'READY TO DEPART!' : 
+                     countdown && countdown < 600 ? 'URGENT - Departs Soon!' :
+                     countdown && countdown < 1200 ? 'Warning - Departs in' :
+                     'Departs in'}
+                  </div>
+                  <div className={`text-2xl font-bold ${
+                    countdown && countdown < 600 ? 'text-red-300' :
+                    countdown && countdown < 1200 ? 'text-orange-300' :
+                    'text-white'
+                  }`}>{formattedTime}</div>
                 </div>
               </div>
               {!isReadyToDepart && (
@@ -554,16 +781,11 @@ export function LoadBuilderCard({
                         onDragStart={() => !isCompleted && load.status === 'building' && onDragStart('group', groupId, load.id)}
                         onDragEnd={onDragEnd}
                         className={`bg-gradient-to-br from-purple-500/10 to-blue-500/10 border-2 border-purple-500/40 rounded-xl p-3 space-y-2 transition-all ${
-                          !isCompleted && load.status === 'building' ? 'cursor-move hover:border-purple-400 hover:shadow-lg' : 'cursor-default'
+                          !isCompleted && load.status === 'building' ? 'cursor-move hover:bg-purple-500/20 hover:border-purple-500/60' : 'cursor-default'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-purple-400 font-bold">👥 {group.name}</span>
-                            <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full">
-                              {groupAssignments.length} students
-                            </span>
-                          </div>
+                          <div className="text-purple-300 font-bold text-sm">👥 {group.name}</div>
                         </div>
                         {groupAssignments.map(assignment => (
                           <div key={assignment.id} className="bg-white/5 rounded-lg p-2 border border-white/10">
@@ -571,11 +793,14 @@ export function LoadBuilderCard({
                               <div className="flex-1">
                                 <div className="flex items-center gap-2">
                                   <span className="font-semibold text-white text-sm">{assignment.studentName}</span>
-                                  {assignment.isRequest && <span className="text-xs text-yellow-400">⭐</span>}
+                                  {assignment.isRequest && <span className="text-yellow-400 text-xs">⭐</span>}
                                 </div>
                                 <div className="text-xs text-slate-400 mt-1">
                                   {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
                                   {assignment.tandemWeightTax && ` • Tax: ${assignment.tandemWeightTax}`}
+                                  {assignment.tandemHandcam && ' • 📹 Handcam'}
+                                  {assignment.hasOutsideVideo && ' • 🎥 Video'}
+                                  {assignment.affLevel && ` • ${assignment.affLevel}`}
                                 </div>
                                 {assignment.instructorId ? (
                                   <div className="text-xs text-green-400 mt-1">
@@ -650,19 +875,15 @@ export function LoadBuilderCard({
           )}
         </div>
 
-        {totalPeople > 0 && (
-          <div className="bg-white/5 rounded-lg p-3 mb-4">
-            <div className="grid grid-cols-3 gap-4 text-sm">
-              <div>
-                <div className="text-slate-400">Students</div>
-                <div className="text-white font-bold text-lg">{loadAssignments.length}</div>
+        {unassignedCount > 0 && (
+          <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-yellow-400">
+                <span className="text-2xl">⚠️</span>
+                <span className="font-semibold">{unassignedCount} student(s) need instructor assignment</span>
               </div>
-              <div>
-                <div className="text-slate-400">Assigned</div>
-                <div className="text-white font-bold text-lg">{loadAssignments.length - unassignedCount}</div>
-              </div>
-              <div>
-                <div className={`${isOverCapacity ? 'text-red-400' : 'text-blue-400'}`}>Slots Left</div>
+              <div className="flex gap-2 text-sm">
+                <div className={`px-3 py-1 rounded-lg ${isOverCapacity ? 'bg-red-500/20 text-red-400' : 'text-blue-400'}`}>Slots Left</div>
                 <div className={`font-bold text-lg ${isOverCapacity ? 'text-red-400' : 'text-blue-400'}`}>
                   {Math.max(0, availableSlots)}
                 </div>
@@ -671,7 +892,6 @@ export function LoadBuilderCard({
           </div>
         )}
 
-        {/* ✅ REMOVED !isCompleted WRAPPER - BUTTONS NOW ALWAYS VISIBLE */}
         <div className="space-y-2">
           {load.status === 'building' && unassignedCount > 0 && (
             <button
@@ -783,7 +1003,7 @@ export function LoadBuilderCard({
                     
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-sm font-semibold text-slate-300 mb-2">Main Instructor</label>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Tandem Instructor *</label>
                         <select
                           value={selection?.instructorId || ''}
                           onChange={(e) => setAssignmentSelections(prev => ({
@@ -802,14 +1022,11 @@ export function LoadBuilderCard({
                             </option>
                           ))}
                         </select>
-                        {qualifiedInstructors.length === 0 && (
-                          <p className="text-red-400 text-xs mt-1">No qualified instructors available</p>
-                        )}
                       </div>
                       
                       {assignment.hasOutsideVideo && assignment.jumpType === 'tandem' && (
                         <div>
-                          <label className="block text-sm font-semibold text-slate-300 mb-2">Video Instructor</label>
+                          <label className="block text-sm font-medium text-slate-300 mb-2">Video Instructor (Optional)</label>
                           <select
                             value={selection?.videoInstructorId || ''}
                             onChange={(e) => setAssignmentSelections(prev => ({
