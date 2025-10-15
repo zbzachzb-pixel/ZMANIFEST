@@ -1,11 +1,9 @@
-// =========================================
-// FILE: src/app/queue/page.tsx - COMPLETE REPLACEMENT
-// =========================================
+// src/app/queue/page.tsx - COMPLETE FILE WITH GROUP DRAG SUPPORT
+
 'use client'
 
 import React, { useState, useMemo } from 'react'
 import { useTandemQueue, useAFFQueue, useRemoveMultipleFromQueue, useGroups } from '@/hooks/useDatabase'
-import { db } from '@/services'
 import { AddStudentModal } from '@/components/AddStudentModal'
 import { EditStudentModal } from '@/components/EditStudentModal'
 import { StudentCard } from '@/components/StudentCard'
@@ -129,9 +127,32 @@ export default function QueuePage() {
   }
 
   const handleAssignGroup = async (groupId: string) => {
-    // TODO: Implement group assignment to load
-    // For now just show alert
-    alert('Group assignment will be implemented in Load Builder. This group is ready to be assigned together!')
+    alert('Drag the entire group card to a load in the Load Builder page to assign all students together!')
+  }
+
+  // 🔥 NEW: Group drag handler
+  const handleGroupDragStart = (e: React.DragEvent, groupId: string) => {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('groupId', groupId)
+    e.dataTransfer.setData('type', 'group')
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.5'
+    }
+  }
+
+  // 🔥 NEW: Student drag handler
+  const handleStudentDragStart = (e: React.DragEvent, studentId: string) => {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('studentId', studentId)
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.5'
+    }
+  }
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '1'
+    }
   }
 
   const filteredTandem = ungroupedTandem.filter(s => 
@@ -176,7 +197,7 @@ export default function QueuePage() {
               <p className="text-sm text-slate-300">
                 1. Select multiple students (hold checkboxes)<br/>
                 2. Click "Create Group" to keep them together<br/>
-                3. Use "Assign Group" to put entire party on same load<br/>
+                3. Drag entire group to Load Builder to assign all students at once<br/>
                 4. Groups ensure families/parties jump together
               </p>
             </div>
@@ -248,11 +269,13 @@ export default function QueuePage() {
             {tandemGroups.length > 0 && (
               <div className="mb-4 space-y-3">
                 <h3 className="text-lg font-bold text-purple-300">👥 Groups</h3>
-                {tandemGroups.map((group, idx) => (
+                {tandemGroups.map((group) => (
                   <GroupCard
                     key={group.id}
                     group={group}
                     onAssignGroup={handleAssignGroup}
+                    draggable={true}
+                    onDragStart={handleGroupDragStart}
                   />
                 ))}
               </div>
@@ -264,15 +287,24 @@ export default function QueuePage() {
                 {tandemGroups.length > 0 && (
                   <h3 className="text-lg font-bold text-slate-300">Individual Students</h3>
                 )}
-                {filteredTandem.map(student => (
-                  <StudentCard
-                    key={student.id}
-                    student={student}
-                    selected={selectedTandem.includes(student.id)}
-                    onToggle={() => toggleSelection(student.id, 'tandem')}
-                    onEdit={() => handleEditStudent(student)}
-                  />
-                ))}
+                {filteredTandem.map((student, idx) => {
+                  const group = student.groupId ? groups.find(g => g.id === student.groupId) : null
+                  const colorIndex = group ? groups.findIndex(g => g.id === student.groupId) : -1
+                  
+                  return (
+                    <StudentCard
+                      key={student.id}
+                      student={student}
+                      selected={selectedTandem.includes(student.id)}
+                      onToggle={() => toggleSelection(student.id, 'tandem')}
+                      onEdit={() => handleEditStudent(student)}
+                      draggable={true}
+                      onDragStart={(e) => handleStudentDragStart(e, student.id)}
+                      groupColor={group ? groupColors[colorIndex % groupColors.length] : undefined}
+                      groupName={group?.name}
+                    />
+                  )
+                })}
               </div>
             ) : (
               <div className="text-center py-12 text-slate-400">
@@ -337,11 +369,13 @@ export default function QueuePage() {
             {affGroups.length > 0 && (
               <div className="mb-4 space-y-3">
                 <h3 className="text-lg font-bold text-purple-300">👥 Groups</h3>
-                {affGroups.map((group, idx) => (
+                {affGroups.map((group) => (
                   <GroupCard
                     key={group.id}
                     group={group}
                     onAssignGroup={handleAssignGroup}
+                    draggable={true}
+                    onDragStart={handleGroupDragStart}
                   />
                 ))}
               </div>
@@ -358,8 +392,10 @@ export default function QueuePage() {
                     key={student.id}
                     student={student}
                     selected={selectedAFF.includes(student.id)}
-                    onToggleSelect={() => toggleSelection(student.id, 'aff')}
+                    onToggle={() => toggleSelection(student.id, 'aff')}
                     onEdit={() => handleEditStudent(student)}
+                    draggable={true}
+                    onDragStart={(e) => handleStudentDragStart(e, student.id)}
                   />
                 ))}
               </div>

@@ -1,3 +1,5 @@
+// src/components/StudentCard.tsx - Update to support dragging properly
+
 'use client'
 
 import React from 'react'
@@ -29,20 +31,35 @@ export function StudentCard({
     onEdit()
   }
 
+  const handleDragStart = (e: React.DragEvent) => {
+    // Call the parent's drag start handler if provided
+    if (onDragStart) {
+      onDragStart(e)
+    }
+  }
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    // Reset opacity
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '1'
+    }
+  }
+
   return (
     <div
       onClick={onToggle}
       draggable={draggable}
-      onDragStart={onDragStart}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       className={`bg-white/10 backdrop-blur-lg rounded-lg p-4 border-2 ${
-        draggable ? 'cursor-move' : 'cursor-pointer'
+        draggable ? 'cursor-move hover:shadow-lg' : 'cursor-pointer'
       } transition-all hover:bg-white/15 ${
         selected 
           ? 'border-blue-500 bg-blue-500/10' 
           : 'border-white/20'
       }`}
     >
-      {/* Group Indicator - NEW */}
+      {/* Group Indicator */}
       {groupName && (
         <div className="mb-2 flex items-center gap-1">
           <div 
@@ -78,39 +95,31 @@ export function StudentCard({
           <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
             selected ? 'bg-blue-500 border-blue-500' : 'border-white/40'
           }`}>
-            {selected && (
-              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-              </svg>
-            )}
+            {selected && <span className="text-white text-xs">✓</span>}
           </div>
         </div>
       </div>
-      
-      <div className="flex flex-wrap gap-2">
-        {student.jumpType === 'tandem' && (
-          <>
-            {student.tandemWeightTax !== undefined && student.tandemWeightTax > 0 && (
-              <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded text-xs font-semibold">
-                {student.tandemWeightTax}x Tax
-              </span>
-            )}
-            {student.tandemHandcam && (
-              <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs font-semibold">
-                Handcam
-              </span>
-            )}
-            {student.outsideVideo && (
-              <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">
-                Outside Video
-              </span>
-            )}
-          </>
+
+      {/* Additional Info */}
+      <div className="flex gap-2 flex-wrap text-xs">
+        {student.tandemWeightTax && student.tandemWeightTax > 0 && (
+          <span className="bg-orange-500/20 text-orange-300 px-2 py-0.5 rounded">
+            +{student.tandemWeightTax} lbs tax
+          </span>
         )}
-        
+        {student.tandemHandcam && (
+          <span className="bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded">
+            📹 Handcam
+          </span>
+        )}
+        {student.outsideVideo && (
+          <span className="bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">
+            📹 Outside Video
+          </span>
+        )}
         {student.isRequest && (
-          <span className="px-2 py-1 bg-red-500/20 text-red-300 rounded text-xs font-semibold">
-            Request
+          <span className="bg-red-500/20 text-red-300 px-2 py-0.5 rounded">
+            ⭐ Request
           </span>
         )}
       </div>

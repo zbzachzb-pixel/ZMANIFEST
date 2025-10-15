@@ -96,6 +96,7 @@ export interface CreateQueueStudent {
   tandemHandcam?: boolean
   outsideVideo?: boolean
   affLevel?: AFFLevel
+  groupId?: string  // 🔥 Preserve group membership when adding back to queue
 }
 
 // ==================== GROUPS ====================
@@ -123,7 +124,7 @@ export interface ClockEvent {
 export interface LoadAssignment {
   id: string
   studentId: string
-  instructorId: string
+  instructorId: string | null  // Changed to allow null
   instructorName: string
   videoInstructorId?: string
   videoInstructorName?: string
@@ -131,6 +132,7 @@ export interface LoadAssignment {
   studentWeight: number
   jumpType: JumpType
   isRequest: boolean
+  groupId?: string  // 🔥 Preserve group membership
   
   // Tandem specific
   tandemWeightTax?: number

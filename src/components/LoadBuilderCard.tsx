@@ -1,10 +1,10 @@
 // src/components/LoadBuilderCard.tsx
-// Complete version with timer fix and working delete button
+// Complete version with timer, delete, instructor assignment, and GROUP SUPPORT
 
 'use client'
 
 import React, { useState, useMemo, useEffect } from 'react'
-import { useUpdateLoad, useDeleteLoad } from '@/hooks/useDatabase'
+import { useUpdateLoad, useDeleteLoad, useGroups } from '@/hooks/useDatabase'
 import { useLoadCountdown, getInstructorNextAvailableLoad } from '@/hooks/useLoadCountdown'
 import { db } from '@/services'
 import type { Load, Instructor, LoadSchedulingSettings, CreateQueueStudent } from '@/types'
@@ -38,6 +38,8 @@ export function LoadBuilderCard({
 }: LoadBuilderCardProps) {
   const { update, loading } = useUpdateLoad()
   const { deleteLoad } = useDeleteLoad()
+  const { data: groups } = useGroups() // 🔥 ADD THIS - Get groups data
+  
   const [dragOver, setDragOver] = useState(false)
   const [statusChangeConfirm, setStatusChangeConfirm] = useState<Load['status'] | null>(null)
   const [showDelayModal, setShowDelayModal] = useState(false)
@@ -185,12 +187,49 @@ export function LoadBuilderCard({
     setShowDeleteConfirm(true)
   }
   
+  // 🔥 UPDATED: Preserve groupId when deleting load
   const confirmDelete = async () => {
-  setShowDeleteConfirm(false)
+    setShowDeleteConfirm(false)
+    
+    try {
+      // Move all assignments back to queue with PRIORITY before deleting
+      for (const assignment of loadAssignments) {
+        const queueStudent: CreateQueueStudent = {
+          name: assignment.studentName,
+          weight: assignment.studentWeight,
+          jumpType: assignment.jumpType,
+          isRequest: false,
+          tandemWeightTax: assignment.tandemWeightTax || 0,
+          tandemHandcam: assignment.tandemHandcam || false,
+          outsideVideo: assignment.hasOutsideVideo,
+          affLevel: assignment.affLevel,
+          groupId: assignment.groupId  // 🔥 PRESERVE GROUP ID
+        }
+        
+        // Use priority timestamp to put at TOP of queue
+        const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+        await db.addToQueue(queueStudent, priorityTimestamp)
+      }
+      
+      // Now delete the load
+      await deleteLoad(load.id)
+    } catch (error) {
+      console.error('Failed to delete load:', error)
+      alert('Failed to delete load: ' + (error as Error).message)
+    }
+  }
   
-  try {
-    // Move all assignments back to queue with PRIORITY before deleting
-    for (const assignment of loadAssignments) {
+  // 🔥 UPDATED: Preserve groupId when removing assignment
+  const handleRemoveAssignment = async (assignmentId: string) => {
+    try {
+      const assignment = loadAssignments.find(a => a.id === assignmentId)
+      if (!assignment) return
+      
+      // Remove assignment from load
+      const updatedAssignments = loadAssignments.filter(a => a.id !== assignmentId)
+      await update(load.id, { assignments: updatedAssignments })
+      
+      // Add student back to queue with PRIORITY
       const queueStudent: CreateQueueStudent = {
         name: assignment.studentName,
         weight: assignment.studentWeight,
@@ -199,52 +238,19 @@ export function LoadBuilderCard({
         tandemWeightTax: assignment.tandemWeightTax || 0,
         tandemHandcam: assignment.tandemHandcam || false,
         outsideVideo: assignment.hasOutsideVideo,
-        affLevel: assignment.affLevel
+        affLevel: assignment.affLevel,
+        groupId: assignment.groupId  // 🔥 PRESERVE GROUP ID
       }
       
-      // ⭐ KEY CHANGE: Use priority timestamp to put at TOP of queue
+      // Use a timestamp from 1 day ago to put student at TOP of queue
       const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       await db.addToQueue(queueStudent, priorityTimestamp)
+      
+    } catch (error) {
+      console.error('Failed to remove assignment:', error)
+      alert('Failed to remove assignment')
     }
-    
-    // Now delete the load
-    await deleteLoad(load.id)
-  } catch (error) {
-    console.error('Failed to delete load:', error)
-    alert('Failed to delete load: ' + (error as Error).message)
   }
-}
-  
-const handleRemoveAssignment = async (assignmentId: string) => {
-  try {
-    const assignment = loadAssignments.find(a => a.id === assignmentId)
-    if (!assignment) return
-    
-    // Remove assignment from load
-    const updatedAssignments = loadAssignments.filter(a => a.id !== assignmentId)
-    await update(load.id, { assignments: updatedAssignments })
-    
-    // Add student back to queue with PRIORITY (older timestamp puts them at top)
-    const queueStudent: CreateQueueStudent = {
-      name: assignment.studentName,
-      weight: assignment.studentWeight,
-      jumpType: assignment.jumpType,
-      isRequest: false,
-      tandemWeightTax: assignment.tandemWeightTax || 0,
-      tandemHandcam: assignment.tandemHandcam || false,
-      outsideVideo: assignment.hasOutsideVideo,
-      affLevel: assignment.affLevel
-    }
-    
-    // ⭐ KEY CHANGE: Use a timestamp from 1 day ago to put student at TOP of queue
-    const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    await db.addToQueue(queueStudent, priorityTimestamp)
-    
-  } catch (error) {
-    console.error('Failed to remove assignment:', error)
-    alert('Failed to remove assignment')
-  }
-}
   
   const handleDelay = () => {
     setShowDelayModal(true)
@@ -293,33 +299,15 @@ const handleRemoveAssignment = async (assignmentId: string) => {
   const getQualifiedInstructors = (assignment: typeof loadAssignments[0]) => {
     const clockedIn = instructors.filter(i => i.clockedIn)
     
-    console.log('🔍 Filtering instructors for:', assignment.studentName, {
-      jumpType: assignment.jumpType,
-      weight: assignment.studentWeight,
-      totalClockedIn: clockedIn.length,
-      allInstructors: instructors.length
-    })
-    
     const qualified = clockedIn.filter(instructor => {
       // Access properties - handle both old and new naming conventions
       const canTandem = (instructor as any).canTandem ?? (instructor as any).tandem
       const canAFF = (instructor as any).canAFF ?? (instructor as any).aff
-      const canVideo = (instructor as any).canVideo ?? (instructor as any).video
-      
-      console.log(`  Checking ${instructor.name}:`, {
-        canTandem,
-        canAFF,
-        canVideo,
-        tandemWeightLimit: instructor.tandemWeightLimit,
-        affWeightLimit: instructor.affWeightLimit
-      })
       
       if (assignment.jumpType === 'tandem' && !canTandem) {
-        console.log(`    ❌ ${instructor.name} - not qualified for tandem`)
         return false
       }
       if (assignment.jumpType === 'aff' && !canAFF) {
-        console.log(`    ❌ ${instructor.name} - not qualified for AFF`)
         return false
       }
       
@@ -327,23 +315,18 @@ const handleRemoveAssignment = async (assignmentId: string) => {
       if (assignment.jumpType === 'tandem' && instructor.tandemWeightLimit) {
         const totalWeight = assignment.studentWeight + (assignment.tandemWeightTax || 0)
         if (totalWeight > instructor.tandemWeightLimit) {
-          console.log(`    ❌ ${instructor.name} - weight limit exceeded (${totalWeight} > ${instructor.tandemWeightLimit})`)
           return false
         }
       }
       
       if (assignment.jumpType === 'aff' && instructor.affWeightLimit) {
         if (assignment.studentWeight > instructor.affWeightLimit) {
-          console.log(`    ❌ ${instructor.name} - AFF weight limit exceeded`)
           return false
         }
       }
       
-      console.log(`    ✅ ${instructor.name} - qualified!`)
       return true
     })
-    
-    console.log('✅ Total qualified instructors:', qualified.length)
     
     return qualified.sort((a, b) => {
       const balanceA = instructorBalances.get(a.id) || 0
@@ -388,20 +371,19 @@ const handleRemoveAssignment = async (assignmentId: string) => {
     return selections
   }, [showAssignModal, loadAssignments])
   
-  // Update assignmentSelections when auto-select changes
-// Effect 1: Set selections when modal opens
-useEffect(() => {
-  if (showAssignModal && Object.keys(autoSelectInstructors).length > 0) {
-    setAssignmentSelections(autoSelectInstructors)
-  }
-}, [showAssignModal, autoSelectInstructors])
+  // Effect 1: Set selections when modal opens
+  useEffect(() => {
+    if (showAssignModal && Object.keys(autoSelectInstructors).length > 0) {
+      setAssignmentSelections(autoSelectInstructors)
+    }
+  }, [showAssignModal, autoSelectInstructors])
 
-// Effect 2: Clear selections when modal closes
-useEffect(() => {
-  if (!showAssignModal) {
-    setAssignmentSelections({})
-  }
-}, [showAssignModal])
+  // Effect 2: Clear selections when modal closes
+  useEffect(() => {
+    if (!showAssignModal) {
+      setAssignmentSelections({})
+    }
+  }, [showAssignModal])
   
   const getAvailableTransitions = () => {
     switch (load.status) {
@@ -419,28 +401,11 @@ useEffect(() => {
   }
   
   const availableTransitions = getAvailableTransitions()
-  
-  const instructorAvailability = useMemo(() => {
-    const clockedInInstructors = instructors.filter(i => i.clockedIn)
-    return clockedInInstructors.map(instructor => {
-      const nextAvailable = getInstructorNextAvailableLoad(
-        instructor.id, 
-        allLoads,
-        loadSchedulingSettings.instructorCycleTime,
-        loadSchedulingSettings.minutesBetweenLoads
-      )
-      return {
-        instructor,
-        nextAvailable,
-        isAvailable: nextAvailable === null || (load.position || 0) >= nextAvailable
-      }
-    })
-  }, [instructors, allLoads, load.position, loadSchedulingSettings])
-  
+
   return (
     <>
       <div
-        className={`rounded-xl shadow-xl p-6 border-2 transition-all backdrop-blur-lg ${
+        className={`rounded-xl shadow-2xl p-6 border-2 backdrop-blur-lg transition-all ${
           isCompleted
             ? 'bg-purple-900/30 border-purple-500/50 opacity-90'
             : dragOver && load.status === 'building'
@@ -508,35 +473,27 @@ useEffect(() => {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="text-3xl">
-                  {isReadyToDepart ? '✅' : countdown && countdown < 60 ? '⚠️' : '⏱️'}
+                  {isReadyToDepart ? '✅' : countdown && countdown < 60 ? '⚠️' : '⏰'}
                 </div>
                 <div>
                   <div className="text-sm font-semibold text-slate-300">
-                    {isReadyToDepart ? 'Clear to Depart!' : 'Countdown Timer'}
+                    {isReadyToDepart ? 'Ready to Depart!' : 'Time Until Departure'}
                   </div>
-                  <div className={`text-2xl font-bold ${
-                    isReadyToDepart 
-                      ? 'text-green-300' 
-                      : countdown && countdown < 60
-                        ? 'text-yellow-300'
-                        : 'text-blue-300'
-                  }`}>
-                    {formattedTime}
-                  </div>
+                  <div className="text-2xl font-bold text-white">{formattedTime}</div>
                 </div>
               </div>
               
-              {isReadyToDepart && (
+              {!isReadyToDepart && (
                 <button
-                  onClick={() => handleStatusChangeRequest('departed')}
-                  className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                  onClick={handleDelay}
+                  className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
                 >
-                  🛫 Mark Departed
+                  ⏰ Delay
                 </button>
               )}
             </div>
             
-            {!isReadyToDepart && countdown !== null && (
+            {countdown && (
               <div className="mt-3">
                 <div className="w-full bg-white/10 rounded-full h-2">
                   <div
@@ -570,61 +527,161 @@ useEffect(() => {
           </div>
         )}
 
-        {/* Assignments Section - Simplified for brevity */}
+        {/* Assignments Section */}
         <div className="space-y-2 mb-4">
           {loadAssignments.length === 0 ? (
             <div className="text-center py-8 text-slate-400 border-2 border-dashed border-slate-600 rounded-lg">
               {isCompleted ? 'No assignments on this load' : 'Drop students here'}
             </div>
           ) : (
-            loadAssignments.map((assignment) => (
-              <div
-                key={assignment.id}
-                draggable={!isCompleted && load.status === 'building'}
-                onDragStart={() => !isCompleted && load.status === 'building' && onDragStart('assignment', assignment.id, load.id)}
-                onDragEnd={onDragEnd}
-                className={`p-3 rounded-lg border transition-all ${
-                  assignment.instructorId
-                    ? 'bg-slate-700 border-slate-600'
-                    : 'bg-yellow-900/30 border-yellow-600'
-                } ${!isCompleted && load.status === 'building' ? 'cursor-move hover:bg-slate-600' : 'cursor-default'}`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-semibold text-white">{assignment.studentName}</span>
-                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                        assignment.jumpType === 'tandem' ? 'bg-green-500/20 text-green-300' :
-                        assignment.jumpType === 'aff' ? 'bg-blue-500/20 text-blue-300' :
-                        'bg-purple-500/20 text-purple-300'
-                      }`}>
-                        {assignment.jumpType.toUpperCase()}
-                      </span>
-                    </div>
+            (() => {
+              // Group assignments by groupId
+              const grouped: Record<string, typeof loadAssignments> = {}
+              const individual: typeof loadAssignments = []
+              
+              loadAssignments.forEach(assignment => {
+                if (assignment.groupId) {
+                  if (!grouped[assignment.groupId]) {
+                    grouped[assignment.groupId] = []
+                  }
+                  grouped[assignment.groupId].push(assignment)
+                } else {
+                  individual.push(assignment)
+                }
+              })
+              
+              return (
+                <>
+                  {/* Render Grouped Assignments */}
+                  {Object.entries(grouped).map(([groupId, groupAssignments]) => {
+                    const group = groups.find(g => g.id === groupId)
+                    if (!group) return null
                     
-                    <div className="text-xs text-slate-400 space-y-0.5">
-                      <div className={assignment.instructorId ? 'text-green-400' : 'text-yellow-400'}>
-                        👤 TI: {assignment.instructorName || '⚠️ Not assigned'}
+                    return (
+                      <div 
+                        key={groupId}
+                        draggable={!isCompleted && load.status === 'building'}
+                        onDragStart={() => !isCompleted && load.status === 'building' && onDragStart('group', groupId, load.id)}
+                        onDragEnd={onDragEnd}
+                        className={`bg-gradient-to-br from-purple-500/10 to-blue-500/10 border-2 border-purple-500/40 rounded-xl p-3 space-y-2 transition-all ${
+                          !isCompleted && load.status === 'building' ? 'cursor-move hover:border-purple-400 hover:shadow-lg hover:scale-[1.02]' : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-bold text-purple-300">
+                            👥 {group.name} ({groupAssignments.length} students)
+                          </span>
+                          {!isCompleted && load.status === 'building' && (
+                            <span className="text-xs text-purple-400 opacity-70">
+                              ↔️ Drag to move all / Return to queue
+                            </span>
+                          )}
+                        </div>
+                        
+                        {groupAssignments.map((assignment) => (
+                          <div
+                            key={assignment.id}
+                            className={`p-3 rounded-lg border transition-all ${
+                              assignment.instructorId
+                                ? 'bg-slate-700 border-slate-600'
+                                : 'bg-yellow-900/30 border-yellow-600'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-semibold text-white">{assignment.studentName}</span>
+                                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                                    assignment.jumpType === 'tandem' ? 'bg-green-500/20 text-green-300' :
+                                    assignment.jumpType === 'aff' ? 'bg-blue-500/20 text-blue-300' :
+                                    'bg-purple-500/20 text-purple-300'
+                                  }`}>
+                                    {assignment.jumpType.toUpperCase()}
+                                  </span>
+                                </div>
+                                
+                                <div className="text-xs text-slate-400 space-y-0.5">
+                                  <div className={assignment.instructorId ? 'text-green-400' : 'text-yellow-400'}>
+                                    👤 TI: {assignment.instructorName || '⚠️ Not assigned'}
+                                  </div>
+                                  {assignment.hasOutsideVideo && assignment.videoInstructorName && (
+                                    <div className="text-purple-400">📹 VI: {assignment.videoInstructorName}</div>
+                                  )}
+                                  <div>⚖️ {assignment.studentWeight} lbs</div>
+                                </div>
+                              </div>
+                              
+                              {!isCompleted && load.status === 'building' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation() // Prevent drag from starting
+                                    handleRemoveAssignment(assignment.id)
+                                  }}
+                                  className="ml-2 p-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition-colors"
+                                  title="Remove & Return to Queue"
+                                >
+                                  ↩️
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      {assignment.hasOutsideVideo && assignment.videoInstructorName && (
-                        <div className="text-purple-400">📹 VI: {assignment.videoInstructorName}</div>
-                      )}
-                      <div>⚖️ {assignment.studentWeight} lbs</div>
-                    </div>
-                  </div>
+                    )
+                  })}
                   
-                  {!isCompleted && load.status === 'building' && (
-                    <button
-                      onClick={() => handleRemoveAssignment(assignment.id)}
-                      className="ml-2 p-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition-colors"
-                      title="Remove & Return to Queue"
+                  {/* Render Individual Assignments */}
+                  {individual.map((assignment) => (
+                    <div
+                      key={assignment.id}
+                      draggable={!isCompleted && load.status === 'building'}
+                      onDragStart={() => !isCompleted && load.status === 'building' && onDragStart('assignment', assignment.id, load.id)}
+                      onDragEnd={onDragEnd}
+                      className={`p-3 rounded-lg border transition-all ${
+                        assignment.instructorId
+                          ? 'bg-slate-700 border-slate-600'
+                          : 'bg-yellow-900/30 border-yellow-600'
+                      } ${!isCompleted && load.status === 'building' ? 'cursor-move hover:bg-slate-600' : 'cursor-default'}`}
                     >
-                      ↩️
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-semibold text-white">{assignment.studentName}</span>
+                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                              assignment.jumpType === 'tandem' ? 'bg-green-500/20 text-green-300' :
+                              assignment.jumpType === 'aff' ? 'bg-blue-500/20 text-blue-300' :
+                              'bg-purple-500/20 text-purple-300'
+                            }`}>
+                              {assignment.jumpType.toUpperCase()}
+                            </span>
+                          </div>
+                          
+                          <div className="text-xs text-slate-400 space-y-0.5">
+                            <div className={assignment.instructorId ? 'text-green-400' : 'text-yellow-400'}>
+                              👤 TI: {assignment.instructorName || '⚠️ Not assigned'}
+                            </div>
+                            {assignment.hasOutsideVideo && assignment.videoInstructorName && (
+                              <div className="text-purple-400">📹 VI: {assignment.videoInstructorName}</div>
+                            )}
+                            <div>⚖️ {assignment.studentWeight} lbs</div>
+                          </div>
+                        </div>
+                        
+                        {!isCompleted && load.status === 'building' && (
+                          <button
+                            onClick={() => handleRemoveAssignment(assignment.id)}
+                            className="ml-2 p-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition-colors"
+                            title="Remove & Return to Queue"
+                          >
+                            ↩️
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )
+            })()
           )}
         </div>
 
@@ -654,10 +711,7 @@ useEffect(() => {
           <div className="space-y-2">
             {load.status === 'building' && unassignedCount > 0 && (
               <button
-                onClick={() => {
-                  console.log('🎯 Assign Instructors button clicked!', { loadId: load.id, unassignedCount })
-                  setShowAssignModal(true)
-                }}
+                onClick={() => setShowAssignModal(true)}
                 className="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm"
               >
                 👤 Assign Instructors ({unassignedCount} unassigned)
@@ -689,61 +743,6 @@ useEffect(() => {
         )}
       </div>
 
-      {/* Assign Instructors Modal */}
-      {showAssignModal && (
-        <div 
-          className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50"
-          onClick={() => setShowAssignModal(false)}
-        >
-          <div 
-            className="bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto border-2 border-purple-500"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6">
-              <h2 className="text-2xl font-bold text-white mb-4">👤 Assign Instructors - {load.name}</h2>
-              
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-6">
-                <p className="text-yellow-300 text-sm">
-                  ⚠️ Instructor assignment functionality will be connected to your AssignStudentModal component.
-                  This requires accessing clocked-in instructors and their qualifications.
-                </p>
-              </div>
-              
-              <div className="space-y-4 mb-6">
-                <h3 className="font-semibold text-white">Unassigned Students:</h3>
-                {loadAssignments.filter(a => !a.instructorId).map(assignment => (
-                  <div key={assignment.id} className="bg-slate-700 p-4 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-white font-semibold">{assignment.studentName}</div>
-                        <div className="text-sm text-slate-400">
-                          {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => alert(`This will open instructor picker for ${assignment.studentName}`)}
-                        className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold"
-                      >
-                        Select Instructor
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowAssignModal(false)}
-                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Status Change Confirmation Modal */}
       {statusChangeConfirm && (
         <div 
@@ -757,7 +756,6 @@ useEffect(() => {
             <div className="p-6">
               <h2 className="text-2xl font-bold text-white mb-4">Confirm Status Change</h2>
               
-              {/* Warning for reopening completed loads */}
               {load.status === 'completed' && statusChangeConfirm === 'departed' && (
                 <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4">
                   <p className="text-red-300 text-sm mb-2">
@@ -769,17 +767,8 @@ useEffect(() => {
                 </div>
               )}
               
-              {/* Warning for unassigned students */}
-              {statusChangeConfirm === 'ready' && unassignedCount > 0 && (
-                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mb-4">
-                  <p className="text-yellow-300 text-sm">
-                    ⚠️ {unassignedCount} student(s) not assigned to instructors.
-                  </p>
-                </div>
-              )}
-              
               <p className="text-slate-300 mb-6">
-                Change {load.name} status to <strong className="text-white">{statusChangeConfirm}</strong>?
+                Change load status from <strong>{load.status}</strong> to <strong>{statusChangeConfirm}</strong>?
               </p>
               
               <div className="flex gap-3">
@@ -791,56 +780,10 @@ useEffect(() => {
                 </button>
                 <button
                   onClick={confirmStatusChange}
-                  className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                  disabled={loading}
+                  className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
                 >
                   Confirm
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delay Modal */}
-      {showDelayModal && (
-        <div 
-          className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50"
-          onClick={() => setShowDelayModal(false)}
-        >
-          <div 
-            className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-yellow-500"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6">
-              <h2 className="text-2xl font-bold text-white mb-4">⏱️ Delay Load</h2>
-              <p className="text-slate-300 mb-4">
-                How many minutes should we delay {load.name}?
-              </p>
-              
-              <div className="mb-6">
-                <label className="block text-sm font-semibold text-slate-300 mb-2">Minutes</label>
-                <input
-                  type="number"
-                  value={delayMinutes}
-                  onChange={(e) => setDelayMinutes(Number(e.target.value))}
-                  min="1"
-                  max="120"
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-yellow-500"
-                />
-              </div>
-              
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowDelayModal(false)}
-                  className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDelay}
-                  className="flex-1 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white font-bold rounded-lg transition-colors"
-                >
-                  Delay
                 </button>
               </div>
             </div>
@@ -851,7 +794,7 @@ useEffect(() => {
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div 
-          className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[60]"
+          className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50"
           onClick={() => setShowDeleteConfirm(false)}
         >
           <div 
@@ -861,10 +804,10 @@ useEffect(() => {
             <div className="p-6">
               <h2 className="text-2xl font-bold text-white mb-4">🗑️ Delete Load</h2>
               
-              {isCompleted && (
+              {load.status === 'completed' && (
                 <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4">
                   <p className="text-red-300 text-sm">
-                    ⚠️ This load is <strong>completed</strong>. Deleting it may affect your records.
+                    ⚠️ This load has been completed. Deleting it may affect your records.
                   </p>
                 </div>
               )}
@@ -898,6 +841,51 @@ useEffect(() => {
         </div>
       )}
 
+      {/* Delay Modal */}
+      {showDelayModal && (
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50"
+          onClick={() => setShowDelayModal(false)}
+        >
+          <div 
+            className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-orange-500"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-white mb-4">⏰ Delay Load</h2>
+              
+              <p className="text-slate-300 mb-4">
+                How many minutes would you like to delay <strong>{load.name}</strong>?
+              </p>
+              
+              <input
+                type="number"
+                min="1"
+                max="120"
+                value={delayMinutes}
+                onChange={(e) => setDelayMinutes(parseInt(e.target.value) || 20)}
+                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white mb-6 focus:outline-none focus:border-orange-500"
+              />
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDelayModal(false)}
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelay}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                >
+                  Delay {delayMinutes} min
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Assign Instructors Modal */}
       {showAssignModal && (
         <div 
@@ -924,7 +912,7 @@ useEffect(() => {
                         <div className="text-white font-semibold text-lg">{assignment.studentName}</div>
                         <div className="text-sm text-slate-400">
                           {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
-                          {assignment.tandemWeightTax > 0 && ` +${assignment.tandemWeightTax} tax`}
+                          {assignment.tandemWeightTax && assignment.tandemWeightTax > 0 && ` +${assignment.tandemWeightTax} tax`}
                         </div>
                       </div>
                       
