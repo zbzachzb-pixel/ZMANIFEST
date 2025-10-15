@@ -1,4 +1,4 @@
-// src/services/firebase.ts - COMPLETE WITH STUDENT ACCOUNTS (PART 1)
+// src/services/firebase.ts - COMPLETE WITH STUDENT ACCOUNTS AND GROUP FIXES
 import { database } from '@/lib/firebase'
 import { 
   ref, 
@@ -43,7 +43,7 @@ export class FirebaseService implements DatabaseService {
     this.subscribeToGroups = this.subscribeToGroups.bind(this)
     this.subscribeToClockEvents = this.subscribeToClockEvents.bind(this)
     this.subscribeToPeriods = this.subscribeToPeriods.bind(this)
-    this.subscribeToStudentAccounts = this.subscribeToStudentAccounts.bind(this) // NEW
+    this.subscribeToStudentAccounts = this.subscribeToStudentAccounts.bind(this)
     this.subscribeToAll = this.subscribeToAll.bind(this)
   }
   
@@ -110,7 +110,7 @@ export class FirebaseService implements DatabaseService {
     return unsubscribe
   }
   
-  // ==================== STUDENT ACCOUNTS (NEW) ====================
+  // ==================== STUDENT ACCOUNTS ====================
   
   async createStudentAccount(account: CreateStudentAccount): Promise<StudentAccount> {
     const newAccount: StudentAccount = {
@@ -250,7 +250,8 @@ export class FirebaseService implements DatabaseService {
     })
     return unsubscribe
   }
-   // ==================== LOADS ====================
+  
+  // ==================== LOADS ====================
   
   async createLoad(load: CreateLoad): Promise<Load> {
     const newLoad: Load = {
@@ -403,6 +404,14 @@ export class FirebaseService implements DatabaseService {
     const groupRef = ref(this.db, `groups/${newGroup.id}`)
     await set(groupRef, cleanedGroup)
     
+    // 🔥 FIX: Update each student in the queue to have the groupId
+    const updatePromises = studentIds.map(async (studentId) => {
+      const studentRef = ref(this.db, `studentQueue/${studentId}`)
+      await update(studentRef, { groupId: newGroup.id })
+    })
+    
+    await Promise.all(updatePromises)
+    
     return newGroup
   }
   
@@ -417,9 +426,134 @@ export class FirebaseService implements DatabaseService {
   }
   
   async deleteGroup(id: string): Promise<void> {
+    // First, get the group to find all student IDs
     const groupRef = ref(this.db, `groups/${id}`)
+    const snapshot = await get(groupRef)
+    
+    if (snapshot.exists()) {
+      const group = snapshot.val() as Group
+      
+      // Remove groupId from all students in the queue
+      const updatePromises = group.studentIds.map(async (studentId) => {
+        const studentRef = ref(this.db, `studentQueue/${studentId}`)
+        // Get the student first to check if it exists
+        const studentSnapshot = await get(studentRef)
+        if (studentSnapshot.exists()) {
+          // Remove the groupId field by setting it to null
+          await update(studentRef, { groupId: null })
+        }
+      })
+      
+      await Promise.all(updatePromises)
+    }
+    
+    // Finally, delete the group document
     await remove(groupRef)
   }
+  
+  async removeStudentFromGroup(groupId: string, studentId: string): Promise<void> {
+    // Get the group
+    const groupRef = ref(this.db, `groups/${groupId}`)
+    const snapshot = await get(groupRef)
+    
+    if (!snapshot.exists()) {
+      throw new Error('Group not found')
+    }
+    
+    const group = snapshot.val() as Group
+    
+    // Remove student from group's studentIds array
+    const updatedStudentIds = group.studentIds.filter(id => id !== studentId)
+    
+    // Remove groupId from the student in the queue
+    const studentRef = ref(this.db, `studentQueue/${studentId}`)
+    const studentSnapshot = await get(studentRef)
+    if (studentSnapshot.exists()) {
+      await update(studentRef, { groupId: null })
+    }
+    
+    // If group now has 1 or 0 students, delete the group
+    if (updatedStudentIds.length <= 1) {
+      // If there's 1 student left, remove their groupId too
+      if (updatedStudentIds.length === 1) {
+        const lastStudentRef = ref(this.db, `studentQueue/${updatedStudentIds[0]}`)
+        const lastStudentSnapshot = await get(lastStudentRef)
+        if (lastStudentSnapshot.exists()) {
+          await update(lastStudentRef, { groupId: null })
+        }
+      }
+      // Delete the group
+      await remove(groupRef)
+    } else {
+      // Update the group with new studentIds
+      await update(groupRef, { studentIds: updatedStudentIds })
+    }
+  }
+  async addStudentToGroup(groupId: string, studentId: string): Promise<void> {
+    // Get the group
+    const groupRef = ref(this.db, `groups/${groupId}`)
+    const groupSnapshot = await get(groupRef)
+    
+    if (!groupSnapshot.exists()) {
+      throw new Error('Group not found')
+    }
+    
+    const group = groupSnapshot.val() as Group
+    
+    // Get the student
+    const studentRef = ref(this.db, `studentQueue/${studentId}`)
+    const studentSnapshot = await get(studentRef)
+    
+    if (!studentSnapshot.exists()) {
+      throw new Error('Student not found in queue')
+    }
+    
+    const student = studentSnapshot.val() as QueueStudent
+    
+    // Check if student is already in a group
+    if (student.groupId) {
+      // If already in THIS group, do nothing
+      if (student.groupId === groupId) {
+        return
+      }
+      
+      // If in a DIFFERENT group, remove from old group first
+      const oldGroupRef = ref(this.db, `groups/${student.groupId}`)
+      const oldGroupSnapshot = await get(oldGroupRef)
+      
+      if (oldGroupSnapshot.exists()) {
+        const oldGroup = oldGroupSnapshot.val() as Group
+        const updatedOldStudentIds = oldGroup.studentIds.filter(id => id !== studentId)
+        
+        // If old group now has 1 or 0 students, delete it
+        if (updatedOldStudentIds.length <= 1) {
+          if (updatedOldStudentIds.length === 1) {
+            const lastStudentRef = ref(this.db, `studentQueue/${updatedOldStudentIds[0]}`)
+            await update(lastStudentRef, { groupId: null })
+          }
+          await remove(oldGroupRef)
+        } else {
+          await update(oldGroupRef, { studentIds: updatedOldStudentIds })
+        }
+      }
+    }
+    
+    // Check if student is already in the new group's studentIds
+    if (!group.studentIds.includes(studentId)) {
+      // Add student to new group's studentIds array
+      await update(groupRef, { 
+        studentIds: [...group.studentIds, studentId] 
+      })
+    }
+    
+    // Update student's groupId
+    await update(studentRef, { groupId: groupId })
+  }
+
+  // Also add this to the DatabaseService interface in src/services/database.ts:
+  // In the GROUPS section, add this line:
+  addStudentToGroup(groupId: string, studentId: string): Promise<void>
+
   
   subscribeToGroups(callback: (groups: Group[]) => void): () => void {
     const groupsRef = ref(this.db, 'groups')
@@ -490,7 +624,7 @@ export class FirebaseService implements DatabaseService {
       instructors, 
       assignments, 
       studentQueue, 
-      studentAccounts,  // NEW
+      studentAccounts,
       groups, 
       loads, 
       clockEvents, 
@@ -499,7 +633,7 @@ export class FirebaseService implements DatabaseService {
       this.getInstructors(),
       this.getAssignments(),
       this.getQueue(),
-      this.getStudentAccounts(),  // NEW
+      this.getStudentAccounts(),
       this.getGroups(),
       this.getLoads(),
       this.getClockEvents(),
@@ -510,7 +644,7 @@ export class FirebaseService implements DatabaseService {
       instructors,
       assignments,
       studentQueue,
-      studentAccounts,  // NEW
+      studentAccounts,
       groups,
       loads,
       clockEvents,
@@ -533,7 +667,7 @@ export class FirebaseService implements DatabaseService {
           instructors: data.instructors ? Object.values(data.instructors) : [],
           assignments: data.assignments ? Object.values(data.assignments) : [],
           studentQueue: data.studentQueue ? Object.values(data.studentQueue) : [],
-          studentAccounts: data.studentAccounts ? Object.values(data.studentAccounts) : [], // NEW
+          studentAccounts: data.studentAccounts ? Object.values(data.studentAccounts) : [],
           groups: data.groups ? Object.values(data.groups) : [],
           loads: data.loads ? Object.values(data.loads) : [],
           clockEvents: data.clockEvents ? Object.values(data.clockEvents) : [],

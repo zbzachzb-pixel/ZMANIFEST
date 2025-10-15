@@ -12,6 +12,7 @@ import { CreateGroupModal } from '@/components/CreateGroupModal'
 import { GroupCard } from '@/components/GroupCard'
 import { ImportStudentsModal } from '@/components/ImportStudentsModal'
 import type { QueueStudent, Group } from '@/types'
+import { useAddStudentToGroup } from '@/hooks/useDatabase'
 
 // Extended Group type to include students
 interface GroupWithStudents extends Group {
@@ -35,6 +36,8 @@ export default function QueuePage() {
   const [editingStudent, setEditingStudent] = useState<QueueStudent | null>(null)
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
   const [groupQueueType, setGroupQueueType] = useState<'tandem' | 'aff'>('tandem')
+  const { addStudent: addStudentToGroup } = useAddStudentToGroup()
+  const [dropZoneActive, setDropZoneActive] = useState(false)
 
   // Group colors for visual distinction
   const groupColors = ['#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444']
@@ -141,11 +144,7 @@ export default function QueuePage() {
     setShowCreateGroupModal(true)
   }
 
-  const handleGroupCreated = () => {
-    setSelectedTandem([])
-    setSelectedAFF([])
-  }
-
+  
   const handleRemoveSelected = (type: 'tandem' | 'aff') => {
     const selected = type === 'tandem' ? selectedTandem : selectedAFF
     
@@ -183,16 +182,6 @@ export default function QueuePage() {
     alert('Drag the entire group card to a load in the Load Builder page to assign all students together!')
   }
 
-  // 🔥 NEW: Group drag handler
-  const handleGroupDragStart = (e: React.DragEvent, groupId: string) => {
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('groupId', groupId)
-    e.dataTransfer.setData('type', 'group')
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.style.opacity = '0.5'
-    }
-  }
-
   // 🔥 NEW: Student drag handler
   const handleStudentDragStart = (e: React.DragEvent, studentId: string) => {
     e.dataTransfer.effectAllowed = 'move'
@@ -201,13 +190,62 @@ export default function QueuePage() {
       e.currentTarget.style.opacity = '0.5'
     }
   }
+  const handleStudentDropOnGroup = async (groupId: string, studentId: string) => {
+  try {
+    // Check if student exists
+    const student = [...tandemQueue, ...affQueue].find(s => s.id === studentId)
+    if (!student) {
+      alert('Student not found')
+      return
+    }
+    
+    // Check if student is already in this group
+    if (student.groupId === groupId) {
+      return // Already in this group, do nothing
+    }
+    
+    // Add student to group
+    await addStudentToGroup(groupId, studentId)
+    
+    // Clear selection if this student was selected
+    setSelectedTandem(prev => prev.filter(id => id !== studentId))
+    setSelectedAFF(prev => prev.filter(id => id !== studentId))
+    
+  } catch (error) {
+    console.error('Failed to add student to group:', error)
+    alert('Failed to add student to group')
+  }
+}
+    const handleStudentDragFromGroup = useCallback((e: React.DragEvent, studentId: string) => {
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('studentId', studentId)
+      e.dataTransfer.setData('type', 'student')
+    }, [])
 
   const handleDragEnd = (e: React.DragEvent) => {
     if (e.currentTarget instanceof HTMLElement) {
       e.currentTarget.style.opacity = '1'
     }
   }
-
+const handleDropOutsideGroup = async (e: React.DragEvent) => {
+  e.preventDefault()
+  setDropZoneActive(false)
+  
+  const studentId = e.dataTransfer.getData('studentId')
+  if (!studentId) return
+  
+  // Find the student
+  const student = [...tandemQueue, ...affQueue].find(s => s.id === studentId)
+  if (!student || !student.groupId) return
+  
+  try {
+    // Remove student from their group using the existing removeStudentFromGroup
+    await db.removeStudentFromGroup(student.groupId, studentId)
+  } catch (error) {
+    console.error('Failed to remove student from group:', error)
+    alert('Failed to remove student from group')
+  }
+}
   const filteredTandem = ungroupedTandem.filter(s => 
     s.name.toLowerCase().includes(searchTandem.toLowerCase()) ||
     s.weight.toString().includes(searchTandem)
@@ -328,7 +366,9 @@ export default function QueuePage() {
                   <GroupCard
                     key={group.id}
                     group={group}
+                    students={group.students}
                     onAssignGroup={handleAssignGroup}
+                    onStudentDrop={handleStudentDropOnGroup}
                     draggable={true}
                     onDragStart={handleGroupDragStart}
                   />
@@ -423,7 +463,9 @@ export default function QueuePage() {
                   <GroupCard
                     key={group.id}
                     group={group}
+                    students={group.students}
                     onAssignGroup={handleAssignGroup}
+                    onStudentDrop={handleStudentDropOnGroup}
                     draggable={true}
                     onDragStart={handleGroupDragStart}
                   />
@@ -491,7 +533,15 @@ export default function QueuePage() {
         <CreateGroupModal
           selectedStudents={groupQueueType === 'tandem' ? selectedTandemStudents : selectedAFFStudents}
           onClose={() => setShowCreateGroupModal(false)}
-          onGroupCreated={handleGroupCreated}
+          onSuccess={() => {
+            setShowCreateGroupModal(false)
+            // Clear selections after group is created
+            if (groupQueueType === 'tandem') {
+              setSelectedTandem([])
+            } else {
+              setSelectedAFF([])
+            }
+          }}
         />
       )}
 

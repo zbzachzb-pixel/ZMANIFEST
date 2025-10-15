@@ -78,7 +78,9 @@ export interface DatabaseService {
   getGroups(): Promise<Group[]>
   updateGroup(id: string, updates: Partial<Group>): Promise<void>
   deleteGroup(id: string): Promise<void>
+  removeStudentFromGroup(groupId: string, studentId: string): Promise<void>  // ✅ ADD THIS LINE
   subscribeToGroups(callback: (groups: Group[]) => void): () => void
+  addStudentToGroup(groupId: string, studentId: string): Promise<void>
   
   // ==================== PERIODS ====================
   createPeriod(period: CreatePeriod): Promise<Period>

@@ -502,6 +502,25 @@ export function useDeleteGroup() {
 
   return { deleteGroup, loading, error }
 }
+export function useAddStudentToGroup() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const addStudent = useCallback(async (groupId: string, studentId: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.addStudentToGroup(groupId, studentId)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { addStudent, loading, error }
+}
 
 // ==================== PERIODS ====================
 

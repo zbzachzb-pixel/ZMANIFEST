@@ -7,23 +7,29 @@ import type { Group, QueueStudent } from '@/types'
 
 interface GroupCardProps {
   group: Group
-  students?: QueueStudent[]  // Optional to handle when not passed
+  students?: QueueStudent[]
   onAssignGroup: (groupId: string) => void
   draggable?: boolean
   onDragStart?: (e: React.DragEvent, groupId: string) => void
+  onStudentDrop?: (groupId: string, studentId: string) => Promise<void>
+  onStudentDragStart?: (e: React.DragEvent, studentId: string) => void  // ← ADD THIS
 }
 
 export function GroupCard({ 
   group, 
-  students = [],  // 🔧 FIXED: Default value prevents undefined error
+  students = [],
   onAssignGroup, 
   draggable = false,
-  onDragStart 
+  onDragStart,
+  onStudentDrop,
+  onStudentDragStart  // ← ADD THIS
 }: GroupCardProps) {
+
   const { update } = useUpdateGroup()
   const { deleteGroup, loading } = useDeleteGroup()
   const [showEdit, setShowEdit] = useState(false)
   const [editName, setEditName] = useState(group.name)
+  const [isDragOver, setIsDragOver] = useState(false)
 
   // Calculate load capacity
   // Each student needs 2 slots, plus 1 extra if they have outside video
@@ -92,16 +98,51 @@ export function GroupCard({
       e.currentTarget.style.opacity = '1'
     }
   }
+  const handleDragOver = (e: React.DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  setIsDragOver(true)
+}
+
+const handleDragLeave = (e: React.DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  setIsDragOver(false)
+}
+
+const handleDrop = async (e: React.DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  setIsDragOver(false)
+  
+  const studentId = e.dataTransfer.getData('studentId')
+  
+  if (studentId && onStudentDrop) {
+    try {
+      await onStudentDrop(group.id, studentId)
+    } catch (error) {
+      console.error('Failed to add student to group:', error)
+      alert('Failed to add student to group')
+    }
+  }
+}
 
   return (
-    <div 
-      draggable={draggable}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      className={`bg-gradient-to-br from-purple-500/20 to-blue-500/20 border-2 border-purple-500/50 rounded-xl p-4 ${
-        draggable ? 'cursor-move hover:scale-105 hover:shadow-xl' : ''
-      } transition-all`}
-    >
+  <div 
+    draggable={draggable}
+    onDragStart={handleDragStart}
+    onDragEnd={handleDragEnd}
+    onDragOver={handleDragOver}
+    onDragLeave={handleDragLeave}
+    onDrop={handleDrop}
+    className={`bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-xl p-4 transition-all ${
+      isDragOver 
+        ? 'border-4 border-green-400 scale-105 shadow-2xl bg-green-500/30' 
+        : 'border-2 border-purple-500/50'
+    } ${
+      draggable ? 'cursor-move hover:scale-105 hover:shadow-xl' : ''
+    }`}
+  >
       {/* Group Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex-1">
@@ -169,53 +210,44 @@ export function GroupCard({
 
       {/* Students List */}
       {students.length > 0 ? (
-        <div className="space-y-2 mb-3">
-          {students.map(student => (
-            <div 
-              key={student.id} 
-              className="bg-slate-800/50 rounded-lg p-3 flex items-center justify-between hover:bg-slate-800/70 transition-colors group"
-            >
-              <div className="flex-1">
-                <div className="text-sm font-semibold text-white">{student.name}</div>
-                <div className="text-xs text-slate-400 flex items-center gap-2">
-                  <span>{student.jumpType.toUpperCase()}</span>
-                  <span>•</span>
-                  <span>{student.weight} lbs</span>
-                  {student.outsideVideo && (
-                    <>
-                      <span>•</span>
-                      <span className="text-purple-400">📹 Video</span>
-                    </>
-                  )}
-                  {student.affLevel && (
-                    <>
-                      <span>•</span>
-                      <span className="text-blue-400">({student.affLevel})</span>
-                    </>
-                  )}
-                  {student.tandemWeightTax && student.tandemWeightTax > 0 && (
-                    <>
-                      <span>•</span>
-                      <span className="text-orange-400">+{student.tandemWeightTax} tax</span>
-                    </>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={() => handleRemoveStudent(student.id)}
-                className="text-red-400 hover:text-red-300 hover:bg-red-500/20 text-sm px-2 py-1 rounded transition-all opacity-0 group-hover:opacity-100"
-                title="Remove from group"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
+  <div className="space-y-2">
+    {students.map(student => (
+      <div
+        key={student.id}
+        draggable={!!onStudentDragStart}  // Only draggable if handler provided
+        onDragStart={(e) => {
+          if (onStudentDragStart) {
+            e.stopPropagation()  // Don't trigger group drag
+            onStudentDragStart(e, student.id)
+          }
+        }}
+        className={`bg-slate-800/50 rounded-lg p-3 flex items-center justify-between ${
+          onStudentDragStart ? 'cursor-move hover:bg-slate-700/50' : ''
+        } transition-colors`}
+      >
+        <div className="flex-1">
+          <div className="text-white font-medium">{student.name}</div>
+          <div className="text-xs text-slate-400">
+            {student.weight} lbs • {student.jumpType.toUpperCase()}
+            {student.jumpType === 'aff' && student.affLevel && ` (${student.affLevel})`}
+            {student.outsideVideo && ' 📹'}
+          </div>
         </div>
-      ) : (
-        <div className="text-center py-4 text-slate-400 text-sm mb-3">
-          No students in this group
-        </div>
-      )}
+        <button
+          onClick={() => handleRemoveStudent(student.id)}
+          className="text-red-400 hover:text-red-300 hover:bg-red-500/20 p-2 rounded transition-colors"
+          title="Remove from group"
+        >
+          ✕
+        </button>
+      </div>
+    ))}
+  </div>
+) : (
+  <div className="text-center py-4 text-slate-400 text-sm">
+    No students in this group
+  </div>
+)}
 
       {/* Action Button */}
       {students.length > 0 && (

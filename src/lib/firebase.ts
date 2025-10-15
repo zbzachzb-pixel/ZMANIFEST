@@ -1,6 +1,6 @@
-// src/lib/firebase.ts - Firebase Configuration
-import { initializeApp } from 'firebase/app'
-import { getDatabase } from 'firebase/database'
+// src/lib/firebase.ts - Fixed Firebase Configuration
+import { initializeApp, getApps, getApp } from 'firebase/app'
+import { getDatabase, Database } from 'firebase/database'
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -12,8 +12,16 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 }
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig)
+// Initialize Firebase - prevent multiple initializations
+let app
+if (getApps().length === 0) {
+  app = initializeApp(firebaseConfig)
+} else {
+  app = getApp()
+}
 
 // Initialize Realtime Database and export it
-export const database = getDatabase(app)
+export const database: Database = getDatabase(app)
+
+// Also export the app if needed elsewhere
+export { app }
