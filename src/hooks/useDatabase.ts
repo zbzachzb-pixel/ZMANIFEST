@@ -1,4 +1,4 @@
-// src/hooks/useDatabase.ts - COMPLETE WITH STUDENT ACCOUNTS
+// src/hooks/useDatabase.ts - COMPLETE WITH STUDENT ACCOUNTS AND SETTINGS
 
 import { useState, useEffect, useCallback } from 'react'
 import { db } from '@/services'
@@ -15,9 +15,12 @@ import type {
   CreateAssignment,
   CreateQueueStudent,
   CreatePeriod,
-  StudentAccount,           // ✅ NEW
-  CreateStudentAccount,     // ✅ NEW
-  UpdateStudentAccount      // ✅ NEW
+  StudentAccount,
+  CreateStudentAccount,
+  UpdateStudentAccount,
+  AppSettings,
+  AutoAssignSettings,
+  LoadSchedulingSettings
 } from '@/types'
 
 interface UseDataResult<T> {
@@ -27,10 +30,54 @@ interface UseDataResult<T> {
   refresh: () => void
 }
 
+interface UseSingleDataResult<T> {
+  data: T | null
+  loading: boolean
+  error: Error | null
+  refresh: () => void
+}
+
 function useRealtimeData<T>(
   subscriber: (callback: (data: T[]) => void) => () => void
 ): UseDataResult<T> {
   const [data, setData] = useState<T[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const unsubscribe = subscriber((data) => {
+        setData(data)
+        setLoading(false)
+      })
+
+      return () => {
+        if (typeof unsubscribe === 'function') {
+          unsubscribe()
+        }
+      }
+    } catch (err) {
+      setError(err as Error)
+      setLoading(false)
+      console.error('Firebase subscription error:', err)
+    }
+  }, [subscriber, refreshKey])
+
+  const refresh = useCallback(() => {
+    setRefreshKey(prev => prev + 1)
+  }, [])
+
+  return { data, loading, error, refresh }
+}
+
+function useRealtimeSingleData<T>(
+  subscriber: (callback: (data: T) => void) => () => void
+): UseSingleDataResult<T> {
+  const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -123,7 +170,7 @@ export function useUpdateInstructor() {
   return { update, loading, error }
 }
 
-// ==================== STUDENT ACCOUNTS (NEW) ====================
+// ==================== STUDENT ACCOUNTS ====================
 
 export function useStudentAccounts() {
   return useRealtimeData<StudentAccount>(db.subscribeToStudentAccounts)
@@ -176,36 +223,22 @@ export function useUpdateStudentAccount() {
   return { update, loading, error }
 }
 
-export function useSearchStudentAccounts() {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
+// ==================== CLOCK EVENTS ====================
 
-  const search = useCallback(async (query: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const results = await db.searchStudentAccounts(query)
-      return results
-    } catch (err) {
-      setError(err as Error)
-      throw err
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  return { search, loading, error }
+export function useClockEvents() {
+  return useRealtimeData<ClockEvent>(db.subscribeToClockEvents)
 }
 
-export function useDeactivateStudentAccount() {
+export function useLogClockEvent() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
-  const deactivate = useCallback(async (id: string) => {
+  const log = useCallback(async (instructorId: string, instructorName: string, type: 'in' | 'out') => {
     setLoading(true)
     setError(null)
     try {
-      await db.deactivateStudentAccount(id)
+      const event = await db.logClockEvent(instructorId, instructorName, type)
+      return event
     } catch (err) {
       setError(err as Error)
       throw err
@@ -214,7 +247,47 @@ export function useDeactivateStudentAccount() {
     }
   }, [])
 
-  return { deactivate, loading, error }
+  return { log, loading, error }
+}
+
+export function useUpdateClockEvent() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const update = useCallback(async (id: string, updates: Partial<ClockEvent>) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.updateClockEvent(id, updates)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { update, loading, error }
+}
+
+export function useDeleteClockEvent() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const deleteEvent = useCallback(async (id: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.deleteClockEvent(id)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { deleteEvent, loading, error }
 }
 
 // ==================== LOADS ====================
@@ -502,6 +575,7 @@ export function useDeleteGroup() {
 
   return { deleteGroup, loading, error }
 }
+
 export function useAddStudentToGroup() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -575,22 +649,21 @@ export function useUpdatePeriod() {
   return { update, loading, error }
 }
 
-// ==================== CLOCK EVENTS ====================
+// ==================== SETTINGS (NEW) ====================
 
-export function useClockEvents() {
-  return useRealtimeData<ClockEvent>(db.subscribeToClockEvents)
+export function useSettings() {
+  return useRealtimeSingleData<AppSettings>(db.subscribeToSettings)
 }
 
-export function useLogClockEvent() {
+export function useUpdateSettings() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
-  const log = useCallback(async (instructorId: string, instructorName: string, type: 'in' | 'out') => {
+  const updateSettings = useCallback(async (settings: Partial<AppSettings>) => {
     setLoading(true)
     setError(null)
     try {
-      const event = await db.logClockEvent(instructorId, instructorName, type)
-      return event
+      await db.updateSettings(settings)
     } catch (err) {
       setError(err as Error)
       throw err
@@ -599,17 +672,11 @@ export function useLogClockEvent() {
     }
   }, [])
 
-  return { log, loading, error }
-}
-export function useDeleteClockEvent() {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
-
-  const deleteEvent = useCallback(async (id: string) => {
+  const updateAutoAssign = useCallback(async (settings: Partial<AutoAssignSettings>) => {
     setLoading(true)
     setError(null)
     try {
-      await db.deleteClockEvent(id)
+      await db.updateAutoAssignSettings(settings)
     } catch (err) {
       setError(err as Error)
       throw err
@@ -618,5 +685,38 @@ export function useDeleteClockEvent() {
     }
   }, [])
 
-  return { deleteEvent, loading, error }
+  const updateLoadScheduling = useCallback(async (settings: Partial<LoadSchedulingSettings>) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.updateLoadSchedulingSettings(settings)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const updateDarkMode = useCallback(async (enabled: boolean) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.updateDarkMode(enabled)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { 
+    updateSettings, 
+    updateAutoAssign, 
+    updateLoadScheduling, 
+    updateDarkMode, 
+    loading, 
+    error 
+  }
 }

@@ -1,4 +1,6 @@
-// src/services/firebase.ts - COMPLETE WITH STUDENT ACCOUNTS AND GROUP FIXES
+// src/services/firebase.ts - COMPLETE WITH STUDENT ACCOUNTS AND SETTINGS
+// Part 1: Imports, Class Setup, and Helper Methods + Instructors through Assignments
+
 import { database } from '@/lib/firebase'
 import { 
   ref, 
@@ -30,6 +32,8 @@ import type {
   StudentAccount,
   CreateStudentAccount,
   UpdateStudentAccount,
+  AppSettings,
+  AutoAssignSettings,
   LoadSchedulingSettings
 } from '@/types'
 
@@ -45,6 +49,7 @@ export class FirebaseService implements DatabaseService {
     this.subscribeToClockEvents = this.subscribeToClockEvents.bind(this)
     this.subscribeToPeriods = this.subscribeToPeriods.bind(this)
     this.subscribeToStudentAccounts = this.subscribeToStudentAccounts.bind(this)
+    this.subscribeToSettings = this.subscribeToSettings.bind(this)
     this.subscribeToAll = this.subscribeToAll.bind(this)
   }
   
@@ -143,15 +148,12 @@ export class FirebaseService implements DatabaseService {
   async getStudentAccountById(id: string): Promise<StudentAccount | null> {
     const accountRef = ref(this.db, `studentAccounts/${id}`)
     const snapshot = await get(accountRef)
-    return snapshot.exists() ? snapshot.val() : null
+    return snapshot.exists() ? snapshot.val() as StudentAccount : null
   }
   
   async searchStudentAccounts(query: string): Promise<StudentAccount[]> {
-    const accounts = await this.getActiveStudentAccounts()
-    const lowerQuery = query.toLowerCase().trim()
-    
-    if (!lowerQuery) return accounts
-    
+    const accounts = await this.getStudentAccounts()
+    const lowerQuery = query.toLowerCase()
     return accounts.filter(account => 
       account.name.toLowerCase().includes(lowerQuery) ||
       account.studentId.toLowerCase().includes(lowerQuery) ||
@@ -176,14 +178,13 @@ export class FirebaseService implements DatabaseService {
     await runTransaction(accountRef, (account) => {
       if (account) {
         account.totalJumps = (account.totalJumps || 0) + 1
+        account.lastJumpDate = new Date().toISOString()
         
         if (jumpType === 'tandem') {
           account.totalTandemJumps = (account.totalTandemJumps || 0) + 1
         } else if (jumpType === 'aff') {
           account.totalAFFJumps = (account.totalAFFJumps || 0) + 1
         }
-        
-        account.lastJumpDate = new Date().toISOString()
       }
       return account
     })
@@ -244,13 +245,13 @@ export class FirebaseService implements DatabaseService {
   }
   
   subscribeToClockEvents(callback: (events: ClockEvent[]) => void): () => void {
-  const eventsRef = ref(this.db, 'clockEvents')
-  const unsubscribe = onValue(eventsRef, (snapshot) => {
-    const data = snapshot.val()
-    callback(data ? Object.values(data) : [])
-  })
-  return unsubscribe
-}
+    const eventsRef = ref(this.db, 'clockEvents')
+    const unsubscribe = onValue(eventsRef, (snapshot) => {
+      const data = snapshot.val()
+      callback(data ? Object.values(data) : [])
+    })
+    return unsubscribe
+  }
   
   // ==================== LOADS ====================
   
@@ -352,7 +353,7 @@ export class FirebaseService implements DatabaseService {
     return unsubscribe
   }
   
-  // ==================== QUEUE ====================
+    // ==================== QUEUE ====================
   
   async addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise<QueueStudent> {
     const newStudent: QueueStudent = {
@@ -405,7 +406,7 @@ export class FirebaseService implements DatabaseService {
     const groupRef = ref(this.db, `groups/${newGroup.id}`)
     await set(groupRef, cleanedGroup)
     
-    // 🔥 FIX: Update each student in the queue to have the groupId
+    // Update each student in the queue to have the groupId
     const updatePromises = studentIds.map(async (studentId) => {
       const studentRef = ref(this.db, `studentQueue/${studentId}`)
       await update(studentRef, { groupId: newGroup.id })
@@ -437,10 +438,9 @@ export class FirebaseService implements DatabaseService {
       // Remove groupId from all students in the queue
       const updatePromises = group.studentIds.map(async (studentId) => {
         const studentRef = ref(this.db, `studentQueue/${studentId}`)
-        // Get the student first to check if it exists
         const studentSnapshot = await get(studentRef)
+        
         if (studentSnapshot.exists()) {
-          // Remove the groupId field by setting it to null
           await update(studentRef, { groupId: null })
         }
       })
@@ -448,12 +448,44 @@ export class FirebaseService implements DatabaseService {
       await Promise.all(updatePromises)
     }
     
-    // Finally, delete the group document
+    // Delete the group
     await remove(groupRef)
   }
   
   async removeStudentFromGroup(groupId: string, studentId: string): Promise<void> {
-    // Get the group
+    const groupRef = ref(this.db, `groups/${groupId}`)
+    const snapshot = await get(groupRef)
+    
+    if (!snapshot.exists()) return
+    
+    const group = snapshot.val() as Group
+    const updatedStudentIds = group.studentIds.filter(id => id !== studentId)
+    
+    // Update student's groupId to null
+    const studentRef = ref(this.db, `studentQueue/${studentId}`)
+    const studentSnapshot = await get(studentRef)
+    
+    if (studentSnapshot.exists()) {
+      await update(studentRef, { groupId: null })
+    }
+    
+    // If group now has 1 or 0 students, delete the group
+    if (updatedStudentIds.length <= 1) {
+      // If there's 1 student left, remove their groupId
+      if (updatedStudentIds.length === 1) {
+        const lastStudentRef = ref(this.db, `studentQueue/${updatedStudentIds[0]}`)
+        await update(lastStudentRef, { groupId: null })
+      }
+      
+      // Delete the group
+      await remove(groupRef)
+    } else {
+      // Update the group's studentIds
+      await update(groupRef, { studentIds: updatedStudentIds })
+    }
+  }
+  
+  async addStudentToGroup(groupId: string, studentId: string): Promise<void> {
     const groupRef = ref(this.db, `groups/${groupId}`)
     const snapshot = await get(groupRef)
     
@@ -462,63 +494,17 @@ export class FirebaseService implements DatabaseService {
     }
     
     const group = snapshot.val() as Group
-    
-    // Remove student from group's studentIds array
-    const updatedStudentIds = group.studentIds.filter(id => id !== studentId)
-    
-    // Remove groupId from the student in the queue
-    const studentRef = ref(this.db, `studentQueue/${studentId}`)
-    const studentSnapshot = await get(studentRef)
-    if (studentSnapshot.exists()) {
-      await update(studentRef, { groupId: null })
-    }
-    
-    // If group now has 1 or 0 students, delete the group
-    if (updatedStudentIds.length <= 1) {
-      // If there's 1 student left, remove their groupId too
-      if (updatedStudentIds.length === 1) {
-        const lastStudentRef = ref(this.db, `studentQueue/${updatedStudentIds[0]}`)
-        const lastStudentSnapshot = await get(lastStudentRef)
-        if (lastStudentSnapshot.exists()) {
-          await update(lastStudentRef, { groupId: null })
-        }
-      }
-      // Delete the group
-      await remove(groupRef)
-    } else {
-      // Update the group with new studentIds
-      await update(groupRef, { studentIds: updatedStudentIds })
-    }
-  }
-  async addStudentToGroup(groupId: string, studentId: string): Promise<void> {
-    // Get the group
-    const groupRef = ref(this.db, `groups/${groupId}`)
-    const groupSnapshot = await get(groupRef)
-    
-    if (!groupSnapshot.exists()) {
-      throw new Error('Group not found')
-    }
-    
-    const group = groupSnapshot.val() as Group
-    
-    // Get the student
     const studentRef = ref(this.db, `studentQueue/${studentId}`)
     const studentSnapshot = await get(studentRef)
     
     if (!studentSnapshot.exists()) {
-      throw new Error('Student not found in queue')
+      throw new Error('Student not found')
     }
     
     const student = studentSnapshot.val() as QueueStudent
     
-    // Check if student is already in a group
-    if (student.groupId) {
-      // If already in THIS group, do nothing
-      if (student.groupId === groupId) {
-        return
-      }
-      
-      // If in a DIFFERENT group, remove from old group first
+    // If student is already in a group, remove them from it
+    if (student.groupId && student.groupId !== groupId) {
       const oldGroupRef = ref(this.db, `groups/${student.groupId}`)
       const oldGroupSnapshot = await get(oldGroupRef)
       
@@ -550,7 +536,6 @@ export class FirebaseService implements DatabaseService {
     // Update student's groupId
     await update(studentRef, { groupId: groupId })
   }
-
   
   subscribeToGroups(callback: (groups: Group[]) => void): () => void {
     const groupsRef = ref(this.db, 'groups')
@@ -583,6 +568,7 @@ export class FirebaseService implements DatabaseService {
       ...p,
       start: new Date(p.start),
       end: new Date(p.end),
+      archivedAt: p.archivedAt ? new Date(p.archivedAt) : undefined,
     }))
   }
   
@@ -608,33 +594,117 @@ export class FirebaseService implements DatabaseService {
         ...p,
         start: new Date(p.start),
         end: new Date(p.end),
-      })) as Period[] : []
+        archivedAt: p.archivedAt ? new Date(p.archivedAt) : undefined,
+      })) : []
       callback(periods)
     })
     return unsubscribe
   }
-  // ==================== SETTINGS ====================
-
-async saveLoadSchedulingSettings(settings: LoadSchedulingSettings): Promise<void> {
-  const settingsRef = ref(this.db, 'settings/loadScheduling')
-  const cleanedSettings = this.cleanData(settings)
-  await set(settingsRef, cleanedSettings)
-}
-
-async getLoadSchedulingSettings(): Promise<LoadSchedulingSettings | null> {
-  const settingsRef = ref(this.db, 'settings/loadScheduling')
-  const snapshot = await get(settingsRef)
-  return snapshot.exists() ? snapshot.val() : null
-}
-
-subscribeToLoadSchedulingSettings(callback: (settings: LoadSchedulingSettings | null) => void): () => void {
-  const settingsRef = ref(this.db, 'settings/loadScheduling')
-  const unsubscribe = onValue(settingsRef, (snapshot) => {
-    const data = snapshot.val()
-    callback(data || null)
-  })
-  return unsubscribe
-}
+  
+  // ==================== SETTINGS (NEW) ====================
+  
+  async getSettings(): Promise<AppSettings> {
+    const settingsRef = ref(this.db, 'settings')
+    const snapshot = await get(settingsRef)
+    
+    if (snapshot.exists()) {
+      return snapshot.val() as AppSettings
+    }
+    
+    // Return default settings if none exist
+    const defaultSettings: AppSettings = {
+      darkMode: false,
+      autoAssign: {
+        enabled: false,
+        delay: 5,
+        skipRequests: true,
+        batchMode: false,
+        batchSize: 3
+      },
+      loadScheduling: {
+        minutesBetweenLoads: 20,
+        instructorCycleTime: 40,
+        defaultPlaneCapacity: 18
+      }
+    }
+    
+    // Save default settings to Firebase
+    await set(settingsRef, defaultSettings)
+    return defaultSettings
+  }
+  
+  async updateSettings(settings: Partial<AppSettings>): Promise<void> {
+    const settingsRef = ref(this.db, 'settings')
+    const cleanedSettings = this.cleanData(settings)
+    await update(settingsRef, cleanedSettings)
+  }
+  
+  async updateAutoAssignSettings(settings: Partial<AutoAssignSettings>): Promise<void> {
+    const autoAssignRef = ref(this.db, 'settings/autoAssign')
+    const cleanedSettings = this.cleanData(settings)
+    await update(autoAssignRef, cleanedSettings)
+  }
+  
+  async updateLoadSchedulingSettings(settings: Partial<LoadSchedulingSettings>): Promise<void> {
+    const loadSchedulingRef = ref(this.db, 'settings/loadScheduling')
+    const cleanedSettings = this.cleanData(settings)
+    await update(loadSchedulingRef, cleanedSettings)
+  }
+  
+  async updateDarkMode(enabled: boolean): Promise<void> {
+    const darkModeRef = ref(this.db, 'settings/darkMode')
+    await set(darkModeRef, enabled)
+  }
+  
+  subscribeToSettings(callback: (settings: AppSettings) => void): () => void {
+    const settingsRef = ref(this.db, 'settings')
+    const unsubscribe = onValue(settingsRef, async (snapshot) => {
+      if (snapshot.exists()) {
+        callback(snapshot.val() as AppSettings)
+      } else {
+        // Initialize with default settings if they don't exist
+        const defaultSettings: AppSettings = {
+          darkMode: false,
+          autoAssign: {
+            enabled: false,
+            delay: 5,
+            skipRequests: true,
+            batchMode: false,
+            batchSize: 3
+          },
+          loadScheduling: {
+            minutesBetweenLoads: 20,
+            instructorCycleTime: 40,
+            defaultPlaneCapacity: 18
+          }
+        }
+        await set(settingsRef, defaultSettings)
+        callback(defaultSettings)
+      }
+    })
+    return unsubscribe
+  }
+  
+  // Legacy/convenience methods for backwards compatibility
+  async getLoadSchedulingSettings(): Promise<LoadSchedulingSettings> {
+    const settings = await this.getSettings()
+    return settings.loadScheduling
+  }
+  
+  async saveLoadSchedulingSettings(settings: LoadSchedulingSettings): Promise<void> {
+    await this.updateLoadSchedulingSettings(settings)
+  }
+  
+  async getAutoAssignSettings(): Promise<AutoAssignSettings> {
+    const settings = await this.getSettings()
+    return settings.autoAssign
+  }
+  
+  async getDarkMode(): Promise<boolean> {
+    const settings = await this.getSettings()
+    return settings.darkMode
+  }
+  
   // ==================== BULK ====================
   
   async getFullState(): Promise<DatabaseState> {
@@ -692,7 +762,8 @@ subscribeToLoadSchedulingSettings(callback: (settings: LoadSchedulingSettings | 
           periods: data.periods ? Object.values(data.periods).map((p: any) => ({
             ...p,
             start: new Date(p.start),
-            end: new Date(p.end)
+            end: new Date(p.end),
+            archivedAt: p.archivedAt ? new Date(p.archivedAt) : undefined,
           })) : []
         })
       }
@@ -700,3 +771,5 @@ subscribeToLoadSchedulingSettings(callback: (settings: LoadSchedulingSettings | 
     return unsubscribe
   }
 }
+
+// End of FirebaseService class

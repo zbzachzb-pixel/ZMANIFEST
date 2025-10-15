@@ -1,4 +1,4 @@
-// src/services/database.ts - COMPLETE INTERFACE
+// src/services/database.ts - COMPLETE WITH STUDENT ACCOUNTS AND SETTINGS
 import type {
   Instructor,
   CreateInstructor,
@@ -19,6 +19,8 @@ import type {
   StudentAccount,
   CreateStudentAccount,
   UpdateStudentAccount,
+  AppSettings,
+  AutoAssignSettings,
   LoadSchedulingSettings
 } from '@/types'
 
@@ -80,8 +82,8 @@ export interface DatabaseService {
   updateGroup(id: string, updates: Partial<Group>): Promise<void>
   deleteGroup(id: string): Promise<void>
   removeStudentFromGroup(groupId: string, studentId: string): Promise<void>
-  addStudentToGroup(groupId: string, studentId: string): Promise<void>
   subscribeToGroups(callback: (groups: Group[]) => void): () => void
+  addStudentToGroup(groupId: string, studentId: string): Promise<void>
   
   // ==================== PERIODS ====================
   createPeriod(period: CreatePeriod): Promise<Period>
@@ -90,10 +92,13 @@ export interface DatabaseService {
   endPeriod(id: string, finalBalances: Record<string, number>, finalStats: any): Promise<void>
   subscribeToPeriods(callback: (periods: Period[]) => void): () => void
   
-  // ==================== SETTINGS ====================
-  saveLoadSchedulingSettings(settings: LoadSchedulingSettings): Promise<void>
-  getLoadSchedulingSettings(): Promise<LoadSchedulingSettings | null>
-  subscribeToLoadSchedulingSettings(callback: (settings: LoadSchedulingSettings | null) => void): () => void
+  // ==================== SETTINGS (NEW) ====================
+  getSettings(): Promise<AppSettings>
+  updateSettings(settings: Partial<AppSettings>): Promise<void>
+  updateAutoAssignSettings(settings: Partial<AutoAssignSettings>): Promise<void>
+  updateLoadSchedulingSettings(settings: Partial<LoadSchedulingSettings>): Promise<void>
+  updateDarkMode(enabled: boolean): Promise<void>
+  subscribeToSettings(callback: (settings: AppSettings) => void): () => void
   
   // ==================== BULK ====================
   getFullState(): Promise<DatabaseState>

@@ -213,7 +213,7 @@ export interface SystemStats {
 }
 
 // ==================== SETTINGS ====================
-
+// Settings Types
 export interface AutoAssignSettings {
   enabled: boolean
   delay: number
@@ -222,11 +222,33 @@ export interface AutoAssignSettings {
   batchSize: number
 }
 
-// Add this new interface:
 export interface LoadSchedulingSettings {
   minutesBetweenLoads: number
   instructorCycleTime: number
   defaultPlaneCapacity: number
+}
+
+export interface AppSettings {
+  darkMode: boolean
+  autoAssign: AutoAssignSettings
+  loadScheduling: LoadSchedulingSettings
+}
+
+// Default settings
+export const DEFAULT_SETTINGS: AppSettings = {
+  darkMode: false,
+  autoAssign: {
+    enabled: false,
+    delay: 5,
+    skipRequests: true,
+    batchMode: false,
+    batchSize: 3
+  },
+  loadScheduling: {
+    minutesBetweenLoads: 20,
+    instructorCycleTime: 40,
+    defaultPlaneCapacity: 18
+  }
 }
 
 // ==================== DATABASE STATE ====================

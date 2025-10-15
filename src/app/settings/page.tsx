@@ -1,4 +1,4 @@
-// src/app/settings/page.tsx - UPDATED with Plane Capacity setting
+// src/app/settings/page.tsx - FIXED
 'use client'
 
 import React, { useState, useEffect } from 'react'
@@ -28,7 +28,7 @@ export default function SettingsPage() {
   const [loadSettings, setLoadSettings] = useState<LoadSchedulingSettings>({
     minutesBetweenLoads: 20,
     instructorCycleTime: 40,
-    defaultPlaneCapacity: 18  // NEW: Default plane capacity
+    defaultPlaneCapacity: 18
   })
   
   const [exportLoading, setExportLoading] = useState(false)
@@ -61,7 +61,7 @@ export default function SettingsPage() {
         setLoadSettings({
           minutesBetweenLoads: parsed.minutesBetweenLoads || 20,
           instructorCycleTime: parsed.instructorCycleTime || 40,
-          defaultPlaneCapacity: parsed.defaultPlaneCapacity || 18  // NEW: Load with default
+          defaultPlaneCapacity: parsed.defaultPlaneCapacity || 18
         })
       } catch (e) {
         console.error('Failed to load load scheduling settings')
@@ -92,10 +92,8 @@ export default function SettingsPage() {
     setLoadSettings(newSettings)
     localStorage.setItem('loadSchedulingSettings', JSON.stringify(newSettings))
     
-    // Also save to Firebase
-    db.saveLoadSchedulingSettings(newSettings).catch(error => {
-      console.error('Failed to save load settings to Firebase:', error)
-    })
+    // Note: If you need to save to Firebase, add a method to DatabaseService
+    // For now, just save to localStorage
   }
   
   const handleExport = async () => {
@@ -127,7 +125,8 @@ export default function SettingsPage() {
       const data = JSON.parse(text)
       
       if (confirm('⚠️ This will replace ALL current data. Are you sure?')) {
-        await db.importState(data)
+        // FIXED: Changed from db.importState to db.restoreFullState
+        await db.restoreFullState(data)
         alert('✅ Data imported successfully!')
         window.location.reload()
       }
@@ -168,90 +167,70 @@ export default function SettingsPage() {
           
           {/* Load Scheduling */}
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
-            <h2 className="text-2xl font-bold text-white mb-6">⏱️ Load Scheduling</h2>
+            <h2 className="text-2xl font-bold text-white mb-6">✈️ Load Scheduling</h2>
             
             <div className="space-y-4">
               <div>
                 <label className="block text-white font-semibold mb-2">
-                  ✈️ Default Plane Capacity
-                </label>
-                <input
-                  type="number"
-                  min="10"
-                  max="30"
-                  value={loadSettings.defaultPlaneCapacity}
-                  onChange={(e) => handleLoadSettingsChange({ 
-                    defaultPlaneCapacity: parseInt(e.target.value) || 18 
-                  })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                />
-                <p className="text-xs text-slate-400 mt-1">
-                  Default capacity for new loads (typically 18 for Caravan, 23 for Twin Otter)
-                </p>
-              </div>
-              
-              <div>
-                <label className="block text-white font-semibold mb-2">
-                  Minutes Between Loads
+                  Minutes Between Load Departures
                 </label>
                 <input
                   type="number"
                   min="10"
                   max="60"
                   value={loadSettings.minutesBetweenLoads}
-                  onChange={(e) => handleLoadSettingsChange({ 
-                    minutesBetweenLoads: parseInt(e.target.value) || 20 
-                  })}
+                  onChange={(e) => handleLoadSettingsChange({ minutesBetweenLoads: parseInt(e.target.value) })}
                   className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                 />
-                <p className="text-xs text-slate-400 mt-1">
-                  Time gap between each load departure (default: 20 minutes)
-                </p>
+                <p className="text-sm text-slate-400 mt-1">Time between loads departing (default: 20 minutes)</p>
               </div>
               
               <div>
                 <label className="block text-white font-semibold mb-2">
-                  Instructor Cycle Time
+                  Instructor Cycle Time (minutes)
                 </label>
                 <input
                   type="number"
                   min="20"
-                  max="90"
+                  max="120"
                   value={loadSettings.instructorCycleTime}
-                  onChange={(e) => handleLoadSettingsChange({ 
-                    instructorCycleTime: parseInt(e.target.value) || 40 
-                  })}
+                  onChange={(e) => handleLoadSettingsChange({ instructorCycleTime: parseInt(e.target.value) })}
                   className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                 />
-                <p className="text-xs text-slate-400 mt-1">
-                  Total time from meeting student until available again (default: 40 minutes)
-                </p>
+                <p className="text-sm text-slate-400 mt-1">Time from briefing to available again (default: 40 minutes)</p>
               </div>
               
-              <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-4 mt-4">
-                <p className="text-sm text-blue-300">
-                  💡 <strong>How it works:</strong> When Load #1 is marked &quot;Ready&quot;, a {loadSettings.minutesBetweenLoads}-minute 
-                  countdown begins. When Load #1 departs, Load #2&apos;s countdown starts automatically. 
-                  This ensures proper spacing between loads and instructor rotation.
-                </p>
+              <div>
+                <label className="block text-white font-semibold mb-2">
+                  Default Plane Capacity
+                </label>
+                <input
+                  type="number"
+                  min="10"
+                  max="30"
+                  value={loadSettings.defaultPlaneCapacity}
+                  onChange={(e) => handleLoadSettingsChange({ defaultPlaneCapacity: parseInt(e.target.value) })}
+                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                />
+                <p className="text-sm text-slate-400 mt-1">Default airplane capacity (default: 18 seats)</p>
               </div>
             </div>
           </div>
           
-          {/* Auto-Assign Settings */}
+          {/* Auto-Assignment */}
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
-            <h2 className="text-2xl font-bold text-white mb-6">🤖 Auto-Assign Settings</h2>
+            <h2 className="text-2xl font-bold text-white mb-6">🤖 Auto-Assignment</h2>
             
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-white font-semibold">Enable Auto-Assign</h3>
-                  <p className="text-sm text-slate-400">Automatically assign students when they arrive</p>
+                  <h3 className="text-white font-semibold">Enable Auto-Assignment</h3>
+                  <p className="text-sm text-slate-400">Automatically assign students to instructors</p>
                 </div>
                 <button
                   onClick={() => handleAutoAssignChange({ enabled: !autoAssignSettings.enabled })}
                   className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
-                    autoAssignSettings.enabled ? 'bg-green-500' : 'bg-slate-600'
+                    autoAssignSettings.enabled ? 'bg-blue-500' : 'bg-slate-600'
                   }`}
                 >
                   <span
@@ -263,51 +242,63 @@ export default function SettingsPage() {
               </div>
               
               {autoAssignSettings.enabled && (
-                <div className="space-y-4 pl-4 border-l-2 border-blue-500">
+                <div className="space-y-4 pt-4 border-t border-white/10">
                   <div>
                     <label className="block text-white font-semibold mb-2">
                       Delay (seconds)
                     </label>
                     <input
                       type="number"
-                      min="0"
-                      max="60"
+                      min="3"
+                      max="30"
                       value={autoAssignSettings.delay}
                       onChange={(e) => handleAutoAssignChange({ delay: parseInt(e.target.value) })}
                       className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                     />
                   </div>
                   
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      id="skipRequests"
-                      checked={autoAssignSettings.skipRequests}
-                      onChange={(e) => handleAutoAssignChange({ skipRequests: e.target.checked })}
-                      className="w-5 h-5 rounded border-slate-600"
-                    />
-                    <label htmlFor="skipRequests" className="text-white">
-                      Skip requested jumps
-                    </label>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-white font-semibold">Skip Requested Jumps</h3>
+                      <p className="text-sm text-slate-400">Don't auto-assign if student has instructor request</p>
+                    </div>
+                    <button
+                      onClick={() => handleAutoAssignChange({ skipRequests: !autoAssignSettings.skipRequests })}
+                      className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                        autoAssignSettings.skipRequests ? 'bg-blue-500' : 'bg-slate-600'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                          autoAssignSettings.skipRequests ? 'translate-x-7' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
                   </div>
                   
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      id="batchMode"
-                      checked={autoAssignSettings.batchMode}
-                      onChange={(e) => handleAutoAssignChange({ batchMode: e.target.checked })}
-                      className="w-5 h-5 rounded border-slate-600"
-                    />
-                    <label htmlFor="batchMode" className="text-white">
-                      Wait for multiple students (batch mode)
-                    </label>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-white font-semibold">Batch Mode</h3>
+                      <p className="text-sm text-slate-400">Wait for multiple students before assigning</p>
+                    </div>
+                    <button
+                      onClick={() => handleAutoAssignChange({ batchMode: !autoAssignSettings.batchMode })}
+                      className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                        autoAssignSettings.batchMode ? 'bg-blue-500' : 'bg-slate-600'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                          autoAssignSettings.batchMode ? 'translate-x-7' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
                   </div>
                   
                   {autoAssignSettings.batchMode && (
                     <div>
                       <label className="block text-white font-semibold mb-2">
-                        Batch size
+                        Batch Size
                       </label>
                       <input
                         type="number"

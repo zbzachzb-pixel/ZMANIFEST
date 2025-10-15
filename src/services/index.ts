@@ -1,4 +1,3 @@
-// src/services/index.ts
 import { FirebaseService } from './firebase'
 import type { DatabaseService } from './database'
 
