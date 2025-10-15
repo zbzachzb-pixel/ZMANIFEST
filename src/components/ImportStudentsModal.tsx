@@ -1,12 +1,26 @@
-// src/components/ImportStudentsModal.tsx
+// src/components/ImportStudentsModal.tsx - Updated with Student ID support
+
 'use client'
 
 import React, { useState } from 'react'
 import { useAddToQueue } from '@/hooks/useDatabase'
-import type { CreateQueueStudent } from '@/types'
+import { db } from '@/services'
+import type { CreateQueueStudent, CreateStudentAccount } from '@/types'
 
 interface ImportStudentsModalProps {
   onClose: () => void
+}
+
+interface ParsedStudent {
+  studentId: string
+  name: string
+  weight: number
+  jumpType: 'tandem' | 'aff'
+  isRequest: boolean
+  tandemWeightTax?: number
+  tandemHandcam?: boolean
+  outsideVideo?: boolean
+  affLevel?: 'upper' | 'lower'
 }
 
 export function ImportStudentsModal({ onClose }: ImportStudentsModalProps) {
@@ -14,19 +28,27 @@ export function ImportStudentsModal({ onClose }: ImportStudentsModalProps) {
   const [importText, setImportText] = useState('')
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
-  const [preview, setPreview] = useState<CreateQueueStudent[]>([])
+  const [preview, setPreview] = useState<ParsedStudent[]>([])
 
-  const parseStudentLine = (line: string, lineNumber: number): CreateQueueStudent | string => {
+  const parseStudentLine = (line: string, lineNumber: number): ParsedStudent | string => {
     const parts = line.split(':').map(p => p.trim())
     
-    // Format: Name:Weight:JumpType:Param1:Param2:Param3:Request
-    if (parts.length < 4) {
-      return `Line ${lineNumber}: Invalid format - need at least Name:Weight:JumpType:Request`
+    // NEW FORMAT with Student ID:
+    // TANDEM: StudentID:Name:Weight:tandem:Tax:Handcam:OutsideVideo:Request
+    // AFF: StudentID:Name:Weight:aff:Level:Request
+    
+    if (parts.length < 5) {
+      return `Line ${lineNumber}: Invalid format - need at least StudentID:Name:Weight:JumpType:...`
     }
 
-    const name = parts[0]
-    const weight = parseFloat(parts[1])
-    const jumpType = parts[2].toLowerCase()
+    const studentId = parts[0]
+    const name = parts[1]
+    const weight = parseFloat(parts[2])
+    const jumpType = parts[3].toLowerCase()
+    
+    if (!studentId) {
+      return `Line ${lineNumber}: Missing student ID`
+    }
     
     if (!name) {
       return `Line ${lineNumber}: Missing student name`
@@ -36,19 +58,19 @@ export function ImportStudentsModal({ onClose }: ImportStudentsModalProps) {
       return `Line ${lineNumber}: Invalid weight (must be 100-400)`
     }
 
-    // TANDEM FORMAT: Name:Weight:tandem:Tax:Handcam:OutsideVideo:Request
-    // Example: John Doe:180:tandem:1:true:false:false
+    // TANDEM FORMAT: StudentID:Name:Weight:tandem:Tax:Handcam:OutsideVideo:Request
     if (jumpType === 'tandem') {
-      const tax = parseInt(parts[3] || '0')
-      const handcam = parts[4]?.toLowerCase() === 'true' || parts[4] === '1'
-      const outsideVideo = parts[5]?.toLowerCase() === 'true' || parts[5] === '1'
-      const isRequest = parts[6]?.toLowerCase() === 'true' || parts[6] === '1'
+      const tax = parseInt(parts[4] || '0')
+      const handcam = parts[5]?.toLowerCase() === 'true' || parts[5] === '1'
+      const outsideVideo = parts[6]?.toLowerCase() === 'true' || parts[6] === '1'
+      const isRequest = parts[7]?.toLowerCase() === 'true' || parts[7] === '1'
 
       if (isNaN(tax) || tax < 0 || tax > 5) {
         return `Line ${lineNumber}: Invalid tax (must be 0-5)`
       }
 
       return {
+        studentId,
         name,
         weight,
         jumpType: 'tandem',
@@ -59,13 +81,13 @@ export function ImportStudentsModal({ onClose }: ImportStudentsModalProps) {
       }
     }
     
-    // AFF FORMAT: Name:Weight:aff:Level:Request
-    // Example: Jane Smith:150:aff:lower:false
+    // AFF FORMAT: StudentID:Name:Weight:aff:Level:Request
     else if (jumpType === 'aff') {
-      const affLevel = parts[3]?.toLowerCase() === 'upper' ? 'upper' : 'lower'
-      const isRequest = parts[4]?.toLowerCase() === 'true' || parts[4] === '1'
+      const affLevel = parts[4]?.toLowerCase() === 'upper' ? 'upper' : 'lower'
+      const isRequest = parts[5]?.toLowerCase() === 'true' || parts[5] === '1'
 
       return {
+        studentId,
         name,
         weight,
         jumpType: 'aff',
@@ -82,7 +104,7 @@ export function ImportStudentsModal({ onClose }: ImportStudentsModalProps) {
   const handlePreview = () => {
     const lines = importText.split('\n').filter(line => line.trim() && !line.startsWith('#'))
     const newErrors: string[] = []
-    const students: CreateQueueStudent[] = []
+    const students: ParsedStudent[] = []
 
     lines.forEach((line, index) => {
       const result = parseStudentLine(line, index + 1)
@@ -117,7 +139,53 @@ export function ImportStudentsModal({ onClose }: ImportStudentsModalProps) {
 
       for (const student of preview) {
         try {
-          await add(student)
+          // Check if student account exists by studentId
+          const existingAccounts = await db.searchStudentAccounts(student.studentId)
+          let studentAccountId: string
+
+          if (existingAccounts.length > 0) {
+            // Update existing account
+            const existingAccount = existingAccounts[0]
+            studentAccountId = existingAccount.id
+            
+            // Update weight and name if they changed
+            await db.updateStudentAccount(existingAccount.id, {
+              name: student.name,
+              weight: student.weight,
+              preferredJumpType: student.jumpType,
+              affLevel: student.jumpType === 'aff' ? student.affLevel : undefined
+            })
+          } else {
+            // Create new student account
+            const newAccount: CreateStudentAccount = {
+              studentId: student.studentId,
+              name: student.name,
+              weight: student.weight,
+              preferredJumpType: student.jumpType,
+              affLevel: student.jumpType === 'aff' ? student.affLevel : undefined,
+              totalJumps: 0,
+              totalTandemJumps: 0,
+              totalAFFJumps: 0
+            }
+            
+            const createdAccount = await db.createStudentAccount(newAccount)
+            studentAccountId = createdAccount.id
+          }
+
+          // Add to queue with link to account
+          const queueStudent: CreateQueueStudent = {
+            studentAccountId,
+            name: student.name,
+            weight: student.weight,
+            jumpType: student.jumpType,
+            isRequest: student.isRequest,
+            tandemWeightTax: student.jumpType === 'tandem' ? student.tandemWeightTax : undefined,
+            tandemHandcam: student.jumpType === 'tandem' ? student.tandemHandcam : undefined,
+            outsideVideo: student.jumpType === 'tandem' ? student.outsideVideo : undefined,
+            affLevel: student.jumpType === 'aff' ? student.affLevel : undefined,
+          }
+
+          await add(queueStudent)
           successCount++
         } catch (error) {
           console.error(`Failed to add ${student.name}:`, error)
@@ -150,23 +218,27 @@ export function ImportStudentsModal({ onClose }: ImportStudentsModalProps) {
     reader.readAsText(file)
   }
 
-  const exampleText = `# TANDEM FORMAT: Name:Weight:tandem:Tax:Handcam:OutsideVideo:Request
-John Doe:180:tandem:0:false:false:false
-Jane Smith:200:tandem:1:true:false:false
-Mike Johnson:220:tandem:2:true:true:false
-Sarah Williams:165:tandem:0:true:false:true
+  const exampleText = `# TANDEM FORMAT: StudentID:Name:Weight:tandem:Tax:Handcam:OutsideVideo:Request
+M1234:John Doe:180:tandem:0:false:false:false
+M5678:Jane Smith:200:tandem:1:true:false:false
+STU-001:Mike Johnson:220:tandem:2:true:true:false
+STU-002:Sarah Williams:165:tandem:0:true:false:true
 
-# AFF FORMAT: Name:Weight:aff:Level:Request
-Bob Anderson:175:aff:lower:false
-Alice Cooper:160:aff:upper:false
-Tom Brady:190:aff:lower:true
+# AFF FORMAT: StudentID:Name:Weight:aff:Level:Request
+M9012:Bob Anderson:175:aff:lower:false
+M3456:Alice Cooper:160:aff:upper:false
+STU-003:Tom Brady:190:aff:lower:true
 
-# You can use comments starting with #
-# Tax: 0-5 (weight increments over limit)
-# Handcam: true/false or 1/0
-# OutsideVideo: true/false or 1/0
-# Request: true/false or 1/0
-# AFF Level: lower or upper`
+# Format Notes:
+# - StudentID: Your system's ID (e.g., M1234, STU-001)
+# - One student per line
+# - Lines starting with # are comments (ignored)
+# - Tax: 0-5 (weight increments over limit)
+# - Handcam/OutsideVideo/Request: true/false or 1/0
+# - AFF Level: lower or upper
+# 
+# If Student ID already exists, it will UPDATE that account
+# If Student ID is new, it will CREATE a new account`
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -190,15 +262,23 @@ Tom Brady:190:aff:lower:true
             <div className="text-sm text-slate-300 space-y-2">
               <div>
                 <span className="font-semibold text-white">Tandem:</span>{' '}
-                <code className="bg-slate-700 px-2 py-1 rounded">
-                  Name:Weight:tandem:Tax:Handcam:OutsideVideo:Request
+                <code className="bg-slate-700 px-2 py-1 rounded text-xs">
+                  StudentID:Name:Weight:tandem:Tax:Handcam:OutsideVideo:Request
                 </code>
               </div>
               <div>
                 <span className="font-semibold text-white">AFF:</span>{' '}
-                <code className="bg-slate-700 px-2 py-1 rounded">
-                  Name:Weight:aff:Level:Request
+                <code className="bg-slate-700 px-2 py-1 rounded text-xs">
+                  StudentID:Name:Weight:aff:Level:Request
                 </code>
+              </div>
+              <div className="mt-3 p-3 bg-green-500/10 border border-green-500/30 rounded">
+                <div className="text-green-300 font-semibold mb-1">✨ Smart Import:</div>
+                <div className="text-xs text-slate-300">
+                  • If Student ID exists → Updates existing account<br />
+                  • If Student ID is new → Creates new account<br />
+                  • Student ID links to your other systems
+                </div>
               </div>
               <div className="mt-2 text-xs text-slate-400">
                 • One student per line<br />
@@ -273,6 +353,7 @@ Tom Brady:190:aff:lower:true
               <div className="text-sm text-slate-300 space-y-1 max-h-48 overflow-y-auto">
                 {preview.map((student, index) => (
                   <div key={index} className="bg-slate-700/50 rounded px-3 py-2">
+                    <span className="font-mono text-blue-300 mr-2">{student.studentId}</span>
                     <span className="font-semibold text-white">{student.name}</span>
                     {' • '}
                     <span>{student.weight} lbs</span>
@@ -280,40 +361,29 @@ Tom Brady:190:aff:lower:true
                     <span className="uppercase">{student.jumpType}</span>
                     {student.jumpType === 'tandem' && (
                       <>
-                        {student.tandemWeightTax ? ` • Tax: ${student.tandemWeightTax}` : ''}
-                        {student.tandemHandcam && ' • 📹 Handcam'}
-                        {student.outsideVideo && ' • 🎥 Outside Video'}
+                        {student.tandemWeightTax ? ` • Tax: ${student.tandemWeightTax}x` : ''}
+                        {student.tandemHandcam ? ' • 📹 Handcam' : ''}
+                        {student.outsideVideo ? ' • 🎥 Video' : ''}
                       </>
                     )}
                     {student.jumpType === 'aff' && (
-                      <span> • Level: {student.affLevel}</span>
+                      <> • {student.affLevel}</>
                     )}
-                    {student.isRequest && (
-                      <span className="ml-2 text-yellow-400">⭐ REQUEST</span>
-                    )}
+                    {student.isRequest && <span className="text-yellow-300"> • ⭐ Request</span>}
                   </div>
                 ))}
               </div>
+              
+              {/* Import Button */}
+              <button
+                onClick={handleImport}
+                disabled={loading}
+                className="w-full mt-4 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Importing...' : `✅ Import ${preview.length} Student${preview.length > 1 ? 's' : ''}`}
+              </button>
             </div>
           )}
-        </div>
-
-        {/* Action Buttons */}
-        <div className="border-t border-slate-700 p-6 flex gap-3">
-          <button
-            onClick={onClose}
-            disabled={loading}
-            className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleImport}
-            disabled={loading || preview.length === 0}
-            className="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? '⏳ Importing...' : `✓ Import ${preview.length} Students`}
-          </button>
         </div>
       </div>
     </div>

@@ -1,8 +1,10 @@
+// src/components/EditStudentModal.tsx - Updated to edit Student ID
+
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { db } from '@/services'
-import type { QueueStudent, JumpType, AFFLevel } from '@/types'
+import type { QueueStudent, JumpType, AFFLevel, StudentAccount } from '@/types'
 
 interface EditStudentModalProps {
   student: QueueStudent
@@ -10,6 +12,8 @@ interface EditStudentModalProps {
 }
 
 export function EditStudentModal({ student, onClose }: EditStudentModalProps) {
+  const [studentAccount, setStudentAccount] = useState<StudentAccount | null>(null)
+  const [studentId, setStudentId] = useState('')
   const [name, setName] = useState(student.name)
   const [weight, setWeight] = useState(student.weight)
   const [jumpType, setJumpType] = useState<JumpType>(student.jumpType)
@@ -19,6 +23,26 @@ export function EditStudentModal({ student, onClose }: EditStudentModalProps) {
   const [affLevel, setAffLevel] = useState<AFFLevel>(student.affLevel || 'lower')
   const [isRequest, setIsRequest] = useState(student.isRequest || false)
   const [loading, setLoading] = useState(false)
+  const [loadingAccount, setLoadingAccount] = useState(true)
+
+  // Fetch the student account
+  useEffect(() => {
+    const fetchAccount = async () => {
+      if (student.studentAccountId) {
+        try {
+          const account = await db.getStudentAccountById(student.studentAccountId)
+          setStudentAccount(account)
+          if (account) {
+            setStudentId(account.studentId || '')
+          }
+        } catch (error) {
+          console.error('Failed to fetch student account:', error)
+        }
+      }
+      setLoadingAccount(false)
+    }
+    fetchAccount()
+  }, [student.studentAccountId])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,11 +54,27 @@ export function EditStudentModal({ student, onClose }: EditStudentModalProps) {
 
     setLoading(true)
     try {
-      // Remove old student
+      // Update the student account if it exists and studentId changed
+      if (studentAccount && studentId !== studentAccount.studentId) {
+        await db.updateStudentAccount(studentAccount.id, {
+          studentId: studentId.trim()
+        })
+      }
+
+      // Update the student account's name and weight if changed
+      if (studentAccount) {
+        await db.updateStudentAccount(studentAccount.id, {
+          name: name.trim(),
+          weight: weight
+        })
+      }
+
+      // Remove old queue entry
       await db.removeFromQueue(student.id)
       
-      // Add updated student
+      // Add updated queue entry
       await db.addToQueue({
+        studentAccountId: student.studentAccountId,
         name: name.trim(),
         weight,
         jumpType,
@@ -54,6 +94,17 @@ export function EditStudentModal({ student, onClose }: EditStudentModalProps) {
     }
   }
 
+  if (loadingAccount) {
+    return (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="bg-slate-800 rounded-xl p-8">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-500 mx-auto"></div>
+          <p className="text-white mt-4">Loading student info...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-slate-700">
@@ -70,6 +121,20 @@ export function EditStudentModal({ student, onClose }: EditStudentModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Student ID */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-300 mb-2">
+              Student ID <span className="text-slate-500">(Optional - for linking to other systems)</span>
+            </label>
+            <input
+              type="text"
+              value={studentId}
+              onChange={(e) => setStudentId(e.target.value)}
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white font-mono focus:outline-none focus:border-blue-500 transition-colors"
+              placeholder="e.g., M1234, STU-456"
+            />
+          </div>
+
           {/* Name */}
           <div>
             <label className="block text-sm font-semibold text-slate-300 mb-2">
@@ -93,7 +158,7 @@ export function EditStudentModal({ student, onClose }: EditStudentModalProps) {
             <input
               type="number"
               value={weight}
-              onChange={(e) => setWeight(parseInt(e.target.value))}
+              onChange={(e) => setWeight(parseInt(e.target.value) || 0)}
               className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
               min="100"
               max="400"
@@ -106,112 +171,130 @@ export function EditStudentModal({ student, onClose }: EditStudentModalProps) {
             <label className="block text-sm font-semibold text-slate-300 mb-2">
               Jump Type *
             </label>
-            <select
-              value={jumpType}
-              onChange={(e) => setJumpType(e.target.value as JumpType)}
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
-            >
-              <option value="tandem">Tandem</option>
-              <option value="aff">AFF</option>
-            </select>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setJumpType('tandem')}
+                className={`py-3 rounded-lg font-medium transition-all ${
+                  jumpType === 'tandem'
+                    ? 'bg-orange-600 text-white'
+                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                }`}
+              >
+                Tandem
+              </button>
+              <button
+                type="button"
+                onClick={() => setJumpType('aff')}
+                className={`py-3 rounded-lg font-medium transition-all ${
+                  jumpType === 'aff'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                }`}
+              >
+                AFF
+              </button>
+            </div>
           </div>
 
-          {/* Tandem-specific fields */}
+          {/* Tandem Options */}
           {jumpType === 'tandem' && (
-            <>
+            <div className="space-y-3 bg-slate-700/50 p-4 rounded-lg">
               <div>
                 <label className="block text-sm font-semibold text-slate-300 mb-2">
                   Weight Tax
                 </label>
-                <select
+                <input
+                  type="number"
                   value={weightTax}
-                  onChange={(e) => setWeightTax(parseInt(e.target.value))}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
-                >
-                  <option value={0}>None ($0)</option>
-                  <option value={1}>1x (+$20)</option>
-                  <option value={2}>2x (+$40)</option>
-                  <option value={3}>3x (+$60)</option>
-                  <option value={4}>4x (+$80)</option>
-                  <option value={5}>5x (+$100)</option>
-                </select>
+                  onChange={(e) => setWeightTax(parseInt(e.target.value) || 0)}
+                  className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  min="0"
+                  max="10"
+                />
               </div>
-
-              <div className="flex items-center gap-2">
+              
+              <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
-                  id="handcam"
                   checked={handcam}
                   onChange={(e) => setHandcam(e.target.checked)}
-                  className="w-5 h-5 bg-slate-700 border border-slate-600 rounded focus:ring-2 focus:ring-blue-500"
+                  className="w-5 h-5 text-blue-600 bg-slate-800 border-slate-600 rounded focus:ring-blue-500"
                 />
-                <label htmlFor="handcam" className="text-sm font-semibold text-slate-300 cursor-pointer">
-                  Handcam (+$30)
-                </label>
-              </div>
-
-              <div className="flex items-center gap-2">
+                <span className="text-slate-300">📹 Handcam</span>
+              </label>
+              
+              <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
-                  id="outsideVideo"
                   checked={outsideVideo}
                   onChange={(e) => setOutsideVideo(e.target.checked)}
-                  className="w-5 h-5 bg-slate-700 border border-slate-600 rounded focus:ring-2 focus:ring-blue-500"
+                  className="w-5 h-5 text-blue-600 bg-slate-800 border-slate-600 rounded focus:ring-blue-500"
                 />
-                <label htmlFor="outsideVideo" className="text-sm font-semibold text-slate-300 cursor-pointer">
-                  Outside Video (+$45)
-                </label>
-              </div>
-            </>
+                <span className="text-slate-300">🎥 Outside Video</span>
+              </label>
+            </div>
           )}
 
-          {/* AFF-specific fields */}
+          {/* AFF Options */}
           {jumpType === 'aff' && (
-            <div>
+            <div className="space-y-3 bg-slate-700/50 p-4 rounded-lg">
               <label className="block text-sm font-semibold text-slate-300 mb-2">
                 AFF Level
               </label>
-              <select
-                value={affLevel}
-                onChange={(e) => setAffLevel(e.target.value as AFFLevel)}
-                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
-              >
-                <option value="lower">Lower (Levels 1-4) - $55</option>
-                <option value="upper">Upper (Levels 5-7) - $45</option>
-              </select>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAffLevel('lower')}
+                  className={`py-2 rounded-lg font-medium transition-all ${
+                    affLevel === 'lower'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                  }`}
+                >
+                  Lower
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAffLevel('upper')}
+                  className={`py-2 rounded-lg font-medium transition-all ${
+                    affLevel === 'upper'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                  }`}
+                >
+                  Upper
+                </button>
+              </div>
             </div>
           )}
 
           {/* Request Checkbox */}
-          <div className="flex items-center gap-2">
+          <label className="flex items-center gap-3 cursor-pointer p-3 bg-slate-700/50 rounded-lg">
             <input
               type="checkbox"
-              id="isRequest"
               checked={isRequest}
               onChange={(e) => setIsRequest(e.target.checked)}
-              className="w-5 h-5 bg-slate-700 border border-slate-600 rounded focus:ring-2 focus:ring-blue-500"
+              className="w-5 h-5 text-yellow-600 bg-slate-800 border-slate-600 rounded focus:ring-yellow-500"
             />
-            <label htmlFor="isRequest" className="text-sm font-semibold text-slate-300 cursor-pointer">
-              Request Jump (doesn't count toward balance)
-            </label>
-          </div>
+            <span className="text-slate-300">⭐ This is a requested jump</span>
+          </label>
 
           {/* Buttons */}
           <div className="flex gap-3 pt-4">
             <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg transition-colors"
+              type="submit"
               disabled={loading}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Cancel
+              {loading ? 'Saving...' : 'Save Changes'}
             </button>
             <button
-              type="submit"
-              className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={loading}
+              type="button"
+              onClick={onClose}
+              className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg transition-colors"
             >
-              {loading ? '⏳ Saving...' : '💾 Save Changes'}
+              Cancel
             </button>
           </div>
         </form>

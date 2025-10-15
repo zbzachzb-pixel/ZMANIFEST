@@ -1,4 +1,5 @@
-// src/components/GroupCard.tsx
+// src/components/GroupCard.tsx - FIXED with proper drag end handling
+
 'use client'
 
 import React, { useState } from 'react'
@@ -12,7 +13,8 @@ interface GroupCardProps {
   draggable?: boolean
   onDragStart?: (e: React.DragEvent, groupId: string) => void
   onStudentDrop?: (groupId: string, studentId: string) => Promise<void>
-  onStudentDragStart?: (e: React.DragEvent, studentId: string) => void  // ← ADD THIS
+  onStudentDragStart?: (e: React.DragEvent, studentId: string) => void
+  onStudentDragEnd?: () => void  // 🔥 NEW: Callback when student drag ends
 }
 
 export function GroupCard({ 
@@ -22,7 +24,8 @@ export function GroupCard({
   draggable = false,
   onDragStart,
   onStudentDrop,
-  onStudentDragStart  // ← ADD THIS
+  onStudentDragStart,
+  onStudentDragEnd  // 🔥 NEW
 }: GroupCardProps) {
 
   const { update } = useUpdateGroup()
@@ -31,8 +34,6 @@ export function GroupCard({
   const [editName, setEditName] = useState(group.name)
   const [isDragOver, setIsDragOver] = useState(false)
 
-  // Calculate load capacity
-  // Each student needs 2 slots, plus 1 extra if they have outside video
   const totalCapacity = students.length * 2 + students.filter(s => s.outsideVideo).length
   const isOverCapacity = totalCapacity > 18
 
@@ -64,7 +65,6 @@ export function GroupCard({
   const handleRemoveStudent = async (studentId: string) => {
     const updatedStudentIds = group.studentIds.filter(id => id !== studentId)
     
-    // If removing this student leaves only 1 or 0, offer to dissolve group
     if (updatedStudentIds.length <= 1) {
       const remainingCount = updatedStudentIds.length
       const studentName = students.find(s => s.id === studentId)?.name || 'this student'
@@ -98,52 +98,63 @@ export function GroupCard({
       e.currentTarget.style.opacity = '1'
     }
   }
+
   const handleDragOver = (e: React.DragEvent) => {
-  e.preventDefault()
-  e.stopPropagation()
-  setIsDragOver(true)
-}
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(true)
+  }
 
-const handleDragLeave = (e: React.DragEvent) => {
-  e.preventDefault()
-  e.stopPropagation()
-  setIsDragOver(false)
-}
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+  }
 
-const handleDrop = async (e: React.DragEvent) => {
-  e.preventDefault()
-  e.stopPropagation()
-  setIsDragOver(false)
-  
-  const studentId = e.dataTransfer.getData('studentId')
-  
-  if (studentId && onStudentDrop) {
-    try {
-      await onStudentDrop(group.id, studentId)
-    } catch (error) {
-      console.error('Failed to add student to group:', error)
-      alert('Failed to add student to group')
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+    
+    const studentId = e.dataTransfer.getData('studentId')
+    
+    if (studentId && onStudentDrop) {
+      try {
+        await onStudentDrop(group.id, studentId)
+      } catch (error) {
+        console.error('Failed to add student to group:', error)
+        alert('Failed to add student to group')
+      }
     }
   }
-}
+
+  // 🔥 Handler for student drag end to reset opacity AND notify parent
+  const handleStudentDragEnd = (e: React.DragEvent) => {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '1'
+    }
+    // Notify parent that drag has ended
+    if (onStudentDragEnd) {
+      onStudentDragEnd()
+    }
+  }
 
   return (
-  <div 
-    draggable={draggable}
-    onDragStart={handleDragStart}
-    onDragEnd={handleDragEnd}
-    onDragOver={handleDragOver}
-    onDragLeave={handleDragLeave}
-    onDrop={handleDrop}
-    className={`bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-xl p-4 transition-all ${
-      isDragOver 
-        ? 'border-4 border-green-400 scale-105 shadow-2xl bg-green-500/30' 
-        : 'border-2 border-purple-500/50'
-    } ${
-      draggable ? 'cursor-move hover:scale-105 hover:shadow-xl' : ''
-    }`}
-  >
-      {/* Group Header */}
+    <div 
+      draggable={draggable}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-xl p-4 transition-all ${
+        isDragOver 
+          ? 'border-4 border-green-400 scale-105 shadow-2xl bg-green-500/30' 
+          : 'border-2 border-purple-500/50'
+      } ${
+        draggable ? 'cursor-move hover:scale-105 hover:shadow-xl' : ''
+      }`}
+    >
       <div className="flex items-center justify-between mb-3">
         <div className="flex-1">
           {showEdit ? (
@@ -208,53 +219,52 @@ const handleDrop = async (e: React.DragEvent) => {
         </button>
       </div>
 
-      {/* Students List */}
       {students.length > 0 ? (
-  <div className="space-y-2">
-    {students.map(student => (
-      <div
-        key={student.id}
-        draggable={!!onStudentDragStart}  // Only draggable if handler provided
-        onDragStart={(e) => {
-          if (onStudentDragStart) {
-            e.stopPropagation()  // Don't trigger group drag
-            onStudentDragStart(e, student.id)
-          }
-        }}
-        className={`bg-slate-800/50 rounded-lg p-3 flex items-center justify-between ${
-          onStudentDragStart ? 'cursor-move hover:bg-slate-700/50' : ''
-        } transition-colors`}
-      >
-        <div className="flex-1">
-          <div className="text-white font-medium">{student.name}</div>
-          <div className="text-xs text-slate-400">
-            {student.weight} lbs • {student.jumpType.toUpperCase()}
-            {student.jumpType === 'aff' && student.affLevel && ` (${student.affLevel})`}
-            {student.outsideVideo && ' 📹'}
-          </div>
+        <div className="space-y-2">
+          {students.map(student => (
+            <div
+              key={student.id}
+              draggable={!!onStudentDragStart}
+              onDragStart={(e) => {
+                if (onStudentDragStart) {
+                  e.stopPropagation()
+                  onStudentDragStart(e, student.id)
+                }
+              }}
+              onDragEnd={handleStudentDragEnd}  // 🔥 Reset opacity and notify parent
+              className={`bg-slate-800/50 rounded-lg p-3 flex items-center justify-between ${
+                onStudentDragStart ? 'cursor-move hover:bg-slate-700/50' : ''
+              } transition-all`}
+            >
+              <div className="flex-1">
+                <div className="text-white font-medium">{student.name}</div>
+                <div className="text-xs text-slate-400">
+                  {student.weight} lbs • {student.jumpType.toUpperCase()}
+                  {student.jumpType === 'aff' && student.affLevel && ` (${student.affLevel})`}
+                  {student.outsideVideo && ' 📹'}
+                </div>
+              </div>
+              <button
+                onClick={() => handleRemoveStudent(student.id)}
+                className="text-red-400 hover:text-red-300 hover:bg-red-500/20 p-2 rounded transition-colors"
+                title="Remove from group"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
         </div>
-        <button
-          onClick={() => handleRemoveStudent(student.id)}
-          className="text-red-400 hover:text-red-300 hover:bg-red-500/20 p-2 rounded transition-colors"
-          title="Remove from group"
-        >
-          ✕
-        </button>
-      </div>
-    ))}
-  </div>
-) : (
-  <div className="text-center py-4 text-slate-400 text-sm">
-    No students in this group
-  </div>
-)}
+      ) : (
+        <div className="text-center py-4 text-slate-400 text-sm">
+          No students in this group
+        </div>
+      )}
 
-      {/* Action Button */}
       {students.length > 0 && (
         <button
           onClick={() => onAssignGroup(group.id)}
           disabled={isOverCapacity}
-          className={`w-full font-bold py-3 px-4 rounded-lg transition-colors ${
+          className={`w-full mt-4 font-bold py-3 px-4 rounded-lg transition-colors ${
             isOverCapacity 
               ? 'bg-slate-600 text-slate-400 cursor-not-allowed' 
               : 'bg-blue-500 hover:bg-blue-600 text-white'
