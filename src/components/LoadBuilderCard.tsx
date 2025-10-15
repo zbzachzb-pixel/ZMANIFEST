@@ -110,6 +110,10 @@ export function LoadBuilderCard({
       alert('❌ Cannot mark as ready: Load is over capacity!')
       return
     }
+    if (newStatus === 'ready' && unassignedCount > 0) {
+      alert('❌ Cannot mark as ready: All students must have instructors assigned!')
+      return
+    }
     if (newStatus === 'departed' && load.status === 'building') {
       alert('❌ Load must be "Ready" before departing')
       return
@@ -432,23 +436,28 @@ export function LoadBuilderCard({
                         onDragStart={() => !isCompleted && load.status === 'building' && onDragStart('group', groupId, load.id)}
                         onDragEnd={onDragEnd}
                         className={`bg-gradient-to-br from-purple-500/10 to-blue-500/10 border-2 border-purple-500/40 rounded-xl p-3 space-y-2 transition-all ${
-                          !isCompleted && load.status === 'building' ? 'cursor-move hover:border-purple-400 hover:shadow-lg hover:scale-[1.02]' : ''
+                          !isCompleted && load.status === 'building' ? 'cursor-move hover:scale-102 hover:border-purple-500' : ''
                         }`}
                       >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-bold text-purple-300">👥 {group.name} ({groupAssignments.length} students)</span>
-                          {!isCompleted && load.status === 'building' && (
-                            <span className="text-xs text-purple-400 opacity-70">↔️ Drag to move all / Return to queue</span>
-                          )}
+                        <div className="flex items-center justify-between mb-2 pb-2 border-b border-purple-500/30">
+                          <div className="flex items-center gap-2">
+                            <span className="text-purple-400 font-bold">👥 {group.name}</span>
+                            <span className="text-xs text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded">
+                              {groupAssignments.length} students
+                            </span>
+                          </div>
                         </div>
                         {groupAssignments.map((assignment) => (
-                          <div key={assignment.id} className={`p-3 rounded-lg border transition-all ${
-                            assignment.instructorId ? 'bg-slate-700 border-slate-600' : 'bg-yellow-900/30 border-yellow-600'
-                          }`}>
+                          <div
+                            key={assignment.id}
+                            className={`p-2 rounded-lg border transition-all ml-4 ${
+                              assignment.instructorId ? 'bg-slate-700/50 border-slate-600' : 'bg-yellow-900/20 border-yellow-600'
+                            }`}
+                          >
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1">
-                                  <span className="font-semibold text-white">{assignment.studentName}</span>
+                                  <span className="font-semibold text-white text-sm">{assignment.studentName}</span>
                                   <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
                                     assignment.jumpType === 'tandem' ? 'bg-green-500/20 text-green-300' :
                                     assignment.jumpType === 'aff' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'
