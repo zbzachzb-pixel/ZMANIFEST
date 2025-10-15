@@ -1,4 +1,4 @@
-// src/app/loads/page.tsx - COMPLETE FILE WITH GROUP DRAG SUPPORT
+// src/app/loads/page.tsx - COMPLETE FILE WITH FIXED GROUP HANDLING
 
 'use client'
 
@@ -189,7 +189,7 @@ export default function LoadBuilderPage() {
     setIsDragging(false)
   }
   
-  // 🔥 NEW: Handle dropping groups/students back to queue
+  // 🔥 FIXED: Handle dropping groups/students back to queue
   const handleDropToQueue = async () => {
     if (!draggedItem) return
     
@@ -209,6 +209,14 @@ export default function LoadBuilderPage() {
         const groupAssignments = sourceLoad.assignments?.filter(a => a.groupId === groupId) || []
         
         if (groupAssignments.length === 0) return
+        
+        // 🔥 FIX: Update the Group document to include the student IDs
+        const group = groups.find(g => g.id === groupId)
+        if (group) {
+          const studentIdsToAdd = groupAssignments.map(a => a.studentId)
+          const updatedStudentIds = [...new Set([...group.studentIds, ...studentIdsToAdd])]
+          await db.updateGroup(groupId, { studentIds: updatedStudentIds })
+        }
         
         // Remove group assignments from load
         await updateLoad(sourceLoad.id, {
@@ -238,6 +246,16 @@ export default function LoadBuilderPage() {
         // Dropping single assignment back to queue
         const assignment = sourceLoad.assignments?.find(a => a.id === draggedItem.id)
         if (!assignment) return
+        
+        // 🔥 FIX: If student has groupId, update the Group document
+        if (assignment.groupId) {
+          const group = groups.find(g => g.id === assignment.groupId)
+          if (group && !group.studentIds.includes(assignment.studentId)) {
+            await db.updateGroup(assignment.groupId, { 
+              studentIds: [...group.studentIds, assignment.studentId]
+            })
+          }
+        }
         
         // Remove assignment from load
         await updateLoad(sourceLoad.id, {
@@ -327,37 +345,26 @@ export default function LoadBuilderPage() {
           tandemWeightTax: student.tandemWeightTax,
           tandemHandcam: student.tandemHandcam,
           hasOutsideVideo: student.outsideVideo,
-          instructorId: null,
-          instructorName: '',
-          videoInstructorId: undefined,
-          videoInstructorName: undefined,
-          isRequest: student.isRequest || false,
-          groupId: groupId  // 🔥 ALL get the same groupId
+          groupId: groupId  // 🔥 PRESERVE GROUP ID
         }))
         
-        // Add all assignments to the load
-        await updateLoad(loadId, {
+        // Add to load
+        await updateLoad(load.id, {
           assignments: [...(load.assignments || []), ...newAssignments]
         })
         
-        // Remove all students from queue
+        // Remove from queue
         for (const student of groupStudents) {
           await db.removeFromQueue(student.id)
         }
         
       } else if (draggedItem.type === 'student') {
-        // Original student drop logic
+        // Dropping a STUDENT from QUEUE
         const student = queue.find(s => s.id === draggedItem.id)
         if (!student) return
         
-        const generateId = () => {
-          const timestamp = Date.now()
-          const random = Math.random().toString(36).substring(2, 11)
-          return `${timestamp}-${random}`
-        }
-        
         const newAssignment: LoadAssignment = {
-          id: generateId(),
+          id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
           studentId: student.id,
           studentName: student.name,
           studentWeight: student.weight,
@@ -366,15 +373,10 @@ export default function LoadBuilderPage() {
           tandemWeightTax: student.tandemWeightTax,
           tandemHandcam: student.tandemHandcam,
           hasOutsideVideo: student.outsideVideo,
-          instructorId: null,
-          instructorName: '',
-          videoInstructorId: undefined,
-          videoInstructorName: undefined,
-          isRequest: student.isRequest || false,
-          groupId: student.groupId  // 🔥 PRESERVE GROUP ID
+          groupId: student.groupId  // 🔥 PRESERVE GROUP ID IF EXISTS
         }
         
-        await updateLoad(loadId, {
+        await updateLoad(load.id, {
           assignments: [...(load.assignments || []), newAssignment]
         })
         
@@ -579,29 +581,13 @@ export default function LoadBuilderPage() {
               style={{
                 backgroundColor: dropTarget === 'queue' ? 'rgba(59, 130, 246, 0.2)' : undefined,
                 borderColor: dropTarget === 'queue' ? 'rgb(59, 130, 246)' : undefined,
-                transform: dropTarget === 'queue' ? 'scale(1.02)' : undefined,
-                transition: 'all 0.2s'
+                transform: dropTarget === 'queue' ? 'scale(1.02)' : undefined
               }}
             >
-              <h2 className="text-2xl font-bold text-white mb-4">
-                👥 Student Queue
-                {dropTarget === 'queue' && (
-                  <span className="text-sm font-normal text-blue-300 ml-2 animate-pulse">
-                    ← Drop here to return
-                  </span>
-                )}
-              </h2>
+              <h2 className="text-2xl font-bold text-white mb-4">📋 Student Queue</h2>
               
-              {/* Search and Filter */}
-              <div className="mb-4 space-y-2">
-                <input
-                  type="text"
-                  placeholder="Search students..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                />
-                
+              {/* Jump Type Filter */}
+              <div className="mb-4">
                 <div className="flex gap-2">
                   <button
                     onClick={() => setSelectedJumpType('all')}
@@ -674,33 +660,16 @@ export default function LoadBuilderPage() {
                           className="bg-gradient-to-br from-purple-500/20 to-blue-500/20 border-2 border-purple-500/50 rounded-lg p-3 cursor-move hover:scale-105 transition-all"
                         >
                           <div className="flex items-center justify-between mb-2">
-                            <div className="text-sm font-bold text-white">👥 {group.name}</div>
-                            <div className="text-xs text-slate-400">
-                              {groupStudents.length} students • {totalCapacity} slots
-                            </div>
+                            <div className="font-bold text-purple-300">👥 {group.name}</div>
+                            <div className="text-xs text-purple-400">{groupStudents.length} students</div>
                           </div>
-                          <div className="space-y-1">
-                            {groupStudents.map((student) => (
-                              <div
-                                key={student.id}
-                                className="bg-slate-800/50 p-2 rounded text-xs"
-                              >
-                                <div className="text-white font-semibold">{student.name}</div>
-                                <div className="text-slate-400">
-                                  {student.jumpType.toUpperCase()} • {student.weight} lbs
-                                </div>
-                              </div>
-                            ))}
+                          <div className="text-xs text-slate-400">
+                            Capacity: {totalCapacity}/18 ({totalCapacity > 18 ? 'OVER' : 'OK'})
                           </div>
                         </div>
                       )
                     })}
-
-                    {/* Separator if there are both groups and individuals */}
-                    {groupedStudents.length > 0 && individualStudents.length > 0 && (
-                      <div className="border-t border-slate-600 my-3"></div>
-                    )}
-
+                    
                     {/* Render Individual Students */}
                     {individualStudents.map((student) => (
                       <div
@@ -708,21 +677,15 @@ export default function LoadBuilderPage() {
                         draggable
                         onDragStart={() => handleDragStart('student', student.id)}
                         onDragEnd={handleDragEnd}
-                        className="bg-slate-700/50 p-3 rounded-lg cursor-move hover:bg-slate-700 transition-all border border-slate-600"
+                        className="bg-slate-700/50 border border-slate-600 rounded-lg p-3 cursor-move hover:bg-slate-700 hover:border-blue-500 transition-all"
                       >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-white font-semibold">{student.name}</span>
-                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                            student.jumpType === 'tandem' 
-                              ? 'bg-green-500/20 text-green-300'
-                              : 'bg-blue-500/20 text-blue-300'
-                          }`}>
-                            {student.jumpType.toUpperCase()}
-                          </span>
-                        </div>
-                        <div className="text-xs text-slate-400">
-                          {student.weight} lbs
-                          {student.affLevel && ` • ${student.affLevel}`}
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="font-semibold text-white">{student.name}</div>
+                            <div className="text-xs text-slate-400 mt-1">
+                              {student.jumpType.toUpperCase()} • {student.weight} lbs
+                            </div>
+                          </div>
                         </div>
                       </div>
                     ))}
