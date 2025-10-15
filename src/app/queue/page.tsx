@@ -1,19 +1,24 @@
-// src/app/queue/page.tsx
+// =========================================
+// FILE: src/app/queue/page.tsx - COMPLETE REPLACEMENT
+// =========================================
 'use client'
 
-import React, { useState } from 'react'
-import { useTandemQueue, useAFFQueue, useRemoveMultipleFromQueue } from '@/hooks/useDatabase'
+import React, { useState, useMemo } from 'react'
+import { useTandemQueue, useAFFQueue, useRemoveMultipleFromQueue, useGroups } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { AddStudentModal } from '@/components/AddStudentModal'
 import { EditStudentModal } from '@/components/EditStudentModal'
 import { StudentCard } from '@/components/StudentCard'
 import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal'
-import type { QueueStudent } from '@/types'
+import { CreateGroupModal } from '@/components/CreateGroupModal'
+import { GroupCard } from '@/components/GroupCard'
 import { ImportStudentsModal } from '@/components/ImportStudentsModal'
+import type { QueueStudent } from '@/types'
 
 export default function QueuePage() {
   const { data: tandemQueue, loading: tandemLoading } = useTandemQueue()
   const { data: affQueue, loading: affLoading } = useAFFQueue()
+  const { data: groups } = useGroups()
   const { removeMultiple, loading: removeLoading } = useRemoveMultipleFromQueue()
   
   const [showAddModal, setShowAddModal] = useState(false)
@@ -25,16 +30,40 @@ export default function QueuePage() {
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'tandem' | 'aff', count: number } | null>(null)
   const [showImportModal, setShowImportModal] = useState(false)
   const [editingStudent, setEditingStudent] = useState<QueueStudent | null>(null)
-  
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
+  const [groupQueueType, setGroupQueueType] = useState<'tandem' | 'aff'>('tandem')
+
+  // Group colors for visual distinction
+  const groupColors = ['#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444']
+
+  // Separate grouped and ungrouped students
+  const { tandemGroups, ungroupedTandem } = useMemo(() => {
+    const tandemGroups = groups.filter(g => 
+      g.studentIds.some(sid => tandemQueue.find(s => s.id === sid))
+    )
+    const groupedIds = new Set(tandemGroups.flatMap(g => g.studentIds))
+    const ungrouped = tandemQueue.filter(s => !groupedIds.has(s.id))
+    return { tandemGroups, ungroupedTandem: ungrouped }
+  }, [groups, tandemQueue])
+
+  const { affGroups, ungroupedAFF } = useMemo(() => {
+    const affGroups = groups.filter(g => 
+      g.studentIds.some(sid => affQueue.find(s => s.id === sid))
+    )
+    const groupedIds = new Set(affGroups.flatMap(g => g.studentIds))
+    const ungrouped = affQueue.filter(s => !groupedIds.has(s.id))
+    return { affGroups, ungroupedAFF: ungrouped }
+  }, [groups, affQueue])
+
   const handleAddStudent = (type: 'tandem' | 'aff') => {
     setModalQueueType(type)
     setShowAddModal(true)
   }
-  
+
   const handleEditStudent = (student: QueueStudent) => {
     setEditingStudent(student)
   }
-  
+
   const toggleSelection = (studentId: string, type: 'tandem' | 'aff') => {
     if (type === 'tandem') {
       setSelectedTandem(prev => 
@@ -50,7 +79,22 @@ export default function QueuePage() {
       )
     }
   }
-  
+
+  const handleCreateGroup = (type: 'tandem' | 'aff') => {
+    const selected = type === 'tandem' ? selectedTandem : selectedAFF
+    if (selected.length < 2) {
+      alert('Please select at least 2 students to create a group')
+      return
+    }
+    setGroupQueueType(type)
+    setShowCreateGroupModal(true)
+  }
+
+  const handleGroupCreated = () => {
+    setSelectedTandem([])
+    setSelectedAFF([])
+  }
+
   const handleRemoveSelected = (type: 'tandem' | 'aff') => {
     const selected = type === 'tandem' ? selectedTandem : selectedAFF
     
@@ -59,10 +103,9 @@ export default function QueuePage() {
       return
     }
     
-    // Show confirmation modal
     setConfirmDelete({ type, count: selected.length })
   }
-  
+
   const confirmRemoval = async () => {
     if (!confirmDelete) return
     
@@ -84,18 +127,27 @@ export default function QueuePage() {
       setConfirmDelete(null)
     }
   }
-  
-  const filteredTandem = tandemQueue.filter(s => 
+
+  const handleAssignGroup = async (groupId: string) => {
+    // TODO: Implement group assignment to load
+    // For now just show alert
+    alert('Group assignment will be implemented in Load Builder. This group is ready to be assigned together!')
+  }
+
+  const filteredTandem = ungroupedTandem.filter(s => 
     s.name.toLowerCase().includes(searchTandem.toLowerCase()) ||
     s.weight.toString().includes(searchTandem)
   )
-  
-  const filteredAFF = affQueue.filter(s =>
+
+  const filteredAFF = ungroupedAFF.filter(s =>
     s.name.toLowerCase().includes(searchAFF.toLowerCase()) ||
     s.weight.toString().includes(searchAFF) ||
     (s.affLevel && s.affLevel.toLowerCase().includes(searchAFF.toLowerCase()))
   )
-  
+
+  const selectedTandemStudents = tandemQueue.filter(s => selectedTandem.includes(s.id))
+  const selectedAFFStudents = affQueue.filter(s => selectedAFF.includes(s.id))
+
   if (tandemLoading || affLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
@@ -106,69 +158,113 @@ export default function QueuePage() {
       </div>
     )
   }
-  
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-8">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">Student Queue</h1>
-          <p className="text-slate-300">Add students here, then use Load Builder to assign them</p>
+          <p className="text-slate-300">Add students and create groups for parties that need to jump together</p>
         </div>
-        
+
         {/* Info Banner */}
         <div className="bg-blue-500/20 border-2 border-blue-500/50 rounded-xl p-4 mb-6">
           <div className="flex items-start gap-3">
             <span className="text-2xl">💡</span>
             <div>
-              <div className="font-bold text-blue-300 mb-1">How to Assign Students</div>
+              <div className="font-bold text-blue-300 mb-1">How to Use Groups</div>
               <p className="text-sm text-slate-300">
-                1. Add students to this queue<br/>
-                2. Go to <a href="/loads" className="text-blue-400 hover:text-blue-300 font-semibold underline">Load Builder</a><br/>
-                3. Drag students from queue onto loads
+                1. Select multiple students (hold checkboxes)<br/>
+                2. Click "Create Group" to keep them together<br/>
+                3. Use "Assign Group" to put entire party on same load<br/>
+                4. Groups ensure families/parties jump together
               </p>
             </div>
           </div>
         </div>
-        
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* Tandem Queue */}
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold text-white">Tandem Queue</h2>
+
+        <div className="grid md:grid-cols-2 gap-8">
+          {/* TANDEM QUEUE */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-white">🪂 Tandem Queue</h2>
               <div className="flex gap-2">
                 <button
-                  onClick={() => handleAddStudent('tandem')}
-                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <span className="text-lg">+</span> Add Student
-                </button>
-                <button
                   onClick={() => setShowImportModal(true)}
-                  className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                  className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   📥 Import
                 </button>
+                <button
+                  onClick={() => handleAddStudent('tandem')}
+                  className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  + Add Student
+                </button>
               </div>
             </div>
-            
-            <div className="mb-4">
-              <input
-                type="text"
-                placeholder="🔍 Search by name or weight..."
-                value={searchTandem}
-                onChange={(e) => setSearchTandem(e.target.value)}
-                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
-              />
-            </div>
-            
-            <div className="space-y-3 mb-4">
-              {filteredTandem.length === 0 ? (
-                <div className="bg-white/10 backdrop-blur-lg rounded-xl p-8 text-center border border-white/20">
-                  <div className="text-4xl mb-2">🪂</div>
-                  <p className="text-slate-300">No tandem students in queue</p>
+
+            {/* Search */}
+            <input
+              type="text"
+              value={searchTandem}
+              onChange={(e) => setSearchTandem(e.target.value)}
+              placeholder="🔍 Search by name or weight..."
+              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white mb-4 focus:outline-none focus:border-blue-500"
+            />
+
+            {/* Selection Actions */}
+            {selectedTandem.length > 0 && (
+              <div className="bg-blue-500/20 border border-blue-500 rounded-lg p-3 mb-4 flex items-center justify-between">
+                <span className="text-blue-300 font-semibold">
+                  {selectedTandem.length} selected
+                </span>
+                <div className="flex gap-2">
+                  {selectedTandem.length >= 2 && (
+                    <button
+                      onClick={() => handleCreateGroup('tandem')}
+                      className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-1 px-3 rounded text-sm"
+                    >
+                      👥 Create Group
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleRemoveSelected('tandem')}
+                    className="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded text-sm"
+                  >
+                    🗑️ Remove
+                  </button>
+                  <button
+                    onClick={() => setSelectedTandem([])}
+                    className="bg-slate-600 hover:bg-slate-700 text-white font-bold py-1 px-3 rounded text-sm"
+                  >
+                    Clear
+                  </button>
                 </div>
-              ) : (
-                filteredTandem.map(student => (
+              </div>
+            )}
+
+            {/* Groups */}
+            {tandemGroups.length > 0 && (
+              <div className="mb-4 space-y-3">
+                <h3 className="text-lg font-bold text-purple-300">👥 Groups</h3>
+                {tandemGroups.map((group, idx) => (
+                  <GroupCard
+                    key={group.id}
+                    group={group}
+                    onAssignGroup={handleAssignGroup}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Individual Students */}
+            {filteredTandem.length > 0 ? (
+              <div className="space-y-3">
+                {tandemGroups.length > 0 && (
+                  <h3 className="text-lg font-bold text-slate-300">Individual Students</h3>
+                )}
+                {filteredTandem.map(student => (
                   <StudentCard
                     key={student.id}
                     student={student}
@@ -176,115 +272,142 @@ export default function QueuePage() {
                     onToggle={() => toggleSelection(student.id, 'tandem')}
                     onEdit={() => handleEditStudent(student)}
                   />
-                ))
-              )}
-            </div>
-            
-            {selectedTandem.length > 0 && (
-              <div className="flex gap-3">
-                <button
-                  onClick={() => handleRemoveSelected('tandem')}
-                  disabled={removeLoading}
-                  className="flex-1 bg-red-500 hover:bg-red-600 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                >
-                  {removeLoading ? '⏳ Removing...' : `🗑️ Remove Selected (${selectedTandem.length})`}
-                </button>
-                <button
-                  onClick={() => setSelectedTandem([])}
-                  className="px-4 bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 rounded-lg transition-colors"
-                >
-                  Clear
-                </button>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-slate-400">
+                {searchTandem ? 'No students match your search' : 'No tandem students in queue'}
               </div>
             )}
           </div>
-          
-          {/* AFF Queue */}
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold text-white">AFF Queue</h2>
+
+          {/* AFF QUEUE */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-white">🎓 AFF Queue</h2>
               <button
                 onClick={() => handleAddStudent('aff')}
-                className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
               >
-                <span className="text-lg">+</span> Add Student
+                + Add Student
               </button>
             </div>
-            
-            <div className="mb-4">
-              <input
-                type="text"
-                placeholder="🔍 Search by name, weight, or level..."
-                value={searchAFF}
-                onChange={(e) => setSearchAFF(e.target.value)}
-                className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
-              />
-            </div>
-            
-            <div className="space-y-3 mb-4">
-              {filteredAFF.length === 0 ? (
-                <div className="bg-white/10 backdrop-blur-lg rounded-xl p-8 text-center border border-white/20">
-                  <div className="text-4xl mb-2">🎓</div>
-                  <p className="text-slate-300">No AFF students in queue</p>
+
+            {/* Search */}
+            <input
+              type="text"
+              value={searchAFF}
+              onChange={(e) => setSearchAFF(e.target.value)}
+              placeholder="🔍 Search by name, weight, or level..."
+              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white mb-4 focus:outline-none focus:border-blue-500"
+            />
+
+            {/* Selection Actions */}
+            {selectedAFF.length > 0 && (
+              <div className="bg-blue-500/20 border border-blue-500 rounded-lg p-3 mb-4 flex items-center justify-between">
+                <span className="text-blue-300 font-semibold">
+                  {selectedAFF.length} selected
+                </span>
+                <div className="flex gap-2">
+                  {selectedAFF.length >= 2 && (
+                    <button
+                      onClick={() => handleCreateGroup('aff')}
+                      className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-1 px-3 rounded text-sm"
+                    >
+                      👥 Create Group
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleRemoveSelected('aff')}
+                    className="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded text-sm"
+                  >
+                    🗑️ Remove
+                  </button>
+                  <button
+                    onClick={() => setSelectedAFF([])}
+                    className="bg-slate-600 hover:bg-slate-700 text-white font-bold py-1 px-3 rounded text-sm"
+                  >
+                    Clear
+                  </button>
                 </div>
-              ) : (
-                filteredAFF.map(student => (
+              </div>
+            )}
+
+            {/* Groups */}
+            {affGroups.length > 0 && (
+              <div className="mb-4 space-y-3">
+                <h3 className="text-lg font-bold text-purple-300">👥 Groups</h3>
+                {affGroups.map((group, idx) => (
+                  <GroupCard
+                    key={group.id}
+                    group={group}
+                    onAssignGroup={handleAssignGroup}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Individual Students */}
+            {filteredAFF.length > 0 ? (
+              <div className="space-y-3">
+                {affGroups.length > 0 && (
+                  <h3 className="text-lg font-bold text-slate-300">Individual Students</h3>
+                )}
+                {filteredAFF.map(student => (
                   <StudentCard
                     key={student.id}
                     student={student}
                     selected={selectedAFF.includes(student.id)}
-                    onToggle={() => toggleSelection(student.id, 'aff')}
+                    onToggleSelect={() => toggleSelection(student.id, 'aff')}
                     onEdit={() => handleEditStudent(student)}
                   />
-                ))
-              )}
-            </div>
-            
-            {selectedAFF.length > 0 && (
-              <div className="flex gap-3">
-                <button
-                  onClick={() => handleRemoveSelected('aff')}
-                  disabled={removeLoading}
-                  className="flex-1 bg-red-500 hover:bg-red-600 disabled:bg-gray-500 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                >
-                  {removeLoading ? '⏳ Removing...' : `🗑️ Remove Selected (${selectedAFF.length})`}
-                </button>
-                <button
-                  onClick={() => setSelectedAFF([])}
-                  className="px-4 bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 rounded-lg transition-colors"
-                >
-                  Clear
-                </button>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-slate-400">
+                {searchAFF ? 'No students match your search' : 'No AFF students in queue'}
               </div>
             )}
           </div>
         </div>
       </div>
-      
+
+      {/* Modals */}
       {showAddModal && (
         <AddStudentModal
           queueType={modalQueueType}
           onClose={() => setShowAddModal(false)}
         />
       )}
-      
+
       {editingStudent && (
         <EditStudentModal
           student={editingStudent}
           onClose={() => setEditingStudent(null)}
         />
       )}
-      
+
       {confirmDelete && (
         <ConfirmDeleteModal
-          count={confirmDelete.count}
+          title={`Remove ${confirmDelete.count} student${confirmDelete.count > 1 ? 's' : ''}?`}
+          message="This will permanently remove these students from the queue."
           onConfirm={confirmRemoval}
           onCancel={() => setConfirmDelete(null)}
         />
       )}
-      
+
+      {showCreateGroupModal && (
+        <CreateGroupModal
+          selectedStudents={groupQueueType === 'tandem' ? selectedTandemStudents : selectedAFFStudents}
+          onClose={() => setShowCreateGroupModal(false)}
+          onSuccess={handleGroupCreated}
+        />
+      )}
+
       {showImportModal && (
-        <ImportStudentsModal onClose={() => setShowImportModal(false)} />
+        <ImportStudentsModal
+          onClose={() => setShowImportModal(false)}
+        />
       )}
     </div>
   )

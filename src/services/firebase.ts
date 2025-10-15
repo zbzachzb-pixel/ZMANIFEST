@@ -256,19 +256,20 @@ subscribeToClockEvents(callback: (events: ClockEvent[]) => void): () => void {
   
   // ==================== QUEUE ====================
   
-  async addToQueue(student: CreateQueueStudent): Promise<QueueStudent> {
-    const newStudent: QueueStudent = {
-      ...student,
-      id: this.generateId(),
-      timestamp: new Date().toISOString(),
-    }
-    
-    const cleanedStudent = this.cleanData(newStudent)
-    const studentRef = ref(this.db, `studentQueue/${newStudent.id}`)
-    await set(studentRef, cleanedStudent)
-    
-    return newStudent
+async addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise<QueueStudent> {
+  const newStudent: QueueStudent = {
+    ...student,
+    id: this.generateId(),
+    // Use custom timestamp if provided (for priority), otherwise use current time
+    timestamp: customTimestamp || new Date().toISOString(),
   }
+  
+  const cleanedStudent = this.cleanData(newStudent)
+  const studentRef = ref(this.db, `studentQueue/${newStudent.id}`)
+  await set(studentRef, cleanedStudent)
+  
+  return newStudent
+}
   
   async getQueue(): Promise<QueueStudent[]> {
     return this.getData<QueueStudent>('studentQueue')

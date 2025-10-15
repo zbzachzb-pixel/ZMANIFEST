@@ -14,6 +14,7 @@ export function Navigation() {
     { href: '/instructors', label: 'Instructors', icon: '👨‍✈️' },
     { href: '/assignments', label: 'History', icon: '📋' },
     { href: '/analytics', label: 'Analytics', icon: '📊' },
+    { href: '/notes', label: 'Notes', icon: '📝' },
     { href: '/settings', label: 'Settings', icon: '⚙️' },
   ]
   

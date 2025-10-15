@@ -8,9 +8,22 @@ interface StudentCardProps {
   selected: boolean
   onToggle: () => void
   onEdit: () => void
+  groupColor?: string
+  groupName?: string
+  draggable?: boolean
+  onDragStart?: (e: React.DragEvent) => void
 }
 
-export function StudentCard({ student, selected, onToggle, onEdit }: StudentCardProps) {
+export function StudentCard({ 
+  student, 
+  selected, 
+  onToggle, 
+  onEdit, 
+  groupColor, 
+  groupName,
+  draggable = false,
+  onDragStart
+}: StudentCardProps) {
   const handleEditClick = (e: React.MouseEvent) => {
     e.stopPropagation() // Prevent selection toggle
     onEdit()
@@ -19,18 +32,37 @@ export function StudentCard({ student, selected, onToggle, onEdit }: StudentCard
   return (
     <div
       onClick={onToggle}
-      className={`bg-white/10 backdrop-blur-lg rounded-lg p-4 border-2 cursor-pointer transition-all hover:bg-white/15 ${
+      draggable={draggable}
+      onDragStart={onDragStart}
+      className={`bg-white/10 backdrop-blur-lg rounded-lg p-4 border-2 ${
+        draggable ? 'cursor-move' : 'cursor-pointer'
+      } transition-all hover:bg-white/15 ${
         selected 
           ? 'border-blue-500 bg-blue-500/10' 
           : 'border-white/20'
       }`}
     >
+      {/* Group Indicator - NEW */}
+      {groupName && (
+        <div className="mb-2 flex items-center gap-1">
+          <div 
+            className="text-xs font-semibold px-2 py-1 rounded"
+            style={{ 
+              backgroundColor: groupColor || '#8b5cf6',
+              color: 'white'
+            }}
+          >
+            👥 {groupName}
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-start mb-2">
         <div className="flex-1">
           <h3 className="text-lg font-bold text-white">{student.name}</h3>
           <p className="text-sm text-slate-300">
             {student.weight} lbs • {student.jumpType.toUpperCase()}
-            {student.jumpType === 'aff' && ` (${student.affLevel})`}
+            {student.jumpType === 'aff' && student.affLevel && ` (${student.affLevel})`}
           </p>
         </div>
         

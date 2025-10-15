@@ -77,17 +77,14 @@ export interface QueueStudent {
   id: string
   name: string
   weight: number
-  jumpType: JumpType
-  timestamp: string
-  isRequest: boolean
-  
-  // Tandem specific
+  jumpType: 'tandem' | 'aff'
   tandemWeightTax?: number
   tandemHandcam?: boolean
   outsideVideo?: boolean
-  
-  // AFF specific
-  affLevel?: AFFLevel
+  affLevel?: 'upper' | 'lower'
+  isRequest?: boolean
+  timestamp: string
+  groupId?: string  // Make sure this exists
 }
 
 export interface CreateQueueStudent {

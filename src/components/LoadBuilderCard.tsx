@@ -186,58 +186,65 @@ export function LoadBuilderCard({
   }
   
   const confirmDelete = async () => {
-    setShowDeleteConfirm(false)
-    
-    try {
-      // Move all assignments back to queue before deleting
-      for (const assignment of loadAssignments) {
-        const queueStudent: CreateQueueStudent = {
-          name: assignment.studentName,
-          weight: assignment.studentWeight,
-          jumpType: assignment.jumpType,
-          isRequest: false,
-          tandemWeightTax: assignment.tandemWeightTax || 0,
-          tandemHandcam: assignment.tandemHandcam || false,
-          outsideVideo: assignment.hasOutsideVideo,
-          affLevel: assignment.affLevel
-        }
-        
-        await db.addToQueue(queueStudent)
-      }
-      
-      // Now delete the load
-      await deleteLoad(load.id)
-    } catch (error) {
-      console.error('Failed to delete load:', error)
-      alert('Failed to delete load: ' + (error as Error).message)
-    }
-  }
+  setShowDeleteConfirm(false)
   
-  const handleRemoveAssignment = async (assignmentId: string) => {
-    try {
-      const assignment = loadAssignments.find(a => a.id === assignmentId)
-      if (!assignment) return
-      
+  try {
+    // Move all assignments back to queue with PRIORITY before deleting
+    for (const assignment of loadAssignments) {
       const queueStudent: CreateQueueStudent = {
         name: assignment.studentName,
         weight: assignment.studentWeight,
         jumpType: assignment.jumpType,
         isRequest: false,
-        tandemWeightTax: assignment.tandemWeightTax,
-        tandemHandcam: assignment.tandemHandcam,
+        tandemWeightTax: assignment.tandemWeightTax || 0,
+        tandemHandcam: assignment.tandemHandcam || false,
         outsideVideo: assignment.hasOutsideVideo,
         affLevel: assignment.affLevel
       }
       
-      await db.addToQueue(queueStudent)
-      await update(load.id, {
-        assignments: loadAssignments.filter(a => a.id !== assignmentId)
-      })
-    } catch (error) {
-      console.error('Failed to remove assignment:', error)
-      alert('Failed to remove assignment')
+      // ⭐ KEY CHANGE: Use priority timestamp to put at TOP of queue
+      const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      await db.addToQueue(queueStudent, priorityTimestamp)
     }
+    
+    // Now delete the load
+    await deleteLoad(load.id)
+  } catch (error) {
+    console.error('Failed to delete load:', error)
+    alert('Failed to delete load: ' + (error as Error).message)
   }
+}
+  
+const handleRemoveAssignment = async (assignmentId: string) => {
+  try {
+    const assignment = loadAssignments.find(a => a.id === assignmentId)
+    if (!assignment) return
+    
+    // Remove assignment from load
+    const updatedAssignments = loadAssignments.filter(a => a.id !== assignmentId)
+    await update(load.id, { assignments: updatedAssignments })
+    
+    // Add student back to queue with PRIORITY (older timestamp puts them at top)
+    const queueStudent: CreateQueueStudent = {
+      name: assignment.studentName,
+      weight: assignment.studentWeight,
+      jumpType: assignment.jumpType,
+      isRequest: false,
+      tandemWeightTax: assignment.tandemWeightTax || 0,
+      tandemHandcam: assignment.tandemHandcam || false,
+      outsideVideo: assignment.hasOutsideVideo,
+      affLevel: assignment.affLevel
+    }
+    
+    // ⭐ KEY CHANGE: Use a timestamp from 1 day ago to put student at TOP of queue
+    const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    await db.addToQueue(queueStudent, priorityTimestamp)
+    
+  } catch (error) {
+    console.error('Failed to remove assignment:', error)
+    alert('Failed to remove assignment')
+  }
+}
   
   const handleDelay = () => {
     setShowDelayModal(true)
@@ -382,14 +389,19 @@ export function LoadBuilderCard({
   }, [showAssignModal, loadAssignments])
   
   // Update assignmentSelections when auto-select changes
-  useEffect(() => {
-    if (showAssignModal && Object.keys(autoSelectInstructors).length > 0) {
-      setAssignmentSelections(autoSelectInstructors)
-    } else if (!showAssignModal) {
-      // Clear selections when modal closes
-      setAssignmentSelections({})
-    }
-  }, [showAssignModal, autoSelectInstructors])
+// Effect 1: Set selections when modal opens
+useEffect(() => {
+  if (showAssignModal && Object.keys(autoSelectInstructors).length > 0) {
+    setAssignmentSelections(autoSelectInstructors)
+  }
+}, [showAssignModal, autoSelectInstructors])
+
+// Effect 2: Clear selections when modal closes
+useEffect(() => {
+  if (!showAssignModal) {
+    setAssignmentSelections({})
+  }
+}, [showAssignModal])
   
   const getAvailableTransitions = () => {
     switch (load.status) {

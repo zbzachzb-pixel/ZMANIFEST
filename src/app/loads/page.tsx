@@ -7,6 +7,7 @@ import { LoadBuilderCard } from '@/components/LoadBuilderCard'
 import { db } from '@/services'
 import { getCurrentPeriod } from '@/lib/utils'
 import type { QueueStudent, Instructor, Load, LoadAssignment, Assignment, LoadSchedulingSettings, CreateQueueStudent } from '@/types'
+import { useGroups } from '@/hooks/useDatabase'
 
 export default function LoadBuilderPage() {
   // ============================================
@@ -21,6 +22,7 @@ export default function LoadBuilderPage() {
   const { create: createLoad } = useCreateLoad()
   const { update: updateLoad } = useUpdateLoad()
   const { deleteLoad } = useDeleteLoad()
+  const { data: groups } = useGroups()
   
   // State hooks - ALL called unconditionally
   const [searchTerm, setSearchTerm] = useState('')
@@ -120,6 +122,24 @@ export default function LoadBuilderPage() {
       return matchesSearch && matchesType
     })
   }, [queue, searchTerm, selectedJumpType])
+  const { groupedStudents, individualStudents } = useMemo(() => {
+  const groupedIds = new Set<string>()
+  const groupsInQueue = groups.filter(g => 
+    g.studentIds.some(sid => filteredQueue.find(s => s.id === sid))
+  )
+  
+  groupsInQueue.forEach(g => {
+    g.studentIds.forEach(id => groupedIds.add(id))
+  })
+  
+  const individual = filteredQueue.filter(s => !groupedIds.has(s.id))
+  
+  return {
+    groupedStudents: groupsInQueue,
+    individualStudents: individual
+  }
+}, [filteredQueue, groups])
+
   
   // ============================================
   // EVENT HANDLERS
@@ -146,32 +166,35 @@ export default function LoadBuilderPage() {
   }
   
   const handleDeleteLoad = async (loadId: string) => {
-    if (!confirm('Delete this load? All assignments will be moved back to queue.')) return
+  if (!confirm('Delete this load? All assignments will be moved back to queue.')) return
+  
+  try {
+    const load = loads.find(l => l.id === loadId)
+    if (!load) return
     
-    try {
-      const load = loads.find(l => l.id === loadId)
-      if (!load) return
+    // Move assignments back to queue with PRIORITY
+    for (const assignment of (load.assignments || [])) {
+      // ⭐ KEY CHANGE: Use priority timestamp
+      const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       
-      // Move assignments back to queue
-      for (const assignment of (load.assignments || [])) {
-        await db.addToQueue({
-          name: assignment.studentName,
-          weight: assignment.studentWeight,
-          jumpType: assignment.jumpType,
-          tandemWeightTax: assignment.tandemWeightTax || 0,
-          tandemHandcam: assignment.tandemHandcam || false,
-          affLevel: assignment.affLevel,
-          outsideVideo: assignment.hasOutsideVideo,
-          isRequest: false
-        })
-      }
-      
-      await deleteLoad(loadId)
-    } catch (error) {
-      console.error('Failed to delete load:', error)
-      alert('Failed to delete load')
+      await db.addToQueue({
+        name: assignment.studentName,
+        weight: assignment.studentWeight,
+        jumpType: assignment.jumpType,
+        tandemWeightTax: assignment.tandemWeightTax || 0,
+        tandemHandcam: assignment.tandemHandcam || false,
+        affLevel: assignment.affLevel,
+        outsideVideo: assignment.hasOutsideVideo,
+        isRequest: false
+      }, priorityTimestamp)
     }
+    
+    await deleteLoad(loadId)
+  } catch (error) {
+    console.error('Failed to delete load:', error)
+    alert('Failed to delete load')
   }
+}
   
   const handleDelayLoad = async (loadId: string, minutes: number) => {
     try {
@@ -460,42 +483,84 @@ export default function LoadBuilderPage() {
               </div>
               
               {/* Queue List */}
-              <div className="space-y-2 max-h-[600px] overflow-y-auto">
-                {queueLoading ? (
-                  <div className="text-center py-8 text-slate-400">Loading queue...</div>
-                ) : filteredQueue.length === 0 ? (
-                  <div className="text-center py-8 text-slate-400">
-                    <p className="text-sm">Queue is empty</p>
-                  </div>
-                ) : (
-                  filteredQueue.map((student) => (
-                    <div
-                      key={student.id}
-                      draggable
-                      onDragStart={() => handleDragStart('student', student.id)}
-                      onDragEnd={handleDragEnd}
-                      className="bg-slate-700/50 p-3 rounded-lg cursor-move hover:bg-slate-700 transition-all border border-slate-600"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-white font-semibold">{student.name}</span>
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                          student.jumpType === 'tandem' 
-                            ? 'bg-blue-500 text-white' 
-                            : 'bg-purple-500 text-white'
-                        }`}>
-                          {student.jumpType === 'tandem' ? 'TANDEM' : student.affLevel?.toUpperCase() || 'AFF'}
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        {student.weight} lbs
-                        {student.tandemWeightTax > 0 && ` • +${student.tandemWeightTax} tax`}
-                        {student.tandemHandcam && ' • 📹 Handcam'}
-                        {student.outsideVideo && ' • 🎥 Outside'}
-                      </div>
-                    </div>
-                  ))
-                )}
+<div className="space-y-2 max-h-[600px] overflow-y-auto">
+  {queueLoading ? (
+    <div className="text-center py-8 text-slate-400">Loading queue...</div>
+  ) : filteredQueue.length === 0 ? (
+    <div className="text-center py-8 text-slate-400">
+      <p className="text-sm">Queue is empty</p>
+    </div>
+  ) : (
+    <>
+      {/* Render Groups */}
+      {groupedStudents.map((group) => {
+        const groupStudents = filteredQueue.filter(s => group.studentIds.includes(s.id))
+        const totalCapacity = groupStudents.length * 2 + groupStudents.filter(s => s.outsideVideo).length
+        
+        return (
+          <div
+            key={group.id}
+            className="bg-gradient-to-br from-purple-500/20 to-blue-500/20 border-2 border-purple-500/50 rounded-lg p-3"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-bold text-white">👥 {group.name}</div>
+              <div className="text-xs text-slate-400">
+                {groupStudents.length} students • {totalCapacity} slots
               </div>
+            </div>
+            <div className="space-y-1">
+              {groupStudents.map((student) => (
+                <div
+                  key={student.id}
+                  draggable
+                  onDragStart={() => handleDragStart('student', student.id)}
+                  onDragEnd={handleDragEnd}
+                  className="bg-slate-800/50 p-2 rounded cursor-move hover:bg-slate-800 transition-all text-xs"
+                >
+                  <div className="text-white font-semibold">{student.name}</div>
+                  <div className="text-slate-400">
+                    {student.jumpType.toUpperCase()} • {student.weight} lbs
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Separator if there are both groups and individuals */}
+      {groupedStudents.length > 0 && individualStudents.length > 0 && (
+        <div className="border-t border-slate-600 my-3"></div>
+      )}
+
+      {/* Render Individual Students */}
+      {individualStudents.map((student) => (
+        <div
+          key={student.id}
+          draggable
+          onDragStart={() => handleDragStart('student', student.id)}
+          onDragEnd={handleDragEnd}
+          className="bg-slate-700/50 p-3 rounded-lg cursor-move hover:bg-slate-700 transition-all border border-slate-600"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-white font-semibold">{student.name}</span>
+            <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+              student.jumpType === 'tandem' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-purple-500 text-white'
+            }`}>
+              {student.jumpType === 'tandem' ? 'T' : 'AFF'}
+            </span>
+          </div>
+          <div className="text-xs text-slate-400">
+            {student.weight} lbs
+            {student.jumpType === 'aff' && student.affLevel && ` • ${student.affLevel}`}
+          </div>
+        </div>
+      ))}
+    </>
+  )}
+</div>
             </div>
           </div>
         </div>
