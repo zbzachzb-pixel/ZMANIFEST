@@ -601,109 +601,131 @@ export class FirebaseService implements DatabaseService {
     return unsubscribe
   }
   
-  // ==================== SETTINGS (NEW) ====================
+// ==================== SETTINGS (NEW) ====================
+// Replace the entire SETTINGS section in your firebase.ts with this code
+// This goes after the PERIODS section and before the BULK section
+
+async getSettings(): Promise<AppSettings> {
+  const settingsRef = ref(this.db, 'settings')
+  const snapshot = await get(settingsRef)
   
-  async getSettings(): Promise<AppSettings> {
-    const settingsRef = ref(this.db, 'settings')
-    const snapshot = await get(settingsRef)
-    
-    if (snapshot.exists()) {
-      return snapshot.val() as AppSettings
+  if (snapshot.exists()) {
+    return snapshot.val() as AppSettings
+  }
+  
+  // Return default settings if none exist
+  const defaultSettings: AppSettings = {
+    darkMode: false,
+    autoAssign: {
+      enabled: false,
+      delay: 5,
+      skipRequests: true,
+      batchMode: false,
+      batchSize: 3
+    },
+    loadScheduling: {
+      minutesBetweenLoads: 20,
+      instructorCycleTime: 40,
+      defaultPlaneCapacity: 18
     }
-    
-    // Return default settings if none exist
-    const defaultSettings: AppSettings = {
-      darkMode: false,
-      autoAssign: {
-        enabled: false,
-        delay: 5,
-        skipRequests: true,
-        batchMode: false,
-        batchSize: 3
-      },
-      loadScheduling: {
+  }
+  
+  // Save default settings to Firebase
+  await set(settingsRef, defaultSettings)
+  return defaultSettings
+}
+
+async updateSettings(settings: Partial<AppSettings>): Promise<void> {
+  const settingsRef = ref(this.db, 'settings')
+  const cleanedSettings = this.cleanData(settings)
+  await update(settingsRef, cleanedSettings)
+}
+
+async updateAutoAssignSettings(settings: Partial<AutoAssignSettings>): Promise<void> {
+  const autoAssignRef = ref(this.db, 'settings/autoAssign')
+  const cleanedSettings = this.cleanData(settings)
+  await update(autoAssignRef, cleanedSettings)
+}
+
+async updateLoadSchedulingSettings(settings: Partial<LoadSchedulingSettings>): Promise<void> {
+  const loadSchedulingRef = ref(this.db, 'settings/loadScheduling')
+  const cleanedSettings = this.cleanData(settings)
+  await update(loadSchedulingRef, cleanedSettings)
+}
+
+async updateDarkMode(enabled: boolean): Promise<void> {
+  const darkModeRef = ref(this.db, 'settings/darkMode')
+  await set(darkModeRef, enabled)
+}
+
+subscribeToSettings(callback: (settings: AppSettings) => void): () => void {
+  const settingsRef = ref(this.db, 'settings')
+  const unsubscribe = onValue(settingsRef, async (snapshot) => {
+    if (snapshot.exists()) {
+      callback(snapshot.val() as AppSettings)
+    } else {
+      // Initialize with default settings if they don't exist
+      const defaultSettings: AppSettings = {
+        darkMode: false,
+        autoAssign: {
+          enabled: false,
+          delay: 5,
+          skipRequests: true,
+          batchMode: false,
+          batchSize: 3
+        },
+        loadScheduling: {
+          minutesBetweenLoads: 20,
+          instructorCycleTime: 40,
+          defaultPlaneCapacity: 18
+        }
+      }
+      await set(settingsRef, defaultSettings)
+      callback(defaultSettings)
+    }
+  })
+  return unsubscribe
+}
+
+// Legacy/convenience methods for backwards compatibility
+async getLoadSchedulingSettings(): Promise<LoadSchedulingSettings> {
+  const settings = await this.getSettings()
+  return settings.loadScheduling
+}
+
+async saveLoadSchedulingSettings(settings: LoadSchedulingSettings): Promise<void> {
+  await this.updateLoadSchedulingSettings(settings)
+}
+
+// ✅ NEW METHOD - This was missing and causing the build error
+subscribeToLoadSchedulingSettings(callback: (settings: LoadSchedulingSettings) => void): () => void {
+  const loadSchedulingRef = ref(this.db, 'settings/loadScheduling')
+  const unsubscribe = onValue(loadSchedulingRef, async (snapshot) => {
+    if (snapshot.exists()) {
+      callback(snapshot.val() as LoadSchedulingSettings)
+    } else {
+      // Initialize with default settings if they don't exist
+      const defaultSettings: LoadSchedulingSettings = {
         minutesBetweenLoads: 20,
         instructorCycleTime: 40,
         defaultPlaneCapacity: 18
       }
+      await set(loadSchedulingRef, defaultSettings)
+      callback(defaultSettings)
     }
-    
-    // Save default settings to Firebase
-    await set(settingsRef, defaultSettings)
-    return defaultSettings
-  }
-  
-  async updateSettings(settings: Partial<AppSettings>): Promise<void> {
-    const settingsRef = ref(this.db, 'settings')
-    const cleanedSettings = this.cleanData(settings)
-    await update(settingsRef, cleanedSettings)
-  }
-  
-  async updateAutoAssignSettings(settings: Partial<AutoAssignSettings>): Promise<void> {
-    const autoAssignRef = ref(this.db, 'settings/autoAssign')
-    const cleanedSettings = this.cleanData(settings)
-    await update(autoAssignRef, cleanedSettings)
-  }
-  
-  async updateLoadSchedulingSettings(settings: Partial<LoadSchedulingSettings>): Promise<void> {
-    const loadSchedulingRef = ref(this.db, 'settings/loadScheduling')
-    const cleanedSettings = this.cleanData(settings)
-    await update(loadSchedulingRef, cleanedSettings)
-  }
-  
-  async updateDarkMode(enabled: boolean): Promise<void> {
-    const darkModeRef = ref(this.db, 'settings/darkMode')
-    await set(darkModeRef, enabled)
-  }
-  
-  subscribeToSettings(callback: (settings: AppSettings) => void): () => void {
-    const settingsRef = ref(this.db, 'settings')
-    const unsubscribe = onValue(settingsRef, async (snapshot) => {
-      if (snapshot.exists()) {
-        callback(snapshot.val() as AppSettings)
-      } else {
-        // Initialize with default settings if they don't exist
-        const defaultSettings: AppSettings = {
-          darkMode: false,
-          autoAssign: {
-            enabled: false,
-            delay: 5,
-            skipRequests: true,
-            batchMode: false,
-            batchSize: 3
-          },
-          loadScheduling: {
-            minutesBetweenLoads: 20,
-            instructorCycleTime: 40,
-            defaultPlaneCapacity: 18
-          }
-        }
-        await set(settingsRef, defaultSettings)
-        callback(defaultSettings)
-      }
-    })
-    return unsubscribe
-  }
-  
-  // Legacy/convenience methods for backwards compatibility
-  async getLoadSchedulingSettings(): Promise<LoadSchedulingSettings> {
-    const settings = await this.getSettings()
-    return settings.loadScheduling
-  }
-  
-  async saveLoadSchedulingSettings(settings: LoadSchedulingSettings): Promise<void> {
-    await this.updateLoadSchedulingSettings(settings)
-  }
-  
-  async getAutoAssignSettings(): Promise<AutoAssignSettings> {
-    const settings = await this.getSettings()
-    return settings.autoAssign
-  }
-  
-  async getDarkMode(): Promise<boolean> {
-    const settings = await this.getSettings()
-    return settings.darkMode
-  }
+  })
+  return unsubscribe
+}
+
+async getAutoAssignSettings(): Promise<AutoAssignSettings> {
+  const settings = await this.getSettings()
+  return settings.autoAssign
+}
+
+async getDarkMode(): Promise<boolean> {
+  const settings = await this.getSettings()
+  return settings.darkMode
+}
   
   // ==================== BULK ====================
   

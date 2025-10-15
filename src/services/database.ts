@@ -92,13 +92,20 @@ export interface DatabaseService {
   endPeriod(id: string, finalBalances: Record<string, number>, finalStats: any): Promise<void>
   subscribeToPeriods(callback: (periods: Period[]) => void): () => void
   
-  // ==================== SETTINGS (NEW) ====================
+  // ==================== SETTINGS ====================
   getSettings(): Promise<AppSettings>
   updateSettings(settings: Partial<AppSettings>): Promise<void>
   updateAutoAssignSettings(settings: Partial<AutoAssignSettings>): Promise<void>
   updateLoadSchedulingSettings(settings: Partial<LoadSchedulingSettings>): Promise<void>
   updateDarkMode(enabled: boolean): Promise<void>
   subscribeToSettings(callback: (settings: AppSettings) => void): () => void
+  
+  // Legacy/convenience methods for backwards compatibility
+  getLoadSchedulingSettings(): Promise<LoadSchedulingSettings>
+  saveLoadSchedulingSettings(settings: LoadSchedulingSettings): Promise<void>
+  subscribeToLoadSchedulingSettings(callback: (settings: LoadSchedulingSettings) => void): () => void
+  getAutoAssignSettings(): Promise<AutoAssignSettings>
+  getDarkMode(): Promise<boolean>
   
   // ==================== BULK ====================
   getFullState(): Promise<DatabaseState>

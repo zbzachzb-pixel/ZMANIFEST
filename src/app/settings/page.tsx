@@ -1,4 +1,4 @@
-// src/app/settings/page.tsx - FIXED
+// src/app/settings/page.tsx - COMPLETE FIXED VERSION
 'use client'
 
 import React, { useState, useEffect } from 'react'
@@ -91,9 +91,6 @@ export default function SettingsPage() {
     const newSettings = { ...loadSettings, ...updates }
     setLoadSettings(newSettings)
     localStorage.setItem('loadSchedulingSettings', JSON.stringify(newSettings))
-    
-    // Note: If you need to save to Firebase, add a method to DatabaseService
-    // For now, just save to localStorage
   }
   
   const handleExport = async () => {
@@ -125,7 +122,6 @@ export default function SettingsPage() {
       const data = JSON.parse(text)
       
       if (confirm('⚠️ This will replace ALL current data. Are you sure?')) {
-        // FIXED: Changed from db.importState to db.restoreFullState
         await db.restoreFullState(data)
         alert('✅ Data imported successfully!')
         window.location.reload()
@@ -207,17 +203,17 @@ export default function SettingsPage() {
                 <input
                   type="number"
                   min="10"
-                  max="30"
+                  max="25"
                   value={loadSettings.defaultPlaneCapacity}
                   onChange={(e) => handleLoadSettingsChange({ defaultPlaneCapacity: parseInt(e.target.value) })}
                   className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                 />
-                <p className="text-sm text-slate-400 mt-1">Default airplane capacity (default: 18 seats)</p>
+                <p className="text-sm text-slate-400 mt-1">Default capacity for new loads (default: 18)</p>
               </div>
             </div>
           </div>
           
-          {/* Auto-Assignment */}
+          {/* Auto-Assign */}
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
             <h2 className="text-2xl font-bold text-white mb-6">🤖 Auto-Assignment</h2>
             
@@ -376,7 +372,14 @@ export default function SettingsPage() {
       </div>
       
       {showEndPeriodModal && (
-        <EndPeriodModal onClose={() => setShowEndPeriodModal(false)} />
+        <EndPeriodModal 
+          period={period}
+          onClose={() => setShowEndPeriodModal(false)}
+          onSuccess={() => {
+            setShowEndPeriodModal(false)
+            window.location.reload()
+          }}
+        />
       )}
     </div>
   )

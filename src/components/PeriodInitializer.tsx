@@ -22,8 +22,7 @@ export function PeriodInitializer({ children }: { children: React.ReactNode }) {
           await create({
             name: `Period 1 - ${now.toLocaleDateString()}`,
             start: now,
-            end: twoWeeksLater,
-            status: 'active'
+            end: twoWeeksLater
           })
           
           console.log('Initial period created successfully')

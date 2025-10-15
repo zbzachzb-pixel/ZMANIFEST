@@ -106,9 +106,9 @@ export function EndPeriodModal({ period, onClose, onSuccess }: EndPeriodModalPro
       await db.createPeriod({
         name: newPeriodName.trim(),
         start: now,
-        end: twoWeeksLater,
-        status: 'active'
+        end: twoWeeksLater
       })
+
       
       onSuccess()
       onClose()
