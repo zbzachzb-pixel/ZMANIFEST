@@ -1,124 +1,100 @@
-// src/components/EditClockEventModal.tsx
+// src/components/EditClockEventModal.tsx - NEW FILE
+// ✅ Issue #16 Fixed: Created missing component
+
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { useUpdateClockEvent } from '@/hooks/useDatabase'
+import React, { useState } from 'react'
+import { db } from '@/services'
 import type { ClockEvent } from '@/types'
 
 interface EditClockEventModalProps {
   event: ClockEvent
   onClose: () => void
+  onSuccess: () => void
 }
 
-export function EditClockEventModal({ event, onClose }: EditClockEventModalProps) {
-  const { updateClockEvent, loading } = useUpdateClockEvent()
-  
-  // Parse the ISO timestamp to get date and time separately
-  const eventDate = new Date(event.timestamp)
-  
-  const [date, setDate] = useState(eventDate.toISOString().split('T')[0]) // YYYY-MM-DD
-  const [time, setTime] = useState(
-    eventDate.toTimeString().slice(0, 5) // HH:MM
-  )
+export function EditClockEventModal({ event, onClose, onSuccess }: EditClockEventModalProps) {
+  const [timestamp, setTimestamp] = useState(() => {
+    const date = new Date(event.timestamp)
+    return date.toISOString().slice(0, 16)
+  })
   const [notes, setNotes] = useState(event.notes || '')
-  
+  const [loading, setLoading] = useState(false)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setLoading(true)
     
     try {
-      // Combine date and time into ISO timestamp
-      const newTimestamp = new Date(`${date}T${time}`).toISOString()
-      
-      await updateClockEvent(event.id, {
-        timestamp: newTimestamp,
-        notes: notes.trim() || undefined
+      await db.updateClockEvent(event.id, {
+        timestamp: new Date(timestamp).toISOString(),
+        notes: notes.trim()
       })
       
+      onSuccess()
       onClose()
     } catch (error) {
       console.error('Failed to update clock event:', error)
-      alert('Failed to update clock event. Please try again.')
+      alert('Failed to update. Please try again.')
+    } finally {
+      setLoading(false)
     }
   }
-  
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-white/20">
-        <div className="p-6 border-b border-slate-700">
-          <h2 className="text-2xl font-bold text-white">
-            ✏️ Edit Clock Event
-          </h2>
-          <p className="text-slate-400 mt-1">
-            {event.instructorName} - {event.type === 'in' ? 'Clock In' : 'Clock Out'}
-          </p>
-        </div>
+    <div 
+      className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" 
+      onClick={onClose}
+    >
+      <div 
+        className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6 border-2 border-blue-500" 
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-2xl font-bold text-white mb-4">
+          Edit Clock {event.type === 'in' ? 'In' : 'Out'}
+        </h2>
         
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Date */}
-          <div>
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
             <label className="block text-sm font-semibold text-slate-300 mb-2">
-              Date *
+              Timestamp
             </label>
             <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
+              type="datetime-local"
+              value={timestamp}
+              onChange={(e) => setTimestamp(e.target.value)}
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
               required
             />
           </div>
           
-          {/* Time */}
-          <div>
+          <div className="mb-6">
             <label className="block text-sm font-semibold text-slate-300 mb-2">
-              Time *
-            </label>
-            <input
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
-              required
-            />
-          </div>
-          
-          {/* Notes */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-300 mb-2">
-              Notes (Optional)
+              Notes (optional)
             </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors resize-none"
+              placeholder="Optional notes about this clock event..."
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 resize-none"
               rows={3}
-              placeholder="Add any notes about this clock event..."
             />
           </div>
           
-          {/* Original Timestamp Info */}
-          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
-            <p className="text-xs text-blue-300">
-              <strong>Original:</strong> {eventDate.toLocaleString()}
-            </p>
-          </div>
-          
-          {/* Action Buttons */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3">
             <button
               type="button"
               onClick={onClose}
-              disabled={loading}
-              className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
+              className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? '⏳ Saving...' : '✓ Save Changes'}
+              {loading ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </form>

@@ -1,5 +1,4 @@
-// src/components/GroupCard.tsx - FIXED VERSION
-
+// src/components/GroupCard.tsx
 'use client'
 
 import React, { useState } from 'react'
@@ -7,7 +6,8 @@ import { useUpdateGroup, useDeleteGroup } from '@/hooks/useDatabase'
 import type { Group, QueueStudent } from '@/types'
 
 interface GroupCardProps {
-  group: Group & { students?: QueueStudent[] }  // 🔥 Accept students directly
+  group: Group
+  students?: QueueStudent[]  // Optional to handle when not passed
   onAssignGroup: (groupId: string) => void
   draggable?: boolean
   onDragStart?: (e: React.DragEvent, groupId: string) => void
@@ -15,6 +15,7 @@ interface GroupCardProps {
 
 export function GroupCard({ 
   group, 
+  students = [],  // 🔧 FIXED: Default value prevents undefined error
   onAssignGroup, 
   draggable = false,
   onDragStart 
@@ -24,10 +25,10 @@ export function GroupCard({
   const [showEdit, setShowEdit] = useState(false)
   const [editName, setEditName] = useState(group.name)
 
-  // 🔥 FIXED: Use students passed directly from parent instead of fetching
-  const students = group.students || []
+  // Calculate load capacity
+  // Each student needs 2 slots, plus 1 extra if they have outside video
   const totalCapacity = students.length * 2 + students.filter(s => s.outsideVideo).length
-  const overCapacity = totalCapacity > 18
+  const isOverCapacity = totalCapacity > 18
 
   const handleSaveName = async () => {
     if (!editName.trim()) return
@@ -36,13 +37,13 @@ export function GroupCard({
       setShowEdit(false)
     } catch (error) {
       console.error('Failed to update group:', error)
-      alert('Failed to update group')
+      alert('Failed to update group name')
     }
   }
 
   const handleDelete = async () => {
     const studentCount = students.length
-    const message = `Delete group "${group.name}"?\n\n${studentCount} student${studentCount > 1 ? 's' : ''} will remain in the queue individually.`
+    const message = `Delete group "${group.name}"?\n\n${studentCount} student${studentCount !== 1 ? 's' : ''} will remain in the queue individually.`
     
     if (!confirm(message)) return
     
@@ -81,6 +82,7 @@ export function GroupCard({
 
   const handleDragStart = (e: React.DragEvent) => {
     if (onDragStart) {
+      e.dataTransfer.effectAllowed = 'move'
       onDragStart(e, group.id)
     }
   }
@@ -96,7 +98,7 @@ export function GroupCard({
       draggable={draggable}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
-      className={`bg-gradient-to-br from-purple-500/20 to-blue-500/20 border-2 border-purple-500/50 rounded-lg p-4 ${
+      className={`bg-gradient-to-br from-purple-500/20 to-blue-500/20 border-2 border-purple-500/50 rounded-xl p-4 ${
         draggable ? 'cursor-move hover:scale-105 hover:shadow-xl' : ''
       } transition-all`}
     >
@@ -109,7 +111,7 @@ export function GroupCard({
                 type="text"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white text-sm flex-1"
+                className="bg-slate-800 border border-slate-600 rounded px-3 py-2 text-white text-sm flex-1 focus:outline-none focus:border-purple-500"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleSaveName()
@@ -121,7 +123,7 @@ export function GroupCard({
               />
               <button
                 onClick={handleSaveName}
-                className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
+                className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm font-bold transition-colors"
               >
                 ✓
               </button>
@@ -130,7 +132,7 @@ export function GroupCard({
                   setEditName(group.name)
                   setShowEdit(false)
                 }}
-                className="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1 rounded text-sm"
+                className="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1 rounded text-sm font-bold transition-colors"
               >
                 ✕
               </button>
@@ -140,7 +142,7 @@ export function GroupCard({
               <span className="font-bold text-purple-300 text-lg">👥 {group.name}</span>
               <button
                 onClick={() => setShowEdit(true)}
-                className="text-slate-400 hover:text-slate-300 text-sm"
+                className="text-slate-400 hover:text-slate-300 text-sm transition-colors"
                 title="Edit group name"
               >
                 ✏️
@@ -148,53 +150,87 @@ export function GroupCard({
             </div>
           )}
           <div className="text-xs text-slate-400 mt-1">
-            {students.length} students • Capacity: {' '}
-            <span className={overCapacity ? 'text-red-400 font-bold' : 'text-green-400'}>
+            {students.length} student{students.length !== 1 ? 's' : ''} • Capacity: {' '}
+            <span className={isOverCapacity ? 'text-red-400 font-bold' : 'text-green-400'}>
               {totalCapacity} slots
             </span>
-            {overCapacity && <span className="text-red-400 ml-2">⚠️ Over capacity!</span>}
+            {isOverCapacity && <span className="text-red-400 ml-2">⚠️ Over 18!</span>}
           </div>
         </div>
         <button
           onClick={handleDelete}
           disabled={loading}
-          className="text-red-400 hover:text-red-300 hover:bg-red-500/20 px-3 py-2 rounded transition-all ml-2"
+          className="text-red-400 hover:text-red-300 hover:bg-red-500/20 px-3 py-2 rounded transition-all disabled:opacity-50"
           title="Delete entire group"
         >
           🗑️
         </button>
       </div>
 
-      {/* Students */}
-      <div className="space-y-2 mb-3">
-        {students.map(student => (
-          <div key={student.id} className="bg-slate-800/50 rounded-lg p-2 flex items-center justify-between hover:bg-slate-800/70 transition-colors group">
-            <div className="flex-1">
-              <div className="text-sm font-semibold text-white">{student.name}</div>
-              <div className="text-xs text-slate-400">
-                {student.jumpType.toUpperCase()} • {student.weight} lbs
-                {student.outsideVideo && <span className="text-purple-400 ml-2">📹</span>}
-                {student.affLevel && <span className="text-blue-400 ml-2">({student.affLevel})</span>}
-              </div>
-            </div>
-            <button
-              onClick={() => handleRemoveStudent(student.id)}
-              className="text-red-400 hover:text-red-300 hover:bg-red-500/20 text-sm px-2 py-1 rounded transition-all opacity-70 group-hover:opacity-100"
-              title="Remove from group"
+      {/* Students List */}
+      {students.length > 0 ? (
+        <div className="space-y-2 mb-3">
+          {students.map(student => (
+            <div 
+              key={student.id} 
+              className="bg-slate-800/50 rounded-lg p-3 flex items-center justify-between hover:bg-slate-800/70 transition-colors group"
             >
-              ✕ Remove
-            </button>
-          </div>
-        ))}
-      </div>
+              <div className="flex-1">
+                <div className="text-sm font-semibold text-white">{student.name}</div>
+                <div className="text-xs text-slate-400 flex items-center gap-2">
+                  <span>{student.jumpType.toUpperCase()}</span>
+                  <span>•</span>
+                  <span>{student.weight} lbs</span>
+                  {student.outsideVideo && (
+                    <>
+                      <span>•</span>
+                      <span className="text-purple-400">📹 Video</span>
+                    </>
+                  )}
+                  {student.affLevel && (
+                    <>
+                      <span>•</span>
+                      <span className="text-blue-400">({student.affLevel})</span>
+                    </>
+                  )}
+                  {student.tandemWeightTax && student.tandemWeightTax > 0 && (
+                    <>
+                      <span>•</span>
+                      <span className="text-orange-400">+{student.tandemWeightTax} tax</span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => handleRemoveStudent(student.id)}
+                className="text-red-400 hover:text-red-300 hover:bg-red-500/20 text-sm px-2 py-1 rounded transition-all opacity-0 group-hover:opacity-100"
+                title="Remove from group"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-4 text-slate-400 text-sm mb-3">
+          No students in this group
+        </div>
+      )}
 
       {/* Action Button */}
-      <button
-        onClick={() => onAssignGroup(group.id)}
-        className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-      >
-        ✈️ Assign Entire Group to Load
-      </button>
+      {students.length > 0 && (
+        <button
+          onClick={() => onAssignGroup(group.id)}
+          disabled={isOverCapacity}
+          className={`w-full font-bold py-3 px-4 rounded-lg transition-colors ${
+            isOverCapacity 
+              ? 'bg-slate-600 text-slate-400 cursor-not-allowed' 
+              : 'bg-blue-500 hover:bg-blue-600 text-white'
+          }`}
+        >
+          {isOverCapacity ? '⚠️ Over Capacity' : '✈️ Assign Entire Group to Load'}
+        </button>
+      )}
     </div>
   )
 }

@@ -301,23 +301,145 @@ export function LoadBuilderCard({
     })
   }
   
-  const autoSelectInstructors = useMemo(() => {
-    if (!showAssignModal) return {}
-    const selections: Record<string, {instructorId: string, videoInstructorId?: string}> = {}
-    loadAssignments.filter(a => !a.instructorId).forEach(assignment => {
-      const qualifiedInstructors = getQualifiedInstructors(assignment)
-      const videoInstructors = getVideoInstructors()
-      if (qualifiedInstructors.length > 0) {
-        selections[assignment.id] = {
-          instructorId: qualifiedInstructors[0].id
-        }
-        if (assignment.hasOutsideVideo && videoInstructors.length > 0) {
-          selections[assignment.id].videoInstructorId = videoInstructors[0].id
-        }
+  // 🔧 CRITICAL FIX: Replace autoSelectInstructors in LoadBuilderCard.tsx
+// This version checks instructors on ALL loads, not just the current load
+
+const autoSelectInstructors = useMemo(() => {
+  if (!showAssignModal) return {}
+  
+  const selections: Record<string, {instructorId: string, videoInstructorId?: string}> = {}
+  
+  // 🔧 CRITICAL FIX: Track instructors used across ALL loads, not just this one
+  const usedMainInstructors = new Set<string>()
+  const usedVideoInstructors = new Set<string>()
+  
+  // 🔧 NEW: Check ALL loads to see which instructors are already assigned
+  allLoads.forEach(otherLoad => {
+    // Skip completed loads - those instructors are available again
+    if (otherLoad.status === 'completed') return
+    
+    const assignments = otherLoad.assignments || []
+    assignments.forEach(a => {
+      if (a.instructorId) {
+        usedMainInstructors.add(a.instructorId)
+      }
+      if (a.videoInstructorId) {
+        usedVideoInstructors.add(a.videoInstructorId)
+        usedMainInstructors.add(a.videoInstructorId)  // ⚡ NEW: Video instructors can't be main instructors either
       }
     })
-    return selections
-  }, [showAssignModal, loadAssignments])
+  })
+  
+  console.log('🔍 Starting auto-select for', load.name)
+  console.log('Instructors already on ANY load:', Array.from(usedMainInstructors))
+  
+  // Process each unassigned student sequentially
+  const unassignedAssignments = loadAssignments.filter(a => !a.instructorId)
+  
+  unassignedAssignments.forEach((assignment, index) => {
+    console.log(`\n--- Processing student ${index + 1}: ${assignment.studentName} ---`)
+    
+    // Get qualified instructors
+    const clockedIn = instructors.filter(i => i.clockedIn)
+    
+    // 🔧 CRITICAL FIX: Filter out instructors already used on ANY load
+    const qualified = clockedIn.filter(instructor => {
+      // Skip if already used on ANY load
+      if (usedMainInstructors.has(instructor.id)) {
+        console.log(`⏭️  Skipping ${instructor.name} - already on another load`)
+        return false
+      }
+      
+      const canTandem = (instructor as any).canTandem ?? (instructor as any).tandem
+      const canAFF = (instructor as any).canAFF ?? (instructor as any).aff
+      
+      if (assignment.jumpType === 'tandem' && !canTandem) return false
+      if (assignment.jumpType === 'aff' && !canAFF) return false
+      
+      if (assignment.jumpType === 'tandem' && instructor.tandemWeightLimit) {
+        const totalWeight = assignment.studentWeight + (assignment.tandemWeightTax || 0)
+        if (totalWeight > instructor.tandemWeightLimit) return false
+      }
+      
+      if (assignment.jumpType === 'aff' && instructor.affWeightLimit) {
+        if (assignment.studentWeight > instructor.affWeightLimit) return false
+      }
+      
+      return true
+    })
+    
+    // Sort by balance (lowest first)
+    const sortedQualified = qualified.sort((a, b) => {
+      const balanceA = instructorBalances.get(a.id) || 0
+      const balanceB = instructorBalances.get(b.id) || 0
+      return balanceA - balanceB
+    })
+    
+    if (sortedQualified.length > 0) {
+      const selectedInstructor = sortedQualified[0]
+      console.log(`✅ Selected ${selectedInstructor.name} (balance: $${instructorBalances.get(selectedInstructor.id)})`)
+      
+      selections[assignment.id] = {
+        instructorId: selectedInstructor.id
+      }
+      
+      // 🔧 CRITICAL FIX: Mark this instructor as used immediately
+      usedMainInstructors.add(selectedInstructor.id)
+      
+      // Handle video instructor if needed
+      if (assignment.hasOutsideVideo) {
+        // 🔧 CRITICAL FIX: Filter out video instructors used on ANY load
+        const videoQualified = instructors.filter(i => {
+          const canVideo = (i as any).canVideo ?? (i as any).video
+          
+          // Must be clocked in and can do video
+          if (!i.clockedIn || !canVideo) return false
+          
+          // Can't be the same as main instructor
+          if (i.id === selectedInstructor.id) return false
+          
+          // 🔧 CRITICAL FIX: Can't be already used as video on ANY load
+          if (usedVideoInstructors.has(i.id)) {
+            console.log(`⏭️  Skipping video instructor ${i.name} - already on another load`)
+            return false
+          }
+          
+          // ⚡ NEW: Can't be used as a main instructor either (on this load or any other)
+          if (usedMainInstructors.has(i.id)) {
+            console.log(`⏭️  Skipping video instructor ${i.name} - already assigned as main instructor`)
+            return false
+          }
+          
+          return true
+        }).sort((a, b) => {
+          const balanceA = instructorBalances.get(a.id) || 0
+          const balanceB = instructorBalances.get(b.id) || 0
+          return balanceA - balanceB
+        })
+        
+        if (videoQualified.length > 0) {
+          const selectedVideo = videoQualified[0]
+          console.log(`✅ Selected video instructor ${selectedVideo.name} (balance: ${instructorBalances.get(selectedVideo.id)})`)
+          
+          selections[assignment.id].videoInstructorId = selectedVideo.id
+          
+          // 🔧 CRITICAL FIX: Mark video instructor as used for BOTH video AND main
+          usedVideoInstructors.add(selectedVideo.id)
+          usedMainInstructors.add(selectedVideo.id)  // ⚡ NEW: Also block from main instructor selection
+        } else {
+          console.log('⚠️  No video instructors available')
+        }
+      }
+    } else {
+      console.log(`⚠️  No qualified instructors available for ${assignment.studentName}`)
+    }
+  })
+  
+  console.log('\n✅ Auto-selection complete for', load.name)
+  console.log('Final selections:', selections)
+  
+  return selections
+}, [showAssignModal, loadAssignments, instructors, instructorBalances, allLoads, load.name])
   
   useEffect(() => {
     if (showAssignModal && Object.keys(autoSelectInstructors).length > 0) {

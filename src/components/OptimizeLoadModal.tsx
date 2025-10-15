@@ -2,7 +2,7 @@
 'use client'
 
 import React, { useState, useMemo } from 'react'
-import { useQueue, useActiveInstructors, useAssignments, useUpdateLoad } from '@/hooks/useDatabase'
+import { useQueue, useActiveInstructors, useAssignments, useUpdateLoad, useLoads } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { getCurrentPeriod } from '@/lib/utils'
 import type { Load, QueueStudent, Instructor, Assignment } from '@/types'
@@ -53,6 +53,7 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
   const { data: queue } = useQueue()
   const { data: allInstructors } = useActiveInstructors()
   const { data: assignments } = useAssignments()
+  const { data: allLoads } = useLoads()  // 🔧 NEW: Get all loads
   const { update, loading } = useUpdateLoad()
   const [skipRequests, setSkipRequests] = useState(true)
   
@@ -68,25 +69,47 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
   const availableSeats = load.capacity - totalPeople
   const maxStudents = Math.floor(availableSeats / 2)
   
-  // Get instructors already on this load
-  const instructorsOnLoad = new Set(
-    (load.assignments || []).flatMap(a => {
-      const ids = [a.instructorId]
-      if (a.videoInstructorId) ids.push(a.videoInstructorId)
-      return ids
+  // 🔧 CRITICAL FIX: Get instructors already on ANY load (not just this one)
+  const instructorsOnAnyLoad = useMemo(() => {
+    const usedMain = new Set<string>()
+    const usedVideo = new Set<string>()
+    
+    allLoads.forEach(otherLoad => {
+      // Skip completed loads - those instructors are available
+      if (otherLoad.status === 'completed') return
+      
+      const assignments = otherLoad.assignments || []
+      assignments.forEach(a => {
+        if (a.instructorId) {
+          usedMain.add(a.instructorId)
+        }
+        if (a.videoInstructorId) {
+          usedVideo.add(a.videoInstructorId)
+          usedMain.add(a.videoInstructorId)  // Video instructors also blocked from main
+        }
+      })
     })
-  )
+    
+    return { usedMain, usedVideo }
+  }, [allLoads])
   
   // Generate optimization plan
   const optimizationPlan = useMemo((): OptimizationPlan[] => {
     const plan: OptimizationPlan[] = []
-    const usedInstructors = new Set(instructorsOnLoad)
+    
+    // 🔧 FIXED: Start with instructors on ANY load, not just this one
+    const usedInstructors = new Set(instructorsOnAnyLoad.usedMain)
+    const usedVideoInstructors = new Set(instructorsOnAnyLoad.usedVideo)
+    
     const instructorBalances = new Map<string, number>()
     
     // Calculate initial balances
     clockedInInstructors.forEach(instructor => {
       instructorBalances.set(instructor.id, calculateBalance(instructor, assignments, period))
     })
+    
+    console.log('🎯 Starting optimization for', load.name)
+    console.log('Instructors already on ANY load:', Array.from(usedInstructors))
     
     // Filter queue
     const eligibleStudents = queue.filter(student => {
@@ -97,27 +120,36 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
     for (let i = 0; i < Math.min(maxStudents, eligibleStudents.length); i++) {
       const student = eligibleStudents[i]
       
+      console.log(`\n--- Processing student ${i + 1}: ${student.name} ---`)
+      
       // Find qualified instructors
       const qualifiedInstructors = clockedInInstructors
         .filter(instructor => {
-          // Check if already used
-          if (usedInstructors.has(instructor.id)) return false
+          // 🔧 CRITICAL FIX: Check if already used on ANY load
+          if (usedInstructors.has(instructor.id)) {
+            console.log(`⏭️  Skipping ${instructor.name} - already on another load`)
+            return false
+          }
           
-          // ✅ FIXED: Check department using correct property names
+          // Check department qualification
           if (student.jumpType === 'tandem' && !instructor.canTandem) return false
           if (student.jumpType === 'aff' && !instructor.canAFF) return false
           if (student.jumpType === 'video' && !instructor.canVideo) return false
           
           // Check weight limits
+          const totalWeight = student.weight + (student.tandemWeightTax || 0)
           if (student.jumpType === 'tandem' && instructor.tandemWeightLimit) {
-            if (student.weight > instructor.tandemWeightLimit) return false
+            if (totalWeight > instructor.tandemWeightLimit) return false
           }
           if (student.jumpType === 'aff' && instructor.affWeightLimit) {
             if (student.weight > instructor.affWeightLimit) return false
           }
           
           // Check AFF locked
-          if (student.jumpType === 'aff' && instructor.affLocked) return false
+          if (student.jumpType === 'aff' && instructor.affLocked) {
+            const isTheirStudent = instructor.affStudents?.some(s => s.name === student.name)
+            if (!isTheirStudent) return false
+          }
           
           return true
         })
@@ -127,35 +159,66 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
           return balanceA - balanceB
         })
       
-      if (qualifiedInstructors.length === 0) continue
+      if (qualifiedInstructors.length === 0) {
+        console.log(`⚠️  No qualified instructors for ${student.name}`)
+        continue
+      }
       
       const bestInstructor = qualifiedInstructors[0]
+      console.log(`✅ Selected ${bestInstructor.name} (balance: $${instructorBalances.get(bestInstructor.id)})`)
+      
+      // 🔧 Mark as used immediately
       usedInstructors.add(bestInstructor.id)
       
       // Find video instructor if needed
       let videoInstructor: Instructor | undefined
       if (student.outsideVideo && student.jumpType === 'tandem') {
-        // ✅ FIXED: Use correct property name
-        const videoInstructors = clockedInInstructors.filter(i => 
-          i.canVideo && 
-          i.id !== bestInstructor.id &&
-          !usedInstructors.has(i.id) &&
-          (!i.videoRestricted || 
-            (student.weight >= (i.videoMinWeight || 0) && 
-             student.weight <= (i.videoMaxWeight || 999)))
-        )
+        const videoInstructors = clockedInInstructors.filter(i => {
+          if (!i.canVideo) return false
+          if (i.id === bestInstructor.id) return false
+          
+          // 🔧 CRITICAL FIX: Check both video and main instructor sets
+          if (usedVideoInstructors.has(i.id)) {
+            console.log(`⏭️  Skipping video ${i.name} - already video on another load`)
+            return false
+          }
+          if (usedInstructors.has(i.id)) {
+            console.log(`⏭️  Skipping video ${i.name} - already main on another load`)
+            return false
+          }
+          
+          // Check video weight restrictions
+          if (i.videoRestricted) {
+            const combinedWeight = bestInstructor.bodyWeight + student.weight
+            if (i.videoMinWeight && combinedWeight < i.videoMinWeight) return false
+            if (i.videoMaxWeight && combinedWeight > i.videoMaxWeight) return false
+          }
+          
+          return true
+        }).sort((a, b) => {
+          const balanceA = instructorBalances.get(a.id) || 0
+          const balanceB = instructorBalances.get(b.id) || 0
+          return balanceA - balanceB
+        })
         
         if (videoInstructors.length > 0) {
           videoInstructor = videoInstructors[0]
+          console.log(`✅ Selected video ${videoInstructor.name} (balance: $${instructorBalances.get(videoInstructor.id)})`)
+          
+          // 🔧 CRITICAL FIX: Mark video instructor as used for BOTH roles
+          usedVideoInstructors.add(videoInstructor.id)
           usedInstructors.add(videoInstructor.id)
+        } else {
+          console.log('⚠️  No video instructors available')
         }
       }
       
       plan.push({ student, instructor: bestInstructor, videoInstructor })
     }
     
+    console.log(`\n✅ Optimization complete: ${plan.length} assignments`)
     return plan
-  }, [queue, clockedInInstructors, assignments, period, maxStudents, skipRequests, instructorsOnLoad])
+  }, [queue, clockedInInstructors, assignments, period, maxStudents, skipRequests, instructorsOnAnyLoad, load.name])
   
   const handleOptimize = async () => {
     if (optimizationPlan.length === 0) {
@@ -191,11 +254,11 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
         }),
       }))
       
-      // Update load
+      // Update load with new assignments
       const updatedAssignments = [...(load.assignments || []), ...newAssignments]
       await update(load.id, { assignments: updatedAssignments })
       
-      // Remove students from queue
+      // Remove assigned students from queue
       await Promise.all(
         optimizationPlan.map(plan => db.removeFromQueue(plan.student.id))
       )
@@ -208,57 +271,29 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
   }
   
   return (
-    <div 
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-      onClick={onClose}
-    >
-      <div 
-        className="bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-700"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="sticky top-0 bg-slate-800 border-b border-slate-700 p-6 z-10">
-          <div className="flex justify-between items-center">
-            <div>
-              <h2 className="text-2xl font-bold text-white">
-                🎯 Optimize {load.name}
-              </h2>
-              <p className="text-slate-400 text-sm mt-1">
-                Automatically assign students using best available instructors
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="text-slate-400 hover:text-white text-xl"
-            >
-              ✕
-            </button>
-          </div>
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto border-2 border-purple-500" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6 border-b border-slate-700">
+          <h2 className="text-2xl font-bold text-white">🎯 Optimize Load - {load.name}</h2>
+          <p className="text-sm text-slate-400 mt-1">
+            Available seats: {availableSeats} • Max students: {maxStudents}
+          </p>
         </div>
         
         <div className="p-6 space-y-4">
-          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
-            <p className="text-sm text-slate-300">
-              <strong className="text-white">Available:</strong> {availableSeats} seats ({maxStudents} students max)
-            </p>
-            <p className="text-sm text-slate-300">
-              <strong className="text-white">In Queue:</strong> {queue.length} students
-            </p>
-            <p className="text-sm text-slate-300">
-              <strong className="text-white">Can Assign:</strong> {optimizationPlan.length} students
-            </p>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              id="skipRequests"
-              checked={skipRequests}
-              onChange={(e) => setSkipRequests(e.target.checked)}
-              className="w-5 h-5 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
-            />
-            <label htmlFor="skipRequests" className="text-sm font-semibold text-slate-300">
-              Skip requested jumps (assign only regular students)
+          <div className="bg-slate-700/50 rounded-lg p-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={skipRequests}
+                onChange={(e) => setSkipRequests(e.target.checked)}
+                className="w-5 h-5 rounded bg-slate-600 border-slate-500 text-purple-500"
+              />
+              <span className="text-white font-medium">Skip requested jumps</span>
             </label>
+            <p className="text-xs text-slate-400 mt-1 ml-7">
+              Don't auto-assign students who specifically requested an instructor
+            </p>
           </div>
           
           {optimizationPlan.length === 0 ? (
@@ -271,7 +306,7 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
           ) : (
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-slate-300 mb-2">
-                Assignment Plan:
+                Assignment Plan ({optimizationPlan.length} students):
               </h3>
               {optimizationPlan.map((plan, index) => (
                 <div key={index} className="bg-slate-700/50 rounded-lg p-3 border border-slate-600">
@@ -280,8 +315,8 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
                   </p>
                   <p className="text-xs text-slate-400">
                     {plan.student.jumpType.toUpperCase()} • {plan.student.weight} lbs
-                    {plan.student.isRequest && ' • [REQUEST]'}
-                    {plan.videoInstructor && ` • 📹 ${plan.videoInstructor.name}`}
+                    {plan.student.isRequest && ' • ⭐ [REQUEST]'}
+                    {plan.videoInstructor && ` • 📹 Video: ${plan.videoInstructor.name}`}
                   </p>
                 </div>
               ))}
@@ -301,7 +336,7 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
             disabled={loading || optimizationPlan.length === 0}
             className="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Optimizing...' : `🎯 Optimize (${optimizationPlan.length} students)`}
+            {loading ? '⏳ Optimizing...' : `🎯 Optimize (${optimizationPlan.length} students)`}
           </button>
         </div>
       </div>

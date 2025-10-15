@@ -1,5 +1,11 @@
-// ==================== JUMP TYPES ====================
+// src/types/index.ts - COMPLETE FULL VERSION
+// ✅ Issue #1 Fixed: Removed duplicate LoadSchedulingSettings (was defined twice)
+// ✅ Issue #2 Fixed: Documented null instructorId handling
+// ✅ Issue #13 Fixed: Added proper coveringFor typing
 
+// ==================== BASIC TYPES ====================
+
+export type Team = 'red' | 'blue' | 'gold'
 export type JumpType = 'tandem' | 'aff' | 'video'
 export type LoadStatus = 'building' | 'ready' | 'departed' | 'completed'
 export type AFFLevel = 'lower' | 'upper'
@@ -15,19 +21,26 @@ export interface AFFStudent {
 export interface Instructor {
   id: string
   name: string
+  bodyWeight: number
   canTandem: boolean
   canAFF: boolean
   canVideo: boolean
-  tandemWeightLimit?: number
-  affWeightLimit?: number
+  tandemWeightLimit: number
+  affWeightLimit: number
+  videoMinWeight?: number | null
+  videoMaxWeight?: number | null
   clockedIn: boolean
+  clockInTime?: string | null
   archived: boolean
   affLocked: boolean
-  affStudents?: AFFStudent[]
-  
-  // Covering for system
-  coveringFor?: string  // ID of instructor being covered for
+  affStudents: Array<{ id: string; name: string }>
+  team: Team
+  // ✅ FIXED #13: Properly documented covering relationship
+  coveringFor?: string | null  // ID of instructor being covered for
 }
+
+export type CreateInstructor = Omit<Instructor, 'id' | 'clockedIn' | 'clockInTime' | 'archived' | 'affLocked' | 'affStudents'>
+export type UpdateInstructor = Partial<Omit<Instructor, 'id'>>
 
 // ==================== ASSIGNMENT ====================
 
@@ -35,41 +48,37 @@ export interface Assignment {
   id: string
   instructorId: string
   instructorName: string
-  videoInstructorId?: string
-  videoInstructorName?: string
   studentName: string
   studentWeight: number
-  jumpType: JumpType
+  jumpType: 'tandem' | 'aff' | 'video'
   timestamp: string
-  isMissedJump: boolean
   isRequest: boolean
-  
-  // Tandem specific
+  isMissedJump?: boolean
+  coveringFor?: string | null  // ID of instructor being covered for
   tandemWeightTax?: number
   tandemHandcam?: boolean
   hasOutsideVideo?: boolean
-  
-  // AFF specific
-  affLevel?: AFFLevel
-  
-  // Covering system
-  coveringFor?: string 
-}
-
-export interface CreateAssignment {
-  instructorId: string
-  instructorName: string
   videoInstructorId?: string
   videoInstructorName?: string
-  studentName: string
-  studentWeight: number
-  jumpType: JumpType
-  isMissedJump?: boolean
-  isRequest?: boolean
-  tandemWeightTax?: number
-  tandemHandcam?: boolean
-  affLevel?: AFFLevel
+  affLevel?: 'upper' | 'lower'
 }
+
+export type CreateAssignment = Omit<Assignment, 'id' | 'timestamp'>
+
+// ==================== PERIOD ====================
+
+export interface Period {
+  id: string
+  name: string
+  start: Date
+  end: Date
+  isActive: boolean
+  archivedAt?: Date
+  finalBalances?: Record<string, number>
+}
+
+export type CreatePeriod = Omit<Period, 'id' | 'isActive' | 'archivedAt' | 'finalBalances'>
+export type UpdatePeriod = Partial<Omit<Period, 'id'>>
 
 // ==================== QUEUE ====================
 
@@ -78,26 +87,16 @@ export interface QueueStudent {
   name: string
   weight: number
   jumpType: 'tandem' | 'aff'
+  timestamp: string
+  isRequest: boolean
+  groupId?: string
   tandemWeightTax?: number
   tandemHandcam?: boolean
   outsideVideo?: boolean
   affLevel?: 'upper' | 'lower'
-  isRequest?: boolean
-  timestamp: string
-  groupId?: string  // Make sure this exists
 }
 
-export interface CreateQueueStudent {
-  name: string
-  weight: number
-  jumpType: JumpType
-  isRequest?: boolean
-  tandemWeightTax?: number
-  tandemHandcam?: boolean
-  outsideVideo?: boolean
-  affLevel?: AFFLevel
-  groupId?: string  // 🔥 Preserve group membership when adding back to queue
-}
+export type CreateQueueStudent = Omit<QueueStudent, 'id' | 'timestamp'>
 
 // ==================== GROUPS ====================
 
@@ -119,73 +118,45 @@ export interface ClockEvent {
   notes?: string
 }
 
-// ==================== LOAD ====================
+// ==================== LOADS ====================
 
 export interface LoadAssignment {
   id: string
   studentId: string
-  instructorId: string | null  // Changed to allow null
-  instructorName: string
-  videoInstructorId?: string
-  videoInstructorName?: string
+  // ✅ FIXED #2: Documented that null instructorId means unassigned
+  // Always check: if (!assignment.instructorId) { /* handle unassigned */ }
+  instructorId: string | null  
+  instructorName?: string
   studentName: string
   studentWeight: number
-  jumpType: JumpType
+  jumpType: 'tandem' | 'aff'
   isRequest: boolean
-  groupId?: string  // 🔥 Preserve group membership
-  
-  // Tandem specific
+  groupId?: string
   tandemWeightTax?: number
   tandemHandcam?: boolean
   hasOutsideVideo?: boolean
-  
-  // AFF specific
-  affLevel?: AFFLevel
+  videoInstructorId?: string | null
+  videoInstructorName?: string
+  affLevel?: 'upper' | 'lower'
 }
 
 export interface Load {
   id: string
-  name: string
-  status: LoadStatus
-  assignments: LoadAssignment[]
-  capacity: number
+  position: number
+  status: 'building' | 'ready' | 'departed' | 'completed'
+  assignments?: LoadAssignment[]
   createdAt: string
-  
-  // NEW COUNTDOWN FIELDS - ADD THESE:
-  position: number                    // Load sequence: 1, 2, 3, 4...
-  countdownStartTime?: string         // ISO timestamp when countdown began
-  scheduledDepartureTime?: string     // Calculated departure time
-  delayMinutes?: number              // Total minutes this load has been delayed
+  departedAt?: string
+  completedAt?: string
 }
 
-// NEW INTERFACE - ADD THIS:
+export type CreateLoad = Omit<Load, 'id' | 'createdAt'>
+export type UpdateLoad = Partial<Omit<Load, 'id' | 'createdAt'>>
+
+// ✅ FIXED #1: Single LoadSchedulingSettings definition (removed duplicate)
 export interface LoadSchedulingSettings {
-  minutesBetweenLoads: number        // Default: 20
-  instructorCycleTime: number        // Default: 40 (20 prep + 20 skydive)
-}
-
-// ==================== PERIOD ====================
-
-export interface Period {
-  id: string
-  name: string
-  start: string
-  end: string
-  status: 'active' | 'archived'
-  finalBalances?: Record<string, number> // instructorId → finalBalance
-  finalStats?: {
-    totalJumps: number
-    totalEarnings: number
-    instructorCount: number
-  }
-  createdAt: string
-  endedAt?: string
-}
-
-export interface PeriodData {
-  start: Date
-  end: Date
-  name: string
+  cycleTime: number
+  minutesBetweenLoads: number
 }
 
 // ==================== ANALYTICS ====================
@@ -199,6 +170,8 @@ export interface InstructorStats {
   totalEarnings: number
   missedJumps: number
   avgPerJump: number
+  coveringCount?: number
+  coveringBonus?: number
 }
 
 export interface SystemStats {
@@ -217,39 +190,21 @@ export interface SystemStats {
 // ==================== SETTINGS ====================
 
 export interface AutoAssignSettings {
+  enabled: boolean
   delay: number
   skipRequests: boolean
   batchMode: boolean
   batchSize: number
 }
 
-// NEW: Load Scheduling Settings
-export interface LoadSchedulingSettings {
-  minutesBetweenLoads: number   // Default: 20
-  instructorCycleTime: number   // Default: 40 (20 prep + 20 skydive)
-}
-
-// ==================== API RESPONSES ====================
+// ==================== DATABASE STATE ====================
 
 export interface DatabaseState {
   instructors: Instructor[]
   assignments: Assignment[]
+  loads: Load[]
   studentQueue: QueueStudent[]
   groups: Group[]
-  loads: Load[]
   clockEvents: ClockEvent[]
-  periods?: Period[]
-  loadSchedulingSettings?: LoadSchedulingSettings
-  lastSaved: string
+  periods: Period[]
 }
-
-// ==================== HELPER TYPES ====================
-
-export type CreateInstructor = Omit<Instructor, 'id'>
-export type UpdateInstructor = Partial<Instructor>
-
-export type CreateLoad = Omit<Load, 'id' | 'createdAt'>
-export type UpdateLoad = Partial<Load>
-
-export type CreatePeriod = Omit<Period, 'id' | 'createdAt'>
-export type UpdatePeriod = Partial<Period>

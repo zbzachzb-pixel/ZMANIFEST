@@ -8,6 +8,8 @@ import { LoadBuilderCard } from '@/components/LoadBuilderCard'
 import { db } from '@/services'
 import { getCurrentPeriod } from '@/lib/utils'
 import type { QueueStudent, Instructor, Load, LoadAssignment, Assignment, LoadSchedulingSettings, CreateQueueStudent, Group } from '@/types'
+import { OptimizeLoadModal } from '@/components/OptimizeLoadModal'
+
 
 export default function LoadBuilderPage() {
   // ============================================
@@ -24,6 +26,7 @@ export default function LoadBuilderPage() {
   const { deleteLoad } = useDeleteLoad()
   const { data: groups } = useGroups()
   
+  
   // State hooks - ALL called unconditionally
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedJumpType, setSelectedJumpType] = useState<'all' | 'tandem' | 'aff'>('all')
@@ -32,7 +35,8 @@ export default function LoadBuilderPage() {
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [statusFilter, setStatusFilter] = useState<'all' | 'building' | 'ready' | 'departed' | 'completed'>('all')
-  
+  const [optimizeLoadId, setOptimizeLoadId] = useState<string | null>(null)
+
   // Load scheduling settings
   const [loadSettings] = useState<LoadSchedulingSettings>(() => {
     if (typeof window !== 'undefined') {
@@ -438,7 +442,18 @@ export default function LoadBuilderPage() {
           <h1 className="text-4xl font-bold text-white">🛫 Load Builder</h1>
           <div className="flex gap-3">
             <button
-              onClick={() => alert('Optimize feature coming soon! This will auto-assign students to instructors based on balance.')}
+              onClick={() => {
+                // Find first building load with unassigned students
+                const buildingLoad = loads.find(l => 
+                  l.status === 'building' && 
+                  (l.assignments || []).some(a => !a.instructorId)
+                )
+                if (buildingLoad) {
+                  setOptimizeLoadId(buildingLoad.id)
+                } else {
+                  alert('No loads with unassigned students found. Add students to a load first!')
+                }
+              }}
               className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
             >
               ⚡ Optimize Loads
@@ -715,6 +730,12 @@ export default function LoadBuilderPage() {
                             <div className="font-semibold text-white">{student.name}</div>
                             <div className="text-xs text-slate-400 mt-1">
                               {student.jumpType.toUpperCase()} • {student.weight} lbs
+                              {optimizeLoadId && (
+                                <OptimizeLoadModal
+                                  load={loads.find(l => l.id === optimizeLoadId)!}
+                                  onClose={() => setOptimizeLoadId(null)}
+                                />
+                              )}
                             </div>
                           </div>
                         </div>
