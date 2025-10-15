@@ -1,3 +1,4 @@
+// src/services/firebase.ts - COMPLETE WITH STUDENT ACCOUNTS (PART 1)
 import { database } from '@/lib/firebase'
 import { 
   ref, 
@@ -5,7 +6,8 @@ import {
   get, 
   update, 
   remove,
-  onValue
+  onValue,
+  runTransaction
 } from 'firebase/database'
 import type { DatabaseService } from './database'
 import type {
@@ -25,14 +27,15 @@ import type {
   Period,
   CreatePeriod,
   UpdatePeriod,
-  LoadSchedulingSettings  // NEW: Added this import
+  StudentAccount,
+  CreateStudentAccount,
+  UpdateStudentAccount
 } from '@/types'
 
 export class FirebaseService implements DatabaseService {
   private db = database
   
   constructor() {
-    // Bind all methods to preserve 'this' context
     this.subscribeToInstructors = this.subscribeToInstructors.bind(this)
     this.subscribeToLoads = this.subscribeToLoads.bind(this)
     this.subscribeToAssignments = this.subscribeToAssignments.bind(this)
@@ -40,11 +43,16 @@ export class FirebaseService implements DatabaseService {
     this.subscribeToGroups = this.subscribeToGroups.bind(this)
     this.subscribeToClockEvents = this.subscribeToClockEvents.bind(this)
     this.subscribeToPeriods = this.subscribeToPeriods.bind(this)
+    this.subscribeToStudentAccounts = this.subscribeToStudentAccounts.bind(this) // NEW
     this.subscribeToAll = this.subscribeToAll.bind(this)
   }
   
   private cleanData<T>(data: T): T {
     return JSON.parse(JSON.stringify(data))
+  }
+  
+  private generateId(): string {
+    return Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9)
   }
   
   private async getData<T>(path: string): Promise<T[]> {
@@ -54,16 +62,17 @@ export class FirebaseService implements DatabaseService {
     return data ? Object.values(data) : []
   }
   
-  private generateId(): string {
-    return Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9)
-  }
-  
   // ==================== INSTRUCTORS ====================
   
   async createInstructor(instructor: CreateInstructor): Promise<Instructor> {
     const newInstructor: Instructor = {
       ...instructor,
       id: this.generateId(),
+      clockedIn: false,
+      clockInTime: null,
+      archived: false,
+      affLocked: false,
+      affStudents: []
     }
     
     const cleanedInstructor = this.cleanData(newInstructor)
@@ -95,6 +104,93 @@ export class FirebaseService implements DatabaseService {
   subscribeToInstructors(callback: (instructors: Instructor[]) => void): () => void {
     const instructorsRef = ref(this.db, 'instructors')
     const unsubscribe = onValue(instructorsRef, (snapshot) => {
+      const data = snapshot.val()
+      callback(data ? Object.values(data) : [])
+    })
+    return unsubscribe
+  }
+  
+  // ==================== STUDENT ACCOUNTS (NEW) ====================
+  
+  async createStudentAccount(account: CreateStudentAccount): Promise<StudentAccount> {
+    const newAccount: StudentAccount = {
+      ...account,
+      id: this.generateId(),
+      createdAt: new Date().toISOString(),
+      totalJumps: 0,
+      totalTandemJumps: 0,
+      totalAFFJumps: 0,
+      isActive: true
+    }
+    
+    const cleanedAccount = this.cleanData(newAccount)
+    const accountRef = ref(this.db, `studentAccounts/${newAccount.id}`)
+    await set(accountRef, cleanedAccount)
+    
+    return newAccount
+  }
+  
+  async getStudentAccounts(): Promise<StudentAccount[]> {
+    return this.getData<StudentAccount>('studentAccounts')
+  }
+  
+  async getActiveStudentAccounts(): Promise<StudentAccount[]> {
+    const accounts = await this.getStudentAccounts()
+    return accounts.filter(account => account.isActive)
+  }
+  
+  async getStudentAccountById(id: string): Promise<StudentAccount | null> {
+    const accountRef = ref(this.db, `studentAccounts/${id}`)
+    const snapshot = await get(accountRef)
+    return snapshot.exists() ? snapshot.val() : null
+  }
+  
+  async searchStudentAccounts(query: string): Promise<StudentAccount[]> {
+    const accounts = await this.getActiveStudentAccounts()
+    const lowerQuery = query.toLowerCase().trim()
+    
+    if (!lowerQuery) return accounts
+    
+    return accounts.filter(account => 
+      account.name.toLowerCase().includes(lowerQuery) ||
+      account.studentId.toLowerCase().includes(lowerQuery) ||
+      account.email?.toLowerCase().includes(lowerQuery) ||
+      account.phone?.includes(query)
+    )
+  }
+  
+  async updateStudentAccount(id: string, updates: UpdateStudentAccount): Promise<void> {
+    const accountRef = ref(this.db, `studentAccounts/${id}`)
+    const cleanedUpdates = this.cleanData(updates)
+    await update(accountRef, cleanedUpdates)
+  }
+  
+  async deactivateStudentAccount(id: string): Promise<void> {
+    await this.updateStudentAccount(id, { isActive: false })
+  }
+  
+  async incrementStudentJumpCount(studentAccountId: string, jumpType: 'tandem' | 'aff'): Promise<void> {
+    const accountRef = ref(this.db, `studentAccounts/${studentAccountId}`)
+    
+    await runTransaction(accountRef, (account) => {
+      if (account) {
+        account.totalJumps = (account.totalJumps || 0) + 1
+        
+        if (jumpType === 'tandem') {
+          account.totalTandemJumps = (account.totalTandemJumps || 0) + 1
+        } else if (jumpType === 'aff') {
+          account.totalAFFJumps = (account.totalAFFJumps || 0) + 1
+        }
+        
+        account.lastJumpDate = new Date().toISOString()
+      }
+      return account
+    })
+  }
+  
+  subscribeToStudentAccounts(callback: (accounts: StudentAccount[]) => void): () => void {
+    const accountsRef = ref(this.db, 'studentAccounts')
+    const unsubscribe = onValue(accountsRef, (snapshot) => {
       const data = snapshot.val()
       callback(data ? Object.values(data) : [])
     })
@@ -135,6 +231,17 @@ export class FirebaseService implements DatabaseService {
     })
   }
   
+  async updateClockEvent(id: string, updates: Partial<ClockEvent>): Promise<void> {
+    const eventRef = ref(this.db, `clockEvents/${id}`)
+    const cleanedUpdates = this.cleanData(updates)
+    await update(eventRef, cleanedUpdates)
+  }
+  
+  async deleteClockEvent(id: string): Promise<void> {
+    const eventRef = ref(this.db, `clockEvents/${id}`)
+    await remove(eventRef)
+  }
+  
   subscribeToClockEvents(callback: (events: ClockEvent[]) => void): () => void {
     const eventsRef = ref(this.db, 'clockEvents')
     const unsubscribe = onValue(eventsRef, (snapshot) => {
@@ -143,73 +250,7 @@ export class FirebaseService implements DatabaseService {
     })
     return unsubscribe
   }
-  
-  async deleteClockEvent(id: string): Promise<void> {
-    const eventRef = ref(this.db, `clockEvents/${id}`)
-    await remove(eventRef)
-  }
-  async updateClockEvent(id: string, updates: Partial<ClockEvent>): Promise<void> {
-  const clockEventRef = ref(this.db, `clockEvents/${id}`)
-  const cleanedUpdates = this.cleanData(updates)
-  await update(clockEventRef, cleanedUpdates)
-}
-
-// Full CLOCK EVENTS section for context:
-// ==================== CLOCK EVENTS ====================
-
-async logClockEvent(instructorId: string, instructorName: string, type: 'in' | 'out'): Promise<ClockEvent> {
-  const newEvent: ClockEvent = {
-    id: this.generateId(),
-    instructorId,
-    instructorName,
-    type,
-    timestamp: new Date().toISOString()
-  }
-  
-  const eventRef = ref(this.db, `clockEvents/${newEvent.id}`)
-  await set(eventRef, newEvent)
-  
-  return newEvent
-}
-
-async getClockEvents(): Promise<ClockEvent[]> {
-  return this.getData<ClockEvent>('clockEvents')
-}
-
-async getClockEventsByDate(date: Date): Promise<ClockEvent[]> {
-  const allEvents = await this.getClockEvents()
-  const startOfDay = new Date(date)
-  startOfDay.setHours(0, 0, 0, 0)
-  const endOfDay = new Date(date)
-  endOfDay.setHours(23, 59, 59, 999)
-  
-  return allEvents.filter(event => {
-    const eventDate = new Date(event.timestamp)
-    return eventDate >= startOfDay && eventDate <= endOfDay
-  })
-}
-
-async deleteClockEvent(id: string): Promise<void> {
-  const clockEventRef = ref(this.db, `clockEvents/${id}`)
-  await remove(clockEventRef)
-}
-
-async updateClockEvent(id: string, updates: Partial<ClockEvent>): Promise<void> {
-  const clockEventRef = ref(this.db, `clockEvents/${id}`)
-  const cleanedUpdates = this.cleanData(updates)
-  await update(clockEventRef, cleanedUpdates)
-}
-
-subscribeToClockEvents(callback: (events: ClockEvent[]) => void): () => void {
-  const eventsRef = ref(this.db, 'clockEvents')
-  const unsubscribe = onValue(eventsRef, (snapshot) => {
-    const data = snapshot.val()
-    callback(data ? Object.values(data) : [])
-  })
-  return unsubscribe
-}
-
-  // ==================== LOADS ====================
+   // ==================== LOADS ====================
   
   async createLoad(load: CreateLoad): Promise<Load> {
     const newLoad: Load = {
@@ -254,22 +295,76 @@ subscribeToClockEvents(callback: (events: ClockEvent[]) => void): () => void {
     return unsubscribe
   }
   
-  // ==================== QUEUE ====================
+  // ==================== ASSIGNMENTS ====================
   
-async addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise<QueueStudent> {
-  const newStudent: QueueStudent = {
-    ...student,
-    id: this.generateId(),
-    // Use custom timestamp if provided (for priority), otherwise use current time
-    timestamp: customTimestamp || new Date().toISOString(),
+  async createAssignment(assignment: CreateAssignment): Promise<Assignment> {
+    const newAssignment: Assignment = {
+      ...assignment,
+      id: this.generateId(),
+      timestamp: new Date().toISOString(),
+    }
+    
+    const cleanedAssignment = this.cleanData(newAssignment)
+    const assignmentRef = ref(this.db, `assignments/${newAssignment.id}`)
+    await set(assignmentRef, cleanedAssignment)
+    
+    return newAssignment
   }
   
-  const cleanedStudent = this.cleanData(newStudent)
-  const studentRef = ref(this.db, `studentQueue/${newStudent.id}`)
-  await set(studentRef, cleanedStudent)
+  async getAssignments(): Promise<Assignment[]> {
+    return this.getData<Assignment>('assignments')
+  }
   
-  return newStudent
-}
+  async getInstructorAssignments(instructorId: string): Promise<Assignment[]> {
+    const allAssignments = await this.getAssignments()
+    return allAssignments.filter(a => 
+      a.instructorId === instructorId || a.videoInstructorId === instructorId
+    )
+  }
+  
+  async getAssignmentsByDateRange(start: Date, end: Date): Promise<Assignment[]> {
+    const allAssignments = await this.getAssignments()
+    return allAssignments.filter(a => {
+      const assignmentDate = new Date(a.timestamp)
+      return assignmentDate >= start && assignmentDate <= end
+    })
+  }
+  
+  async updateAssignment(id: string, updates: Partial<Assignment>): Promise<void> {
+    const assignmentRef = ref(this.db, `assignments/${id}`)
+    const cleanedUpdates = this.cleanData(updates)
+    await update(assignmentRef, cleanedUpdates)
+  }
+  
+  async deleteAssignment(id: string): Promise<void> {
+    const assignmentRef = ref(this.db, `assignments/${id}`)
+    await remove(assignmentRef)
+  }
+  
+  subscribeToAssignments(callback: (assignments: Assignment[]) => void): () => void {
+    const assignmentsRef = ref(this.db, 'assignments')
+    const unsubscribe = onValue(assignmentsRef, (snapshot) => {
+      const data = snapshot.val()
+      callback(data ? Object.values(data) : [])
+    })
+    return unsubscribe
+  }
+  
+  // ==================== QUEUE ====================
+  
+  async addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise<QueueStudent> {
+    const newStudent: QueueStudent = {
+      ...student,
+      id: this.generateId(),
+      timestamp: customTimestamp || new Date().toISOString(),
+    }
+    
+    const cleanedStudent = this.cleanData(newStudent)
+    const studentRef = ref(this.db, `studentQueue/${newStudent.id}`)
+    await set(studentRef, cleanedStudent)
+    
+    return newStudent
+  }
   
   async getQueue(): Promise<QueueStudent[]> {
     return this.getData<QueueStudent>('studentQueue')
@@ -304,8 +399,9 @@ async addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise
       createdAt: new Date().toISOString(),
     }
     
+    const cleanedGroup = this.cleanData(newGroup)
     const groupRef = ref(this.db, `groups/${newGroup.id}`)
-    await set(groupRef, newGroup)
+    await set(groupRef, cleanedGroup)
     
     return newGroup
   }
@@ -316,7 +412,8 @@ async addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise
   
   async updateGroup(id: string, updates: Partial<Group>): Promise<void> {
     const groupRef = ref(this.db, `groups/${id}`)
-    await update(groupRef, updates)
+    const cleanedUpdates = this.cleanData(updates)
+    await update(groupRef, cleanedUpdates)
   }
   
   async deleteGroup(id: string): Promise<void> {
@@ -333,68 +430,13 @@ async addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise
     return unsubscribe
   }
   
-  // ==================== ASSIGNMENTS ====================
-  
-  async createAssignment(assignment: CreateAssignment): Promise<Assignment> {
-    const newAssignment: Assignment = {
-      ...assignment,
-      id: this.generateId(),
-      timestamp: new Date().toISOString(),
-    }
-    
-    const cleanedAssignment = this.cleanData(newAssignment)
-    const assignmentRef = ref(this.db, `assignments/${newAssignment.id}`)
-    await set(assignmentRef, cleanedAssignment)
-    
-    return newAssignment
-  }
-  
-  async updateAssignment(id: string, updates: Partial<Assignment>): Promise<void> {
-    const assignmentRef = ref(this.db, `assignments/${id}`)
-    const cleanedUpdates = this.cleanData(updates)
-    await update(assignmentRef, cleanedUpdates)
-  }
-  
-  async getAssignments(): Promise<Assignment[]> {
-    return this.getData<Assignment>('assignments')
-  }
-  
-  async getInstructorAssignments(instructorId: string): Promise<Assignment[]> {
-    const allAssignments = await this.getAssignments()
-    return allAssignments.filter(a => 
-      a.instructorId === instructorId || a.videoInstructorId === instructorId
-    )
-  }
-  
-  async getAssignmentsByDateRange(start: Date, end: Date): Promise<Assignment[]> {
-    const allAssignments = await this.getAssignments()
-    return allAssignments.filter(a => {
-      const assignmentDate = new Date(a.timestamp)
-      return assignmentDate >= start && assignmentDate <= end
-    })
-  }
-  
-  async deleteAssignment(id: string): Promise<void> {
-    const assignmentRef = ref(this.db, `assignments/${id}`)
-    await remove(assignmentRef)
-  }
-  
-  subscribeToAssignments(callback: (assignments: Assignment[]) => void): () => void {
-    const assignmentsRef = ref(this.db, 'assignments')
-    const unsubscribe = onValue(assignmentsRef, (snapshot) => {
-      const data = snapshot.val()
-      callback(data ? Object.values(data) : [])
-    })
-    return unsubscribe
-  }
-  
   // ==================== PERIODS ====================
   
   async createPeriod(period: CreatePeriod): Promise<Period> {
     const newPeriod: Period = {
       ...period,
       id: this.generateId(),
-      createdAt: new Date().toISOString(),
+      isActive: false,
     }
     
     const cleanedPeriod = this.cleanData(newPeriod)
@@ -404,13 +446,13 @@ async addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise
     return newPeriod
   }
   
- async getPeriods(): Promise<Period[]> {
-  return await this.getData<Period>('periods')
-}
-  
-  async getActivePeriod(): Promise<Period | null> {
-    const periods = await this.getPeriods()
-    return periods.find(p => p.status === 'active') || null
+  async getPeriods(): Promise<Period[]> {
+    const periods = await this.getData<any>('periods')
+    return periods.map(p => ({
+      ...p,
+      start: new Date(p.start),
+      end: new Date(p.end),
+    }))
   }
   
   async updatePeriod(id: string, updates: UpdatePeriod): Promise<void> {
@@ -419,27 +461,26 @@ async addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise
     await update(periodRef, cleanedUpdates)
   }
   
-  subscribeToPeriods(callback: (periods: Period[]) => void): () => void {
-  const periodsRef = ref(this.db, 'periods')
-  const unsubscribe = onValue(periodsRef, (snapshot) => {
-    const data = snapshot.val()
-    callback(data ? Object.values(data) as Period[] : [])
-  })
-  return unsubscribe
-}
-  
-  // ==================== LOAD SCHEDULING SETTINGS (NEW) ====================
-  
-  async saveLoadSchedulingSettings(settings: LoadSchedulingSettings): Promise<void> {
-    const settingsRef = ref(this.db, 'loadSchedulingSettings')
-    const cleanedSettings = this.cleanData(settings)
-    await set(settingsRef, cleanedSettings)
+  async endPeriod(id: string, finalBalances: Record<string, number>, finalStats: any): Promise<void> {
+    await this.updatePeriod(id, {
+      isActive: false,
+      archivedAt: new Date(),
+      finalBalances,
+    })
   }
   
-  async getLoadSchedulingSettings(): Promise<LoadSchedulingSettings | null> {
-    const settingsRef = ref(this.db, 'loadSchedulingSettings')
-    const snapshot = await get(settingsRef)
-    return snapshot.val() || null
+  subscribeToPeriods(callback: (periods: Period[]) => void): () => void {
+    const periodsRef = ref(this.db, 'periods')
+    const unsubscribe = onValue(periodsRef, (snapshot) => {
+      const data = snapshot.val()
+      const periods = data ? Object.values(data).map((p: any) => ({
+        ...p,
+        start: new Date(p.start),
+        end: new Date(p.end),
+      })) as Period[] : []
+      callback(periods)
+    })
+    return unsubscribe
   }
   
   // ==================== BULK ====================
@@ -449,36 +490,35 @@ async addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise
       instructors, 
       assignments, 
       studentQueue, 
+      studentAccounts,  // NEW
       groups, 
       loads, 
       clockEvents, 
-      periods,
-      loadSchedulingSettings  // NEW: Added this
+      periods
     ] = await Promise.all([
       this.getInstructors(),
       this.getAssignments(),
       this.getQueue(),
+      this.getStudentAccounts(),  // NEW
       this.getGroups(),
       this.getLoads(),
       this.getClockEvents(),
-      this.getPeriods(),
-      this.getLoadSchedulingSettings(),  // NEW: Added this
+      this.getPeriods()
     ])
     
     return {
       instructors,
       assignments,
       studentQueue,
+      studentAccounts,  // NEW
       groups,
       loads,
       clockEvents,
-      periods,
-      loadSchedulingSettings: loadSchedulingSettings || undefined,  // NEW: Added this
-      lastSaved: new Date().toISOString(),
+      periods
     }
   }
   
-  async importState(state: DatabaseState): Promise<void> {
+  async restoreFullState(state: DatabaseState): Promise<void> {
     const rootRef = ref(this.db, '/')
     const cleanedState = this.cleanData(state)
     await set(rootRef, cleanedState)
@@ -493,6 +533,7 @@ async addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise
           instructors: data.instructors ? Object.values(data.instructors) : [],
           assignments: data.assignments ? Object.values(data.assignments) : [],
           studentQueue: data.studentQueue ? Object.values(data.studentQueue) : [],
+          studentAccounts: data.studentAccounts ? Object.values(data.studentAccounts) : [], // NEW
           groups: data.groups ? Object.values(data.groups) : [],
           loads: data.loads ? Object.values(data.loads) : [],
           clockEvents: data.clockEvents ? Object.values(data.clockEvents) : [],
@@ -500,9 +541,7 @@ async addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise
             ...p,
             start: new Date(p.start),
             end: new Date(p.end)
-          })) : [],
-          loadSchedulingSettings: data.loadSchedulingSettings || undefined,  // NEW: Added this
-          lastSaved: new Date().toISOString(),
+          })) : []
         })
       }
     })

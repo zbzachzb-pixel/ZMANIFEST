@@ -1,4 +1,4 @@
-// src/services/database.ts
+// src/services/database.ts - COMPLETE WITH STUDENT ACCOUNTS
 import type {
   Instructor,
   CreateInstructor,
@@ -15,11 +15,14 @@ import type {
   ClockEvent,
   Period,
   CreatePeriod,
-  UpdatePeriod
+  UpdatePeriod,
+  StudentAccount,           // ✅ NEW
+  CreateStudentAccount,     // ✅ NEW
+  UpdateStudentAccount      // ✅ NEW
 } from '@/types'
 
 export interface DatabaseService {
-  // INSTRUCTORS
+  // ==================== INSTRUCTORS ====================
   createInstructor(instructor: CreateInstructor): Promise<Instructor>
   getInstructors(): Promise<Instructor[]>
   getActiveInstructors(): Promise<Instructor[]>
@@ -27,15 +30,26 @@ export interface DatabaseService {
   archiveInstructor(id: string): Promise<void>
   subscribeToInstructors(callback: (instructors: Instructor[]) => void): () => void
   
-  // CLOCK EVENTS
+  // ==================== STUDENT ACCOUNTS (NEW) ====================
+  createStudentAccount(account: CreateStudentAccount): Promise<StudentAccount>
+  getStudentAccounts(): Promise<StudentAccount[]>
+  getActiveStudentAccounts(): Promise<StudentAccount[]>
+  getStudentAccountById(id: string): Promise<StudentAccount | null>
+  searchStudentAccounts(query: string): Promise<StudentAccount[]>
+  updateStudentAccount(id: string, updates: UpdateStudentAccount): Promise<void>
+  deactivateStudentAccount(id: string): Promise<void>
+  incrementStudentJumpCount(studentAccountId: string, jumpType: 'tandem' | 'aff'): Promise<void>
+  subscribeToStudentAccounts(callback: (accounts: StudentAccount[]) => void): () => void
+  
+  // ==================== CLOCK EVENTS ====================
   logClockEvent(instructorId: string, instructorName: string, type: 'in' | 'out'): Promise<ClockEvent>
   getClockEvents(): Promise<ClockEvent[]>
   getClockEventsByDate(date: Date): Promise<ClockEvent[]>
   subscribeToClockEvents(callback: (events: ClockEvent[]) => void): () => void
-  updateClockEvent(id: string, updates: Partial<ClockEvent>): Promise<void>  // ✅ NEW
+  updateClockEvent(id: string, updates: Partial<ClockEvent>): Promise<void>
   deleteClockEvent(id: string): Promise<void>
   
-  // LOADS
+  // ==================== LOADS ====================
   createLoad(load: CreateLoad): Promise<Load>
   getLoads(): Promise<Load[]>
   getLoadsByStatus(status: Load['status']): Promise<Load[]>
@@ -43,7 +57,7 @@ export interface DatabaseService {
   deleteLoad(id: string): Promise<void>
   subscribeToLoads(callback: (loads: Load[]) => void): () => void
   
-  // ASSIGNMENTS
+  // ==================== ASSIGNMENTS ====================
   createAssignment(assignment: CreateAssignment): Promise<Assignment>
   getAssignments(): Promise<Assignment[]>
   getInstructorAssignments(instructorId: string): Promise<Assignment[]>
@@ -52,28 +66,28 @@ export interface DatabaseService {
   deleteAssignment(id: string): Promise<void>
   subscribeToAssignments(callback: (assignments: Assignment[]) => void): () => void
   
-  // QUEUE
-  addToQueue(student: CreateQueueStudent): Promise<QueueStudent>
+  // ==================== QUEUE ====================
+  addToQueue(student: CreateQueueStudent, customTimestamp?: string): Promise<QueueStudent>
   getQueue(): Promise<QueueStudent[]>
   removeFromQueue(id: string): Promise<void>
   removeMultipleFromQueue(ids: string[]): Promise<void>
   subscribeToQueue(callback: (queue: QueueStudent[]) => void): () => void
   
-  // GROUPS
+  // ==================== GROUPS ====================
   createGroup(name: string, studentIds: string[]): Promise<Group>
   getGroups(): Promise<Group[]>
   updateGroup(id: string, updates: Partial<Group>): Promise<void>
   deleteGroup(id: string): Promise<void>
   subscribeToGroups(callback: (groups: Group[]) => void): () => void
   
-  // PERIODS
+  // ==================== PERIODS ====================
   createPeriod(period: CreatePeriod): Promise<Period>
   getPeriods(): Promise<Period[]>
   updatePeriod(id: string, updates: UpdatePeriod): Promise<void>
   endPeriod(id: string, finalBalances: Record<string, number>, finalStats: any): Promise<void>
   subscribeToPeriods(callback: (periods: Period[]) => void): () => void
   
-  // BULK
+  // ==================== BULK ====================
   getFullState(): Promise<DatabaseState>
   restoreFullState(state: DatabaseState): Promise<void>
   subscribeToAll(callback: (state: DatabaseState) => void): () => void

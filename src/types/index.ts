@@ -1,7 +1,6 @@
-// src/types/index.ts - COMPLETE FULL VERSION
-// ✅ Issue #1 Fixed: Removed duplicate LoadSchedulingSettings (was defined twice)
-// ✅ Issue #2 Fixed: Documented null instructorId handling
-// ✅ Issue #13 Fixed: Added proper coveringFor typing
+// src/types/index.ts - COMPLETE VERSION WITH STUDENT ACCOUNTS
+// ✅ Added StudentAccount system
+// ✅ Updated QueueStudent to reference accounts
 
 // ==================== BASIC TYPES ====================
 
@@ -35,8 +34,7 @@ export interface Instructor {
   affLocked: boolean
   affStudents: Array<{ id: string; name: string }>
   team: Team
-  // ✅ FIXED #13: Properly documented covering relationship
-  coveringFor?: string | null  // ID of instructor being covered for
+  coveringFor?: string | null
 }
 
 export type CreateInstructor = Omit<Instructor, 'id' | 'clockedIn' | 'clockInTime' | 'archived' | 'affLocked' | 'affStudents'>
@@ -54,7 +52,7 @@ export interface Assignment {
   timestamp: string
   isRequest: boolean
   isMissedJump?: boolean
-  coveringFor?: string | null  // ID of instructor being covered for
+  coveringFor?: string | null
   tandemWeightTax?: number
   tandemHandcam?: boolean
   hasOutsideVideo?: boolean
@@ -80,11 +78,42 @@ export interface Period {
 export type CreatePeriod = Omit<Period, 'id' | 'isActive' | 'archivedAt' | 'finalBalances'>
 export type UpdatePeriod = Partial<Omit<Period, 'id'>>
 
-// ==================== QUEUE ====================
+// ==================== STUDENT ACCOUNTS (NEW) ====================
+
+export interface StudentAccount {
+  id: string                    // Firebase generated ID
+  studentId: string             // ✅ EDITABLE ID (member number, manifest ID, etc.)
+  name: string
+  email?: string
+  phone?: string
+  weight: number
+  dateOfBirth?: string
+  emergencyContact?: string
+  emergencyPhone?: string
+  
+  // Jump preferences
+  preferredJumpType?: 'tandem' | 'aff'
+  affLevel?: 'upper' | 'lower'
+  totalJumps: number
+  totalTandemJumps: number
+  totalAFFJumps: number
+  
+  // Metadata
+  createdAt: string
+  lastJumpDate?: string
+  notes?: string
+  isActive: boolean
+}
+
+export type CreateStudentAccount = Omit<StudentAccount, 'id' | 'createdAt' | 'totalJumps' | 'totalTandemJumps' | 'totalAFFJumps' | 'lastJumpDate' | 'isActive'>
+export type UpdateStudentAccount = Partial<Omit<StudentAccount, 'id' | 'createdAt'>>
+
+// ==================== QUEUE (UPDATED) ====================
 
 export interface QueueStudent {
   id: string
-  name: string
+  studentAccountId: string      // ✅ NEW: References StudentAccount
+  name: string                  // Cached from account
   weight: number
   jumpType: 'tandem' | 'aff'
   timestamp: string
@@ -123,9 +152,7 @@ export interface ClockEvent {
 export interface LoadAssignment {
   id: string
   studentId: string
-  // ✅ FIXED #2: Documented that null instructorId means unassigned
-  // Always check: if (!assignment.instructorId) { /* handle unassigned */ }
-  instructorId: string | null  
+  instructorId: string | null
   instructorName?: string
   studentName: string
   studentWeight: number
@@ -142,22 +169,24 @@ export interface LoadAssignment {
 
 export interface Load {
   id: string
+  name?: string
   position: number
+  capacity?: number
   status: 'building' | 'ready' | 'departed' | 'completed'
   assignments?: LoadAssignment[]
   createdAt: string
   departedAt?: string
   completedAt?: string
+  delayMinutes?: number
 }
 
 export type CreateLoad = Omit<Load, 'id' | 'createdAt'>
 export type UpdateLoad = Partial<Omit<Load, 'id' | 'createdAt'>>
 
-// ✅ FIXED #1: Single LoadSchedulingSettings definition (removed duplicate)
 export interface LoadSchedulingSettings {
   minutesBetweenLoads: number
   instructorCycleTime: number
-  defaultPlaneCapacity: number  // NEW
+  defaultPlaneCapacity: number
 }
 
 // ==================== ANALYTICS ====================
@@ -205,6 +234,7 @@ export interface DatabaseState {
   assignments: Assignment[]
   loads: Load[]
   studentQueue: QueueStudent[]
+  studentAccounts: StudentAccount[]  // ✅ NEW
   groups: Group[]
   clockEvents: ClockEvent[]
   periods: Period[]

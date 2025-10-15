@@ -1,10 +1,9 @@
+// src/services/index.ts
 import { FirebaseService } from './firebase'
 import type { DatabaseService } from './database'
 
-const USE_SUPABASE = process.env.NEXT_PUBLIC_USE_SUPABASE === 'true'
+// Create the database service instance
+export const db: DatabaseService = new FirebaseService()
 
-export const db: DatabaseService = USE_SUPABASE 
-  ? (() => { throw new Error('Supabase not implemented yet!') })() 
-  : new FirebaseService()
-
+// Also export the type for convenience
 export type { DatabaseService } from './database'

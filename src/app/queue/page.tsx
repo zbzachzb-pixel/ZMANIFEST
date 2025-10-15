@@ -4,7 +4,7 @@
 
 import React, { useState, useMemo } from 'react'
 import { useTandemQueue, useAFFQueue, useRemoveMultipleFromQueue, useGroups } from '@/hooks/useDatabase'
-import { AddStudentModal } from '@/components/AddStudentModal'
+import { AddToQueueModal } from '@/components/AddToQueueModal'  // ✅ CHANGED: New modal component
 import { EditStudentModal } from '@/components/EditStudentModal'
 import { StudentCard } from '@/components/StudentCard'
 import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal'
@@ -25,7 +25,7 @@ export default function QueuePage() {
   const { removeMultiple, loading: removeLoading } = useRemoveMultipleFromQueue()
   
   const [showAddModal, setShowAddModal] = useState(false)
-  const [modalQueueType, setModalQueueType] = useState<'tandem' | 'aff'>('tandem')
+  // ✅ REMOVED: const [modalQueueType, setModalQueueType] = useState<'tandem' | 'aff'>('tandem')
   const [selectedTandem, setSelectedTandem] = useState<string[]>([])
   const [selectedAFF, setSelectedAFF] = useState<string[]>([])
   const [searchTandem, setSearchTandem] = useState('')
@@ -106,8 +106,8 @@ export default function QueuePage() {
     }
   }, [groups, affQueue])
 
-  const handleAddStudent = (type: 'tandem' | 'aff') => {
-    setModalQueueType(type)
+  // ✅ CHANGED: Simplified to just open modal (no queue type needed)
+  const handleAddStudent = () => {
     setShowAddModal(true)
   }
 
@@ -270,7 +270,7 @@ export default function QueuePage() {
                   📋 Import
                 </button>
                 <button
-                  onClick={() => handleAddStudent('tandem')}
+                  onClick={handleAddStudent}  // ✅ CHANGED: No type parameter needed
                   className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   + Add Student
@@ -366,7 +366,7 @@ export default function QueuePage() {
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-blue-400">🎯 AFF Queue ({affQueue.length})</h2>
               <button
-                onClick={() => handleAddStudent('aff')}
+                onClick={handleAddStudent}  // ✅ CHANGED: No type parameter needed
                 className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
               >
                 + Add Student
@@ -459,10 +459,15 @@ export default function QueuePage() {
       </div>
 
       {/* Modals */}
+      {/* ✅ CHANGED: New modal component with different props */}
       {showAddModal && (
-        <AddStudentModal
-          queueType={modalQueueType}
+        <AddToQueueModal
+          isOpen={showAddModal}
           onClose={() => setShowAddModal(false)}
+          onSuccess={() => {
+            setShowAddModal(false)
+            // Queue auto-refreshes via realtime subscription
+          }}
         />
       )}
 
