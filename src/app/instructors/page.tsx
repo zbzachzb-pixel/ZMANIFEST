@@ -188,7 +188,7 @@ export default function InstructorsPage() {
                     {instructor.canAFF && instructor.affWeightLimit && (
                       <div>AFF: {instructor.affWeightLimit} lbs</div>
                     )}
-                    {instructor.canVideo && instructor.videoRestricted && (
+                    {instructor.canVideo && (instructor.videoMinWeight || instructor.videoMaxWeight) && (
                       <div className="text-xs text-slate-400 mt-1">
                         Video: {instructor.videoMinWeight || 0}-{instructor.videoMaxWeight || '∞'} lbs
                       </div>

@@ -222,6 +222,13 @@ export interface AutoAssignSettings {
   batchSize: number
 }
 
+// Add this new interface:
+export interface LoadSchedulingSettings {
+  minutesBetweenLoads: number
+  instructorCycleTime: number
+  defaultPlaneCapacity: number
+}
+
 // ==================== DATABASE STATE ====================
 
 export interface DatabaseState {

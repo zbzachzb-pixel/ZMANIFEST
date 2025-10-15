@@ -1,3 +1,4 @@
+// src/app/assignments/page.tsx - COMPLETE REBUILT VERSION
 'use client'
 
 import React, { useState, useMemo, useEffect } from 'react'
@@ -13,6 +14,8 @@ export default function AssignmentsPage() {
   const { data: assignments, loading } = useAssignments()
   const { data: instructors } = useActiveInstructors()
   const { deleteEvent, loading: deleteClockLoading } = useDeleteClockEvent()
+  
+  // State management
   const [searchTerm, setSearchTerm] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null)
@@ -120,42 +123,40 @@ export default function AssignmentsPage() {
     }
   }
   
-// Replace the handleDeleteShift function in src/app/assignments/page.tsx with this:
-
-const handleDeleteShift = async () => {
-  if (!deleteShiftConfirm) return
-  
-  try {
-    // Find the instructor from the clock event
-    const clockEvent = clockEvents.find(e => e.id === deleteShiftConfirm.inId)
-    if (!clockEvent) {
-      throw new Error('Clock event not found')
-    }
+  const handleDeleteShift = async () => {
+    if (!deleteShiftConfirm) return
     
-    // Delete clock-in event
-    await deleteEvent(deleteShiftConfirm.inId)
-    
-    // Delete clock-out event if it exists
-    if (deleteShiftConfirm.outId) {
-      await deleteEvent(deleteShiftConfirm.outId)
-    }
-    
-    // If the shift has no clock-out (still active), force clock out the instructor
-    if (!deleteShiftConfirm.outId) {
-      const instructor = instructors.find(i => i.id === clockEvent.instructorId)
-      if (instructor && instructor.clockedIn) {
-        await db.updateInstructor(instructor.id, {
-          clockedIn: false
-        })
+    try {
+      // Find the instructor from the clock event
+      const clockEvent = clockEvents.find(e => e.id === deleteShiftConfirm.inId)
+      if (!clockEvent) {
+        throw new Error('Clock event not found')
       }
+      
+      // Delete clock-in event
+      await deleteEvent(deleteShiftConfirm.inId)
+      
+      // Delete clock-out event if it exists
+      if (deleteShiftConfirm.outId) {
+        await deleteEvent(deleteShiftConfirm.outId)
+      }
+      
+      // If the shift has no clock-out (still active), force clock out the instructor
+      if (!deleteShiftConfirm.outId) {
+        const instructor = instructors.find(i => i.id === clockEvent.instructorId)
+        if (instructor && instructor.clockedIn) {
+          await db.updateInstructor(instructor.id, {
+            clockedIn: false
+          })
+        }
+      }
+      
+      setDeleteShiftConfirm(null)
+    } catch (error) {
+      console.error('Failed to delete shift:', error)
+      alert('Failed to delete shift. Please try again.')
     }
-    
-    setDeleteShiftConfirm(null)
-  } catch (error) {
-    console.error('Failed to delete shift:', error)
-    alert('Failed to delete shift. Please try again.')
   }
-}
   
   if (loading) {
     return (
@@ -228,57 +229,59 @@ const handleDeleteShift = async () => {
                       outEvent: ClockEvent | null
                     }> = []
                     
-                    for (let i = 0; i < events.length; i++) {
-                      if (events[i].type === 'in') {
-                        const clockIn = new Date(events[i].timestamp)
-                        let clockOut: Date | null = null
-                        let outId: string | null = null
-                        let outEvent: ClockEvent | null = null
+                    const sortedEvents = [...events].sort((a, b) => 
+                      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+                    )
+                    
+                    for (let i = 0; i < sortedEvents.length; i++) {
+                      if (sortedEvents[i].type === 'in') {
+                        const inEvent = sortedEvents[i]
+                        const inTime = new Date(inEvent.timestamp)
                         
-                        // Find matching clock-out
-                        for (let j = i + 1; j < events.length; j++) {
-                          if (events[j].type === 'out') {
-                            clockOut = new Date(events[j].timestamp)
-                            outId = events[j].id
-                            outEvent = events[j]
+                        // Find matching out event
+                        let outEvent: ClockEvent | null = null
+                        let outTime: Date | null = null
+                        
+                        for (let j = i + 1; j < sortedEvents.length; j++) {
+                          if (sortedEvents[j].type === 'out') {
+                            outEvent = sortedEvents[j]
+                            outTime = new Date(outEvent.timestamp)
                             break
                           }
                         }
                         
                         let duration: string | null = null
-                        if (clockOut) {
-                          const diffMs = clockOut.getTime() - clockIn.getTime()
-                          const hours = Math.floor(diffMs / (1000 * 60 * 60))
-                          const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+                        if (outTime) {
+                          const diff = outTime.getTime() - inTime.getTime()
+                          const hours = Math.floor(diff / (1000 * 60 * 60))
+                          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
                           duration = `${hours}h ${minutes}m`
                         }
                         
                         shifts.push({
-                          in: clockIn,
-                          out: clockOut,
+                          in: inTime,
+                          out: outTime,
                           duration,
-                          inId: events[i].id,
-                          outId,
-                          inEvent: events[i],
+                          inId: inEvent.id,
+                          outId: outEvent?.id || null,
+                          inEvent,
                           outEvent
                         })
                       }
                     }
                     
                     return (
-                      <div key={instructorId} className="bg-white/5 rounded-lg p-4">
+                      <div key={instructorId} className="bg-slate-700/50 rounded-lg p-4">
                         <h3 className="text-lg font-bold text-white mb-3">{instructorName}</h3>
-                        
                         <div className="space-y-2">
-                          {shifts.map((shift) => (
-                            <div key={shift.inId} className="flex items-center justify-between bg-white/5 rounded p-3">
+                          {shifts.map((shift, idx) => (
+                            <div key={idx} className="flex justify-between items-center bg-slate-800/50 rounded p-3">
                               <div className="flex-1">
                                 <div className="flex items-center gap-4 text-sm">
                                   <div>
                                     <span className="text-green-400 font-semibold">⬇️ In:</span>
                                     <span className="text-white ml-2">{shift.in.toLocaleTimeString()}</span>
                                   </div>
-                                  
                                   {shift.out ? (
                                     <>
                                       <div>
@@ -411,7 +414,8 @@ const handleDeleteShift = async () => {
                 <tbody>
                   {filteredAssignments.map(assignment => {
                     const pay = calculatePay(assignment)
-                    const coveredForName = assignment.coveringFor ? getInstructorName(assignment.coveringFor) : null
+                    const coveredForName = assignment.coveringFor ? 
+                      getInstructorName(assignment.coveringFor) : null
                     
                     return (
                       <tr key={assignment.id} className="border-b border-white/10 hover:bg-white/5">
@@ -530,11 +534,14 @@ const handleDeleteShift = async () => {
         />
       )}
       
-      {/* Edit Clock Event Modal */}
-      {editingClockEvent && (
+      {/* Edit Clock Event Modal - PROPERLY TYPED */}
+      {editingClockEvent !== null && (
         <EditClockEventModal
           event={editingClockEvent}
           onClose={() => setEditingClockEvent(null)}
+          onSuccess={() => {
+            setEditingClockEvent(null)
+          }}
         />
       )}
       
@@ -587,17 +594,14 @@ const handleDeleteShift = async () => {
               <h2 className="text-2xl font-bold text-white mb-4">🗑️ Delete Clock Shift?</h2>
               <p className="text-slate-300 mb-6">
                 This will permanently delete this clock-in/out shift.
-                {deleteShiftConfirm.outId ? (
-                  <strong className="text-white block mt-2">Both clock-in and clock-out events will be removed.</strong>
-                ) : (
-                  <strong className="text-yellow-300 block mt-2">⚠️ This is an active shift. The instructor will be automatically clocked out.</strong>
-                )}
+                {deleteShiftConfirm.outId ? 
+                  ' Both the clock-in and clock-out events will be removed.' : 
+                  ' The clock-in will be removed and the instructor will be clocked out.'}
               </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => setDeleteShiftConfirm(null)}
-                  disabled={deleteClockLoading}
-                  className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
+                  className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
@@ -606,7 +610,7 @@ const handleDeleteShift = async () => {
                   disabled={deleteClockLoading}
                   className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
                 >
-                  {deleteClockLoading ? '⏳ Deleting...' : '✓ Delete Shift'}
+                  {deleteClockLoading ? 'Deleting...' : '✓ Delete'}
                 </button>
               </div>
             </div>

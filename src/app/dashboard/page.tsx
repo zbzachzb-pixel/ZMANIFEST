@@ -36,7 +36,8 @@ export default function DashboardPage() {
       // Total earnings (actual pay) - NO multiplier
       const totalEarnings = calculateInstructorTotalEarnings(
         instructor.id,
-        assignments
+        assignments,
+        period
       )
       
       // Count jumps in current period

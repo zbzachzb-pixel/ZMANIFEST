@@ -58,7 +58,7 @@ function calculateInstructorStats(instructor: Instructor, assignments: Assignmen
       if (assignment.jumpType === 'tandem' && !assignment.isMissedJump) {
         tandemCount++
         // NEW: Add student weight for tandem jumps
-        totalTandemWeight += assignment.weight || 0
+        totalTandemWeight += assignment.studentWeight || 0
       }
       else if (assignment.jumpType === 'aff' && !assignment.isMissedJump) affCount++
       

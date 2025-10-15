@@ -252,18 +252,37 @@ export default function LoadBuilderPage() {
         // Add all students back to queue with PRIORITY
         const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
         
-        for (const assignment of groupAssignments) {
-          const queueStudent: CreateQueueStudent = {
-            name: assignment.studentName,
-            weight: assignment.studentWeight,
-            jumpType: assignment.jumpType,
-            isRequest: false,
-            tandemWeightTax: assignment.tandemWeightTax || 0,
-            tandemHandcam: assignment.tandemHandcam || false,
-            outsideVideo: assignment.hasOutsideVideo,
-            affLevel: assignment.affLevel,
-            groupId: groupId  // 🔥 PRESERVE GROUP ID
+        // First, try to find existing student account by name
+          const existingAccounts = await db.searchStudentAccounts(assignment.studentName)
+          let studentAccountId: string
+
+          if (existingAccounts.length > 0) {
+            // Use existing student account
+            studentAccountId = existingAccounts[0].studentAccountId
+          } else {
+            // Create new student account
+            const newAccount = await db.createStudentAccount({
+              studentId: `STUDENT-${Date.now()}`, // Generate permanent ID
+              name: assignment.studentName,
+              weight: assignment.studentWeight,
+              preferredJumpType: assignment.jumpType,
+              affLevel: assignment.jumpType === 'aff' ? assignment.affLevel : undefined
+            })
+            studentAccountId = newAccount.studentId
           }
+
+const queueStudent: CreateQueueStudent = {
+  studentAccountId: studentAccountId,
+  name: assignment.studentName,
+  weight: assignment.studentWeight,
+  jumpType: assignment.jumpType,
+  isRequest: false,
+  tandemWeightTax: assignment.tandemWeightTax || 0,
+  tandemHandcam: assignment.tandemHandcam || false,
+  outsideVideo: assignment.hasOutsideVideo,
+  affLevel: assignment.affLevel,
+  groupId: group.id
+}
           
           await db.addToQueue(queueStudent, priorityTimestamp)
         }
