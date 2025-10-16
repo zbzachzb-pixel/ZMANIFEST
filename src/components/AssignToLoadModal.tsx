@@ -45,8 +45,6 @@ export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
       .filter(instructor => {
         if (selectedStudent.jumpType === 'tandem' && !instructor.canTandem) return false
         if (selectedStudent.jumpType === 'aff' && !instructor.canAFF) return false
-        if (selectedStudent.jumpType === 'video' && !instructor.canVideo) return false
-        
         // Check weight limits
         if (selectedStudent.jumpType === 'tandem' && instructor.tandemWeightLimit) {
           if (selectedStudent.weight > instructor.tandemWeightLimit) return false
