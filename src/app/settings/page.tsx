@@ -1,4 +1,4 @@
-// src/app/settings/page.tsx - COMPLETE FIXED VERSION
+// src/app/settings/page.tsx - COMPLETE FIXED VERSION WITH SAVE BUTTONS
 'use client'
 
 import React, { useState, useEffect } from 'react'
@@ -34,6 +34,14 @@ export default function SettingsPage() {
   const [exportLoading, setExportLoading] = useState(false)
   const [importLoading, setImportLoading] = useState(false)
   const [showEndPeriodModal, setShowEndPeriodModal] = useState(false)
+  
+  // Track unsaved changes
+  const [hasLoadChanges, setHasLoadChanges] = useState(false)
+  const [hasAutoAssignChanges, setHasAutoAssignChanges] = useState(false)
+  
+  // Track save success states
+  const [loadSaveSuccess, setLoadSaveSuccess] = useState(false)
+  const [autoAssignSaveSuccess, setAutoAssignSaveSuccess] = useState(false)
   
   const period = getCurrentPeriod()
   
@@ -84,13 +92,37 @@ export default function SettingsPage() {
   const handleAutoAssignChange = (updates: Partial<AutoAssignSettings>) => {
     const newSettings = { ...autoAssignSettings, ...updates }
     setAutoAssignSettings(newSettings)
-    localStorage.setItem('autoAssignSettings', JSON.stringify(newSettings))
+    setHasAutoAssignChanges(true)
+    setAutoAssignSaveSuccess(false)
   }
   
   const handleLoadSettingsChange = (updates: Partial<LoadSchedulingSettings>) => {
     const newSettings = { ...loadSettings, ...updates }
     setLoadSettings(newSettings)
-    localStorage.setItem('loadSchedulingSettings', JSON.stringify(newSettings))
+    setHasLoadChanges(true)
+    setLoadSaveSuccess(false)
+  }
+  
+  const saveLoadSettings = () => {
+    localStorage.setItem('loadSchedulingSettings', JSON.stringify(loadSettings))
+    setHasLoadChanges(false)
+    setLoadSaveSuccess(true)
+    
+    // Hide success message after 3 seconds
+    setTimeout(() => {
+      setLoadSaveSuccess(false)
+    }, 3000)
+  }
+  
+  const saveAutoAssignSettings = () => {
+    localStorage.setItem('autoAssignSettings', JSON.stringify(autoAssignSettings))
+    setHasAutoAssignChanges(false)
+    setAutoAssignSaveSuccess(true)
+    
+    // Hide success message after 3 seconds
+    setTimeout(() => {
+      setAutoAssignSaveSuccess(false)
+    }, 3000)
   }
   
   const handleExport = async () => {
@@ -163,7 +195,14 @@ export default function SettingsPage() {
           
           {/* Load Scheduling */}
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
-            <h2 className="text-2xl font-bold text-white mb-6">✈️ Load Scheduling</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-white">✈️ Load Scheduling</h2>
+              {loadSaveSuccess && (
+                <span className="text-green-400 text-sm font-semibold animate-pulse">
+                  ✅ Saved successfully!
+                </span>
+              )}
+            </div>
             
             <div className="space-y-4">
               <div>
@@ -175,7 +214,7 @@ export default function SettingsPage() {
                   min="10"
                   max="60"
                   value={loadSettings.minutesBetweenLoads}
-                  onChange={(e) => handleLoadSettingsChange({ minutesBetweenLoads: parseInt(e.target.value) })}
+                  onChange={(e) => handleLoadSettingsChange({ minutesBetweenLoads: parseInt(e.target.value) || 20 })}
                   className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                 />
                 <p className="text-sm text-slate-400 mt-1">Time between loads departing (default: 20 minutes)</p>
@@ -190,7 +229,7 @@ export default function SettingsPage() {
                   min="20"
                   max="120"
                   value={loadSettings.instructorCycleTime}
-                  onChange={(e) => handleLoadSettingsChange({ instructorCycleTime: parseInt(e.target.value) })}
+                  onChange={(e) => handleLoadSettingsChange({ instructorCycleTime: parseInt(e.target.value) || 40 })}
                   className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                 />
                 <p className="text-sm text-slate-400 mt-1">Time from briefing to available again (default: 40 minutes)</p>
@@ -205,17 +244,36 @@ export default function SettingsPage() {
                   min="10"
                   max="25"
                   value={loadSettings.defaultPlaneCapacity}
-                  onChange={(e) => handleLoadSettingsChange({ defaultPlaneCapacity: parseInt(e.target.value) })}
+                  onChange={(e) => handleLoadSettingsChange({ defaultPlaneCapacity: parseInt(e.target.value) || 18 })}
                   className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                 />
                 <p className="text-sm text-slate-400 mt-1">Default capacity for new loads (default: 18)</p>
               </div>
+              
+              <button
+                onClick={saveLoadSettings}
+                disabled={!hasLoadChanges}
+                className={`w-full font-bold py-3 px-6 rounded-lg transition-all ${
+                  hasLoadChanges 
+                    ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5' 
+                    : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                {hasLoadChanges ? '💾 Save Load Settings' : '✓ Load Settings Saved'}
+              </button>
             </div>
           </div>
           
           {/* Auto-Assign */}
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
-            <h2 className="text-2xl font-bold text-white mb-6">🤖 Auto-Assignment</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-white">🤖 Auto-Assignment</h2>
+              {autoAssignSaveSuccess && (
+                <span className="text-green-400 text-sm font-semibold animate-pulse">
+                  ✅ Saved successfully!
+                </span>
+              )}
+            </div>
             
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -248,7 +306,7 @@ export default function SettingsPage() {
                       min="3"
                       max="30"
                       value={autoAssignSettings.delay}
-                      onChange={(e) => handleAutoAssignChange({ delay: parseInt(e.target.value) })}
+                      onChange={(e) => handleAutoAssignChange({ delay: parseInt(e.target.value) || 5 })}
                       className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                     />
                   </div>
@@ -301,13 +359,25 @@ export default function SettingsPage() {
                         min="2"
                         max="10"
                         value={autoAssignSettings.batchSize}
-                        onChange={(e) => handleAutoAssignChange({ batchSize: parseInt(e.target.value) })}
+                        onChange={(e) => handleAutoAssignChange({ batchSize: parseInt(e.target.value) || 3 })}
                         className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                       />
                     </div>
                   )}
                 </div>
               )}
+              
+              <button
+                onClick={saveAutoAssignSettings}
+                disabled={!hasAutoAssignChanges}
+                className={`w-full font-bold py-3 px-6 rounded-lg transition-all ${
+                  hasAutoAssignChanges 
+                    ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5' 
+                    : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                {hasAutoAssignChanges ? '💾 Save Auto-Assign Settings' : '✓ Auto-Assign Settings Saved'}
+              </button>
             </div>
           </div>
           
@@ -318,7 +388,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-white font-semibold">Dark Mode</h3>
-                <p className="text-sm text-slate-400">Toggle dark theme</p>
+                <p className="text-sm text-slate-400">Toggle dark theme (auto-saves)</p>
               </div>
               <button
                 onClick={handleDarkModeToggle}

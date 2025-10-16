@@ -1,5 +1,5 @@
 // src/components/LoadBuilderCard.tsx
-// ✅ COMPLETELY CLEANED VERSION - All backwards compatibility removed
+// ✅ FIXED VERSION - Timer cascade properly handled when changing from ready to building
 // ✅ 40-minute instructor cycle time enforcement
 // ✅ Instructors can only be on loads with proper spacing
 // ✅ Cascading timer system
@@ -54,6 +54,7 @@ export function LoadBuilderCard({
   const [assignLoading, setAssignLoading] = useState(false)
   const [lastMilestone, setLastMilestone] = useState<number | null>(null)
   const [showBreathing, setShowBreathing] = useState(false)
+  
   const validateInstructorForLoad = (instructorId: string): boolean => {
     const availability = isInstructorAvailableForLoad(
       instructorId,
@@ -85,6 +86,7 @@ export function LoadBuilderCard({
     
     return true
   }
+  
   const { countdown, isReadyToDepart } = useLoadCountdown(load, loadSchedulingSettings)
   const isActive = countdown !== null
   
@@ -100,29 +102,51 @@ export function LoadBuilderCard({
   
   const currentStatus = statusConfig[load.status]
   
+  // Calculate metrics
+  const totalStudents = loadAssignments.length
+  const unassignedCount = loadAssignments.filter(a => !a.instructorId).length
+  const loadCapacity = load.capacity || 18  // Default to 18 if undefined
+  const availableSlots = loadCapacity - totalStudents
+  const isOverCapacity = totalStudents > loadCapacity
+  
+  // Calculate total pay for the load
+  const totalPay = useMemo(() => {
+    return loadAssignments.reduce((sum, assignment) => {
+      let pay = 0
+      if (assignment.jumpType === 'tandem') {
+        pay = 40 + (assignment.tandemWeightTax || 0) * 20
+        if (assignment.tandemHandcam) pay += 30
+      } else if (assignment.jumpType === 'aff') {
+        pay = assignment.affLevel === 'lower' ? 55 : 45
+      }
+      if (assignment.hasOutsideVideo) pay += 45
+      return sum + pay
+    }, 0)
+  }, [loadAssignments])
+  
+  // Get available transitions based on current status
   const availableTransitions = useMemo(() => {
     const transitions: Load['status'][] = []
     
-    if (load.status === 'building') transitions.push('ready')
-    if (load.status === 'ready') transitions.push('building', 'departed')
-    if (load.status === 'departed') transitions.push('ready', 'completed')
-    if (load.status === 'completed') transitions.push('departed')
+    switch (load.status) {
+      case 'building':
+        transitions.push('ready')
+        break
+      case 'ready':
+        transitions.push('building', 'departed')
+        break
+      case 'departed':
+        transitions.push('ready', 'completed')
+        break
+      case 'completed':
+        transitions.push('departed')
+        break
+    }
     
     return transitions
   }, [load.status])
   
-  const totalPeople = loadAssignments.reduce((sum, a) => {
-    let count = 2
-    if (a.hasOutsideVideo) count += 1
-    return sum + count
-  }, 0)
-  
-  const availableSlots = (load.capacity || 18) - totalPeople
-  const isOverCapacity = totalPeople > (load.capacity || 18)
-  
-  const unassignedCount = loadAssignments.filter(a => !a.instructorId).length
-  
-  // ✅ CLEAN: Auto-select instructors with availability checking
+  // Auto-select instructors for unassigned students
   const autoSelectInstructors = useMemo(() => {
     if (!showAssignModal) return {}
     
@@ -130,89 +154,40 @@ export function LoadBuilderCard({
     const usedMainInstructors = new Set<string>()
     const usedVideoInstructors = new Set<string>()
     
-    // Only track instructors already assigned on THIS load
-    const assignments = loadAssignments || []
-    assignments.forEach(a => {
-      if (a.instructorId) {
-        usedMainInstructors.add(a.instructorId)
-      }
-      if (a.videoInstructorId) {
-        usedVideoInstructors.add(a.videoInstructorId)
-        usedMainInstructors.add(a.videoInstructorId)
+    // First pass: assign main instructors
+    loadAssignments.forEach(assignment => {
+      if (!assignment.instructorId) {
+        const qualifiedInstructors = getQualifiedInstructors(assignment)
+        const availableForMain = qualifiedInstructors.filter(i => !usedMainInstructors.has(i.id))
+        
+        if (availableForMain.length > 0) {
+          const selected = availableForMain[0]
+          selections[assignment.id] = { instructorId: selected.id }
+          usedMainInstructors.add(selected.id)
+        }
+      } else {
+        usedMainInstructors.add(assignment.instructorId)
+        if (assignment.videoInstructorId) {
+          usedVideoInstructors.add(assignment.videoInstructorId)
+        }
       }
     })
     
-    const unassignedAssignments = loadAssignments.filter(a => !a.instructorId)
-    
-    unassignedAssignments.forEach((assignment) => {
-      const clockedIn = instructors.filter(i => i.clockedIn)
-      
-      const qualified = clockedIn.filter(instructor => {
-        // Only exclude if already used on THIS load
-        if (usedMainInstructors.has(instructor.id)) return false
-        
-        // Check if instructor is available for this load based on 40-minute cycle
-        const isAvailable = isInstructorAvailableForLoad(
-          instructor.id,
-          load.position || 0,
-          allLoads,
-          loadSchedulingSettings.instructorCycleTime,
-          loadSchedulingSettings.minutesBetweenLoads
-        )
-        
-        if (!isAvailable) return false
-        
-        // ✅ CLEAN: Use correct property names directly
-        if (assignment.jumpType === 'tandem' && !instructor.canTandem) return false
-        if (assignment.jumpType === 'aff' && !instructor.canAFF) return false
-        
-        if (assignment.jumpType === 'tandem' && instructor.tandemWeightLimit) {
-          const totalWeight = assignment.studentWeight + (assignment.tandemWeightTax || 0)
-          if (totalWeight > instructor.tandemWeightLimit) return false
-        }
-        if (assignment.jumpType === 'aff' && instructor.affWeightLimit) {
-          if (assignment.studentWeight > instructor.affWeightLimit) return false
-        }
-        
-        return true
-      }).sort((a, b) => {
-        const balanceA = instructorBalances.get(a.id) || 0
-        const balanceB = instructorBalances.get(b.id) || 0
-        return balanceA - balanceB
-      })
-      
-      if (qualified.length > 0) {
-        const selectedInstructor = qualified[0]
-        selections[assignment.id] = { instructorId: selectedInstructor.id }
-        usedMainInstructors.add(selectedInstructor.id)
-        
-        if (assignment.hasOutsideVideo && assignment.jumpType === 'tandem') {
-          const videoQualified = clockedIn.filter(i => {
-            // ✅ CLEAN: Use correct property name directly
-            if (!i.clockedIn || !i.canVideo) return false
-            if (i.id === selectedInstructor.id) return false
-            if (usedVideoInstructors.has(i.id)) return false
-            if (usedMainInstructors.has(i.id)) return false
-            
-            // Check if video instructor is available for this load
-            const isAvailable = isInstructorAvailableForLoad(
-              i.id,
-              load.position || 0,
-              allLoads,
-              loadSchedulingSettings.instructorCycleTime,
-              loadSchedulingSettings.minutesBetweenLoads
-            )
-            
-            return isAvailable
-          }).sort((a, b) => {
-            const balanceA = instructorBalances.get(a.id) || 0
-            const balanceB = instructorBalances.get(b.id) || 0
-            return balanceA - balanceB
-          })
+    // Second pass: assign video instructors
+    loadAssignments.forEach(assignment => {
+      if (assignment.hasOutsideVideo && !assignment.videoInstructorId) {
+        const selection = selections[assignment.id]
+        if (selection) {
+          const videoInstructors = getVideoInstructors()
+          const availableForVideo = videoInstructors.filter(i => 
+            !usedVideoInstructors.has(i.id) && 
+            i.id !== selection.instructorId &&
+            !usedMainInstructors.has(i.id)
+          )
           
-          if (videoQualified.length > 0) {
-            const selectedVideo = videoQualified[0]
-            selections[assignment.id].videoInstructorId = selectedVideo.id
+          if (availableForVideo.length > 0) {
+            const selectedVideo = availableForVideo[0]
+            selection.videoInstructorId = selectedVideo.id
             usedVideoInstructors.add(selectedVideo.id)
             usedMainInstructors.add(selectedVideo.id)
           }
@@ -244,16 +219,35 @@ export function LoadBuilderCard({
 
     const minutes = Math.floor(countdown / 60)
     
+    // More frequent milestones for better visual feedback
     if (minutes === 19 && lastMilestone !== 20) {
       setLastMilestone(20)
       setShowBreathing(true)
-      setTimeout(() => setShowBreathing(false), 1000)
+      setTimeout(() => setShowBreathing(false), 2000)
+    }
+    
+    if (minutes === 14 && lastMilestone !== 15) {
+      setLastMilestone(15)
+      setShowBreathing(true)
+      setTimeout(() => setShowBreathing(false), 2000)
     }
     
     if (minutes === 9 && lastMilestone !== 10) {
       setLastMilestone(10)
       setShowBreathing(true)
-      setTimeout(() => setShowBreathing(false), 1000)
+      setTimeout(() => setShowBreathing(false), 2000)
+    }
+    
+    if (minutes === 4 && lastMilestone !== 5) {
+      setLastMilestone(5)
+      setShowBreathing(true)
+      setTimeout(() => setShowBreathing(false), 2000)
+    }
+    
+    if (minutes === 0 && countdown > 0 && countdown <= 60 && lastMilestone !== 1) {
+      setLastMilestone(1)
+      setShowBreathing(true)
+      setTimeout(() => setShowBreathing(false), 2000)
     }
   }, [countdown, load.status, lastMilestone])
 
@@ -277,23 +271,29 @@ export function LoadBuilderCard({
 
     const minutes = Math.floor(countdown / 60)
     
-    if (minutes >= 20) {
+    if (isReadyToDepart) {
+      return {
+        bg: 'bg-green-900/40',
+        border: 'border-green-400',
+        glow: 'shadow-[0_0_40px_rgba(34,197,94,0.7)] animate-pulse'
+      }
+    } else if (minutes >= 15) {
       return {
         bg: 'bg-white/10',
         border: 'border-blue-500/50',
         glow: showBreathing ? 'shadow-[0_0_30px_rgba(59,130,246,0.6)]' : ''
       }
-    } else if (minutes >= 10) {
+    } else if (minutes >= 5) {
       return {
         bg: 'bg-orange-900/20',
         border: 'border-orange-500/60',
-        glow: showBreathing ? 'shadow-[0_0_30px_rgba(251,146,60,0.6)]' : ''
+        glow: showBreathing ? 'shadow-[0_0_30px_rgba(251,146,60,0.6)]' : 'shadow-[0_0_20px_rgba(251,146,60,0.4)]'
       }
     } else {
       return {
-        bg: 'bg-red-900/20',
-        border: 'border-red-500/60',
-        glow: showBreathing ? 'shadow-[0_0_30px_rgba(239,68,68,0.6)]' : ''
+        bg: 'bg-red-900/30',
+        border: 'border-red-500',
+        glow: 'shadow-[0_0_35px_rgba(239,68,68,0.6)] animate-pulse'
       }
     }
   }
@@ -321,38 +321,38 @@ export function LoadBuilderCard({
   }
   
   const removeFromLoad = async (assignmentId: string) => {
-  if (isCompleted) return
-  try {
-    const assignment = loadAssignments.find(a => a.id === assignmentId)
-    if (!assignment) return
-    
-    // Remove from load
-    const updatedAssignments = loadAssignments.filter(a => a.id !== assignmentId)
-    await update(load.id, { assignments: updatedAssignments })
-    
-    // Use original timestamp if available, otherwise use priority timestamp
-    const timestamp = assignment.originalQueueTimestamp || 
-      new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    
-    const queueStudent: CreateQueueStudent = {
-      studentAccountId: assignment.studentId,
-      name: assignment.studentName,
-      weight: assignment.studentWeight,
-      jumpType: assignment.jumpType,
-      isRequest: assignment.isRequest,
-      tandemWeightTax: assignment.tandemWeightTax,
-      tandemHandcam: assignment.tandemHandcam,
-      outsideVideo: assignment.hasOutsideVideo,
-      affLevel: assignment.affLevel,
-      groupId: assignment.groupId
+    if (isCompleted) return
+    try {
+      const assignment = loadAssignments.find(a => a.id === assignmentId)
+      if (!assignment) return
+      
+      // Remove from load
+      const updatedAssignments = loadAssignments.filter(a => a.id !== assignmentId)
+      await update(load.id, { assignments: updatedAssignments })
+      
+      // Use original timestamp if available, otherwise use priority timestamp
+      const timestamp = assignment.originalQueueTimestamp || 
+        new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      
+      const queueStudent: CreateQueueStudent = {
+        studentAccountId: assignment.studentId,
+        name: assignment.studentName,
+        weight: assignment.studentWeight,
+        jumpType: assignment.jumpType,
+        isRequest: assignment.isRequest,
+        tandemWeightTax: assignment.tandemWeightTax,
+        tandemHandcam: assignment.tandemHandcam,
+        outsideVideo: assignment.hasOutsideVideo,
+        affLevel: assignment.affLevel,
+        groupId: assignment.groupId
+      }
+      
+      await db.addToQueue(queueStudent, timestamp)  // ✅ Use preserved timestamp
+    } catch (error) {
+      console.error('Failed to remove from load:', error)
+      alert('Failed to remove student from load')
     }
-    
-    await db.addToQueue(queueStudent, timestamp)  // ✅ Use preserved timestamp
-  } catch (error) {
-    console.error('Failed to remove from load:', error)
-    alert('Failed to remove student from load')
   }
-}
   
   const handleStatusChangeRequest = (newStatus: Load['status']) => {
     if (newStatus === 'departed' && load.status === 'ready' && unassignedCount > 0) {
@@ -388,28 +388,102 @@ export function LoadBuilderCard({
         const hasUnreadyLoadsBefore = loadsBeforeThis.some(l => l.status === 'building')
         
         if (hasUnreadyLoadsBefore) {
+          // There are building loads before this one - no timer
           (updates as any).countdownStartTime = null
         } else {
-          const allReadyLoads = allLoads
-            .filter(l => l.status === 'ready' || l.id === load.id)
+          // No building loads before this one
+          const currentReadyLoads = allLoads
+            .filter(l => l.status === 'ready')
             .sort((a, b) => (a.position || 0) - (b.position || 0))
           
-          const firstReadyLoad = allReadyLoads[0]
-          const isFirstReadyLoad = firstReadyLoad && firstReadyLoad.id === load.id
-          
-          if (isFirstReadyLoad) {
+          // Check if this will be the first ready load
+          if (currentReadyLoads.length === 0 || (currentReadyLoads[0].position || 0) > (load.position || 0)) {
+            // This will be the first ready load - give it a timer
             (updates as any).countdownStartTime = new Date().toISOString()
           } else {
-            (updates as any).countdownStartTime = null
+            // Not the first ready load - calculate offset from first ready load
+            const firstReadyLoad = currentReadyLoads[0]
+            if ((firstReadyLoad as any).countdownStartTime) {
+              // Calculate position difference for timer offset
+              const positionDiff = (load.position || 0) - (firstReadyLoad.position || 0)
+              const offsetMs = positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
+              
+              // Calculate when this load's timer should start
+              const firstLoadStartTime = new Date((firstReadyLoad as any).countdownStartTime).getTime()
+              const thisLoadStartTime = firstLoadStartTime + offsetMs
+              
+              ;(updates as any).countdownStartTime = new Date(thisLoadStartTime).toISOString()
+            } else {
+              // First ready load doesn't have a timer yet - this shouldn't happen but handle it
+              ;(updates as any).countdownStartTime = null
+            }
           }
         }
       }
       
+      // ============== CRITICAL FIX: Handle timer cascade when changing to building ==============
       if (statusChangeConfirm === 'building') {
+        // 1. Clear timer from the current load being changed to building
         if ((load as any).countdownStartTime) {
           (updates as any).countdownStartTime = null
         }
+        
+        // 2. CRITICAL: Remove timers from ALL subsequent ready loads
+        // These loads depend on this load being ready for their timers to be valid
+        const subsequentReadyLoads = allLoads
+          .filter(l => l.status === 'ready' && (l.position || 0) > (load.position || 0))
+          .sort((a, b) => (a.position || 0) - (b.position || 0))
+        
+        // Clear all their timers since they now have a building load before them
+        for (const subsequentLoad of subsequentReadyLoads) {
+          await update(subsequentLoad.id, {
+            countdownStartTime: null
+          } as any)
+        }
+        
+        // 3. Check if there's a new "first ready load" that needs a timer
+        // This would be a ready load BEFORE the current load (if any)
+        const readyLoadsBeforeThis = allLoads
+          .filter(l => 
+            l.status === 'ready' && 
+            (l.position || 0) < (load.position || 0)
+          )
+          .sort((a, b) => (a.position || 0) - (b.position || 0))
+        
+        // Check if there are any building loads before the first ready load
+        if (readyLoadsBeforeThis.length > 0) {
+          const firstReadyLoad = readyLoadsBeforeThis[0]
+          const loadsBeforeFirst = allLoads
+            .filter(l => 
+              (l.position || 0) < (firstReadyLoad.position || 0) &&
+              l.status !== 'departed' && 
+              l.status !== 'completed'
+            )
+          
+          const hasUnreadyBeforeFirst = loadsBeforeFirst.some(l => l.status === 'building')
+          
+          // If the first ready load has no building loads before it, 
+          // it should have a timer (if it doesn't already)
+          if (!hasUnreadyBeforeFirst && !(firstReadyLoad as any).countdownStartTime) {
+            await update(firstReadyLoad.id, {
+              countdownStartTime: new Date().toISOString()
+            } as any)
+            
+            // Cascade timers to subsequent ready loads that come before the current load
+            const subsequentToFirst = readyLoadsBeforeThis.slice(1)
+            for (const subsequentLoad of subsequentToFirst) {
+              const positionDiff = subsequentLoad.position - firstReadyLoad.position
+              const targetRemainingMs = loadSchedulingSettings.minutesBetweenLoads * 60 * 1000 * positionDiff
+              const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+              
+              await update(subsequentLoad.id, {
+                countdownStartTime: new Date(newStartTime).toISOString()
+              } as any)
+            }
+          }
+        }
       }
+      // ============== END OF FIX ==============
       
       if (statusChangeConfirm === 'departed') {
         updates.departedAt = new Date().toISOString()
@@ -485,6 +559,41 @@ export function LoadBuilderCard({
   
   const handleDelay = async () => {
     try {
+      // If this load has a timer, adjust it by the delay amount
+      if ((load as any).countdownStartTime) {
+        const currentStartTime = new Date((load as any).countdownStartTime).getTime()
+        const delayMs = delayMinutes * 60 * 1000
+        const newStartTime = new Date(currentStartTime + delayMs).toISOString()
+        
+        // Update this load's timer
+        await update(load.id, {
+          countdownStartTime: newStartTime,
+          delayMinutes: (load.delayMinutes || 0) + delayMinutes
+        } as any)
+        
+        // Update all subsequent ready loads' timers as well
+        const subsequentReadyLoads = allLoads
+          .filter(l => l.status === 'ready' && (l.position || 0) > (load.position || 0))
+          .sort((a, b) => (a.position || 0) - (b.position || 0))
+        
+        for (const subsequentLoad of subsequentReadyLoads) {
+          if ((subsequentLoad as any).countdownStartTime) {
+            const subCurrentStartTime = new Date((subsequentLoad as any).countdownStartTime).getTime()
+            const subNewStartTime = new Date(subCurrentStartTime + delayMs).toISOString()
+            
+            await update(subsequentLoad.id, {
+              countdownStartTime: subNewStartTime
+            } as any)
+          }
+        }
+      } else {
+        // If no timer yet, just track the delay amount
+        await update(load.id, {
+          delayMinutes: (load.delayMinutes || 0) + delayMinutes
+        } as any)
+      }
+      
+      // Call the parent's onDelay handler if needed for additional processing
       await onDelay(load.id, delayMinutes)
       setShowDelayModal(false)
     } catch (error) {
@@ -509,7 +618,7 @@ export function LoadBuilderCard({
       
       for (const assignment of loadAssignments) {
         await db.addToQueue({
-          studentAccountId: assignment.studentId,  // ✅ Use the studentId from the assignment
+          studentAccountId: assignment.studentId,
           name: assignment.studentName,
           weight: assignment.studentWeight,
           jumpType: assignment.jumpType,
@@ -577,6 +686,8 @@ export function LoadBuilderCard({
           }
         }
       }
+      
+      setShowDeleteConfirm(false)
     } catch (error) {
       console.error('Failed to delete load:', error)
       alert('Failed to delete load')
@@ -585,53 +696,40 @@ export function LoadBuilderCard({
   
   const handleBulkAssign = async () => {
     if (Object.keys(assignmentSelections).length === 0) {
-      alert('No instructor selections made')
+      alert('No instructors selected to assign')
       return
     }
-    for (const [assignmentId, selection] of Object.entries(assignmentSelections)) {
-    if (selection.instructorId && !validateInstructorForLoad(selection.instructorId)) {
-      return // Validation already showed alert
-    }
-    if (selection.videoInstructorId && !validateInstructorForLoad(selection.videoInstructorId)) {
-      return // Validation already showed alert
-    }
-  }
     
     setAssignLoading(true)
+    
     try {
       const updatedAssignments = loadAssignments.map(assignment => {
         const selection = assignmentSelections[assignment.id]
-        if (selection) {
-          const instructor = instructors.find(i => i.id === selection.instructorId)
-          const videoInstructor = selection.videoInstructorId
-            ? instructors.find(i => i.id === selection.videoInstructorId)
-            : null
+        if (selection && !assignment.instructorId) {
           return {
             ...assignment,
             instructorId: selection.instructorId,
-            instructorName: instructor?.name || '',
-            ...(selection.videoInstructorId && {
-              videoInstructorId: selection.videoInstructorId,
-              videoInstructorName: videoInstructor?.name || ''
-            })
+            videoInstructorId: selection.videoInstructorId || assignment.videoInstructorId
           }
         }
         return assignment
       })
+      
       await update(load.id, { assignments: updatedAssignments })
       setShowAssignModal(false)
+      setAssignmentSelections({})
     } catch (error) {
       console.error('Failed to assign instructors:', error)
-      alert('Failed to assign instructors: ' + (error as Error).message)
+      alert('Failed to assign instructors')
     } finally {
       setAssignLoading(false)
     }
   }
   
-  // ✅ CLEAN: Check instructor availability based on load position and 40-minute cycle
-  const getQualifiedInstructors = (assignment: typeof loadAssignments[0]) => {
-    const clockedIn = instructors.filter(i => i.clockedIn)
-    const qualified = clockedIn.filter(instructor => {
+  const getQualifiedInstructors = (assignment: any) => {
+    const qualified = instructors.filter(instructor => {
+      if (!instructor.clockedIn) return false
+      
       // Check availability based on load position and cycle time
       const isAvailable = isInstructorAvailableForLoad(
         instructor.id,
@@ -655,6 +753,7 @@ export function LoadBuilderCard({
       }
       return true
     })
+    
     return qualified.sort((a, b) => {
       const balanceA = instructorBalances.get(a.id) || 0
       const balanceB = instructorBalances.get(b.id) || 0
@@ -697,40 +796,77 @@ export function LoadBuilderCard({
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <span className="text-2xl">{currentStatus.emoji}</span>
+          <div className="flex items-center gap-3 flex-1">
+            <h3 className="text-lg font-bold text-white">
               {load.name}
             </h3>
-            <p className="text-sm text-slate-400">
-              Capacity: {totalPeople}/{load.capacity || 18} • Slots: {availableSlots}
-            </p>
           </div>
-          
-          {/* Timer Display */}
-          {load.status === 'ready' && countdown && (
-            <div className="text-right">
-              <div className={`text-3xl font-bold ${
-                Math.floor(countdown / 60) >= 20 ? 'text-blue-400' :
-                Math.floor(countdown / 60) >= 10 ? 'text-orange-400' :
-                'text-red-400'
-              }`}>
-                {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
+          <div className={`px-3 py-1 rounded-full ${currentStatus.color} text-white text-sm font-bold`}>
+            {currentStatus.emoji} {currentStatus.label}
+          </div>
+        </div>
+        
+        {/* Timer Display - Prominent and Eye-catching */}
+        {load.status === 'ready' && isActive && (
+          <div className={`mb-4 rounded-lg overflow-hidden ${
+            isReadyToDepart ? 'bg-green-500/30 border-2 border-green-400 animate-pulse' :
+            countdown && countdown > 0 ? (
+              Math.floor(countdown / 60) >= 15 ? 'bg-blue-500/20 border-2 border-blue-400' :
+              Math.floor(countdown / 60) >= 5 ? 'bg-orange-500/20 border-2 border-orange-400' :
+              'bg-red-500/30 border-2 border-red-400 animate-pulse'
+            ) : 'bg-slate-700/50 border-2 border-slate-600'
+          }`}>
+            <div className={`text-center py-3 px-4 ${
+              isReadyToDepart ? 'bg-green-500/50' :
+              countdown && countdown > 0 ? (
+                Math.floor(countdown / 60) >= 15 ? 'bg-blue-500/30' :
+                Math.floor(countdown / 60) >= 5 ? 'bg-orange-500/30' :
+                'bg-red-500/50'
+              ) : 'bg-slate-700/30'
+            }`}>
+              <div className="text-sm font-semibold uppercase tracking-wider mb-1 text-white/90">
+                {isReadyToDepart ? '🚀 CLEARED FOR DEPARTURE' : 
+                 countdown && countdown > 0 ? '⏱️ TIME TO DEPARTURE' : '⏸️ TIMER PAUSED'}
               </div>
-              <div className="text-xs text-slate-400">until departure</div>
+              <div className={`text-4xl font-bold ${
+                isReadyToDepart ? 'text-green-100' :
+                countdown && countdown > 0 ? (
+                  Math.floor(countdown / 60) >= 15 ? 'text-white' :
+                  Math.floor(countdown / 60) >= 5 ? 'text-yellow-100' :
+                  'text-white'
+                ) : 'text-slate-400'
+              }`}>
+                {countdown && countdown > 0 ? 
+                  `${Math.floor(countdown / 60)}:${(countdown % 60).toString().padStart(2, '0')}` : 
+                  isReadyToDepart ? 'GO!' : 'WAITING'}
+              </div>
+              {countdown && countdown > 0 && !isReadyToDepart && (
+                <div className="mt-2">
+                  <div className="w-full bg-black/30 rounded-full h-2">
+                    <div 
+                      className={`h-2 rounded-full transition-all duration-1000 ${
+                        Math.floor(countdown / 60) >= 15 ? 'bg-blue-400' :
+                        Math.floor(countdown / 60) >= 5 ? 'bg-orange-400' :
+                        'bg-red-400'
+                      }`}
+                      style={{ 
+                        width: `${Math.max(0, Math.min(100, (countdown / (loadSchedulingSettings.minutesBetweenLoads * 60)) * 100))}%` 
+                      }}
+                    />
+                  </div>
+                  <div className="text-sm text-white/70 mt-1 font-medium">
+                    {Math.floor(countdown / 60) < 5 ? '⚠️ PREPARE FOR DEPARTURE' :
+                     Math.floor(countdown / 60) < 10 ? '📋 FINAL CHECKS' :
+                     '✅ ON SCHEDULE'}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
         
-        {/* Status Badge */}
-        <div className="mb-4">
-          <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${currentStatus.color} text-white`}>
-            {currentStatus.label}
-          </span>
-        </div>
-        
-        {/* Assignments List */}
-        <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+        {/* Students */}
+        <div className="space-y-2 mb-3 max-h-96 overflow-y-auto">
           {loadAssignments.length === 0 ? (
             <div className="text-center text-slate-400 py-4">
               Drop students here
@@ -778,18 +914,22 @@ export function LoadBuilderCard({
                                 {assignment.hasOutsideVideo && ' • 🎥 Video'}
                               </div>
                               {assignment.instructorId ? (
-                                <div className="text-sm text-green-400 mt-1">
-                                  TI: {assignment.instructorName}
-                                  {assignment.videoInstructorId && ` • 📹 ${assignment.videoInstructorName}`}
+                                <div className="text-xs text-green-400 mt-1">
+                                  ✓ {instructors.find(i => i.id === assignment.instructorId)?.name || 'Unknown'}
+                                  {assignment.videoInstructorId && (
+                                    <span className="ml-2">
+                                      🎥 {instructors.find(i => i.id === assignment.videoInstructorId)?.name || 'Unknown'}
+                                    </span>
+                                  )}
                                 </div>
                               ) : (
-                                <div className="text-sm text-red-400 mt-1">TI: 🔴 Not assigned</div>
+                                <div className="text-xs text-orange-400 mt-1">⚠️ No instructor</div>
                               )}
                             </div>
                             {!isCompleted && load.status === 'building' && (
                               <button
                                 onClick={() => removeFromLoad(assignment.id)}
-                                className="ml-2 p-1 text-red-400 hover:text-red-300 transition-colors"
+                                className="ml-2 text-red-400 hover:text-red-300 transition-colors"
                               >
                                 ✕
                               </button>
@@ -804,20 +944,25 @@ export function LoadBuilderCard({
             })()
           )}
         </div>
-
-        {/* Unassigned Warning */}
-        {unassignedCount > 0 && (
-          <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-yellow-400">
-                <span className="text-2xl">⚠️</span>
-                <span className="font-semibold">{unassignedCount} student(s) need instructor assignment</span>
+        
+        {/* Metrics */}
+        {totalStudents > 0 && (
+          <div className="grid grid-cols-3 gap-2 mb-3 pt-3 border-t border-white/10">
+            <div className="text-center">
+              <div className="text-xs text-slate-400">Total Pay</div>
+              <div className="font-bold text-lg text-green-400">${totalPay}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-slate-400">Students</div>
+              <div className="font-bold text-lg text-white">
+                {totalStudents}/{loadCapacity}
+                {isOverCapacity && <span className="text-red-400 ml-1">⚠️</span>}
               </div>
-              <div className="flex gap-2 text-sm">
-                <div className={`px-3 py-1 rounded-lg ${isOverCapacity ? 'bg-red-500/20 text-red-400' : 'text-blue-400'}`}>Slots Left</div>
-                <div className={`font-bold text-lg ${isOverCapacity ? 'text-red-400' : 'text-blue-400'}`}>
-                  {Math.max(0, availableSlots)}
-                </div>
+            </div>
+            <div className="text-center">
+              <div className={`text-xs ${isOverCapacity ? 'bg-red-500/20 text-red-400' : 'text-blue-400'}`}>Slots Left</div>
+              <div className={`font-bold text-lg ${isOverCapacity ? 'text-red-400' : 'text-blue-400'}`}>
+                {Math.max(0, availableSlots)}
               </div>
             </div>
           </div>
@@ -833,6 +978,7 @@ export function LoadBuilderCard({
               👤 Assign Instructors ({unassignedCount} unassigned)
             </button>
           )}
+          
           {availableTransitions.map(transition => {
             const transitionConfig = statusConfig[transition as Load['status']]
             return (
@@ -948,7 +1094,7 @@ export function LoadBuilderCard({
               <p className="text-slate-300 mb-6">
                 {isCompleted 
                   ? '⚠️ This is a COMPLETED load. Are you absolutely sure you want to delete it?'
-                  : 'Are you sure you want to delete this load? Students will be returned to the queue.'}
+                  : 'Are you sure you want to delete this load? All students will be returned to the queue.'}
               </p>
               <div className="flex gap-3">
                 <button
@@ -959,9 +1105,10 @@ export function LoadBuilderCard({
                 </button>
                 <button
                   onClick={handleDelete}
-                  className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                  disabled={loading}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
                 >
-                  Delete
+                  Delete Load
                 </button>
               </div>
             </div>
@@ -972,41 +1119,46 @@ export function LoadBuilderCard({
       {/* Assign Instructors Modal */}
       {showAssignModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-y-auto border border-slate-700">
-            <div className="border-b border-slate-700 p-6">
-              <h3 className="text-2xl font-bold text-white">Assign Instructors</h3>
+          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[80vh] border border-slate-700 flex flex-col">
+            <div className="p-6 border-b border-slate-700">
+              <h3 className="text-xl font-bold text-white">Assign Instructors</h3>
+              <p className="text-sm text-slate-400 mt-1">
+                Auto-selected lowest balance instructors. Adjust as needed.
+              </p>
             </div>
             
-            <div className="p-6 space-y-4">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {loadAssignments.filter(a => !a.instructorId).map(assignment => {
+                const selection = assignmentSelections[assignment.id]
                 const qualifiedInstructors = getQualifiedInstructors(assignment)
                 const videoInstructors = getVideoInstructors()
-                const selection = assignmentSelections[assignment.id]
                 
                 return (
-                  <div key={assignment.id} className="bg-white/5 border border-white/10 rounded-lg p-4">
+                  <div key={assignment.id} className="border border-slate-600 rounded-lg p-4">
                     <div className="mb-3">
-                      <div className="font-bold text-white">{assignment.studentName}</div>
+                      <div className="font-semibold text-white">{assignment.studentName}</div>
                       <div className="text-sm text-slate-400">
                         {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
                         {assignment.tandemWeightTax && ` • Tax: ${assignment.tandemWeightTax}`}
-                        {assignment.hasOutsideVideo && ' • 🎥 Video'}
+                        {assignment.hasOutsideVideo && ' • 🎥 Needs Video'}
                       </div>
                     </div>
                     
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       <div>
-                        <label className="block text-sm font-semibold text-white mb-2">Main Instructor</label>
+                        <label className="block text-xs text-slate-400 mb-1">Main Instructor</label>
                         <select
                           value={selection?.instructorId || ''}
-                          onChange={(e) => setAssignmentSelections(prev => ({
-                            ...prev,
-                            [assignment.id]: {
-                              ...prev[assignment.id],
-                              instructorId: e.target.value
-                            }
-                          }))}
-                          className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                          onChange={(e) => {
+                            setAssignmentSelections(prev => ({
+                              ...prev,
+                              [assignment.id]: {
+                                ...prev[assignment.id],
+                                instructorId: e.target.value
+                              }
+                            }))
+                          }}
+                          className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
                         >
                           <option value="">Select instructor...</option>
                           {qualifiedInstructors.map(instructor => (
@@ -1015,24 +1167,23 @@ export function LoadBuilderCard({
                             </option>
                           ))}
                         </select>
-                        {qualifiedInstructors.length === 0 && (
-                          <p className="text-xs text-red-400 mt-1">⚠️ No qualified instructors available for this load position</p>
-                        )}
                       </div>
                       
-                      {assignment.hasOutsideVideo && assignment.jumpType === 'tandem' && (
+                      {assignment.hasOutsideVideo && (
                         <div>
-                          <label className="block text-sm font-semibold text-white mb-2">Video Instructor</label>
+                          <label className="block text-xs text-slate-400 mb-1">Video Instructor</label>
                           <select
                             value={selection?.videoInstructorId || ''}
-                            onChange={(e) => setAssignmentSelections(prev => ({
-                              ...prev,
-                              [assignment.id]: {
-                                ...prev[assignment.id],
-                                videoInstructorId: e.target.value
-                              }
-                            }))}
-                            className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                            onChange={(e) => {
+                              setAssignmentSelections(prev => ({
+                                ...prev,
+                                [assignment.id]: {
+                                  ...prev[assignment.id],
+                                  videoInstructorId: e.target.value
+                                }
+                              }))
+                            }}
+                            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
                           >
                             <option value="">Select video instructor...</option>
                             {videoInstructors.map(instructor => (
