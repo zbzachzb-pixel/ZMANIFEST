@@ -54,7 +54,37 @@ export function LoadBuilderCard({
   const [assignLoading, setAssignLoading] = useState(false)
   const [lastMilestone, setLastMilestone] = useState<number | null>(null)
   const [showBreathing, setShowBreathing] = useState(false)
-  
+  const validateInstructorForLoad = (instructorId: string): boolean => {
+    const availability = isInstructorAvailableForLoad(
+      instructorId,
+      load.position || 0,
+      allLoads,
+      loadSchedulingSettings.instructorCycleTime,
+      loadSchedulingSettings.minutesBetweenLoads
+    )
+    
+    if (!availability) {
+      const instructorLoads = allLoads.filter(l => 
+        l.status !== 'completed' && 
+        l.assignments?.some(a => 
+          a.instructorId === instructorId || 
+          a.videoInstructorId === instructorId
+        )
+      )
+      
+      if (instructorLoads.length > 0) {
+        const highestPosition = Math.max(...instructorLoads.map(l => l.position || 0))
+        const loadsToSkip = Math.ceil(loadSchedulingSettings.instructorCycleTime / loadSchedulingSettings.minutesBetweenLoads)
+        const nextAvailable = highestPosition + loadsToSkip
+        const instructor = instructors.find(i => i.id === instructorId)
+        
+        alert(`❌ ${instructor?.name || 'Instructor'} not available until Load #${nextAvailable} (needs ${loadSchedulingSettings.instructorCycleTime}min recovery time)`)
+      }
+      return false
+    }
+    
+    return true
+  }
   const { countdown, isReadyToDepart } = useLoadCountdown(load, loadSchedulingSettings)
   const isActive = countdown !== null
   
@@ -558,6 +588,14 @@ export function LoadBuilderCard({
       alert('No instructor selections made')
       return
     }
+    for (const [assignmentId, selection] of Object.entries(assignmentSelections)) {
+    if (selection.instructorId && !validateInstructorForLoad(selection.instructorId)) {
+      return // Validation already showed alert
+    }
+    if (selection.videoInstructorId && !validateInstructorForLoad(selection.videoInstructorId)) {
+      return // Validation already showed alert
+    }
+  }
     
     setAssignLoading(true)
     try {
