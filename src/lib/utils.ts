@@ -40,6 +40,11 @@ export function calculateAssignmentPay(assignment: Assignment): number {
  * Check if instructor is working on their scheduled off day
  */
 export function isWorkingOffDay(instructor: Instructor, date: Date): boolean {
+  // ✅ Gold team has no off days - always treated as working their schedule
+  if (instructor.team === 'gold') {
+    return false
+  }
+  
   const dayOfWeek = date.getDay() // 0 = Sunday, 1 = Monday, etc.
   
   // Get current week's rotation

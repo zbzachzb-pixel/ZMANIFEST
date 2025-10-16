@@ -37,7 +37,7 @@ export function TeamManagementSection() {
   const getRotationInfo = (team: Team) => {
     if (team === 'gold') {
       return {
-        daysOff: 'None (Works Every Day)',
+        daysOff: 'As-Needed (No Required Days)',
         color: 'text-yellow-300',
         bgColor: 'bg-yellow-500/10',
         borderColor: 'border-yellow-500/30'
@@ -98,7 +98,7 @@ export function TeamManagementSection() {
             <div className="text-3xl mb-2">🟡</div>
             <div className="text-xl font-bold text-white mb-1">Gold Team</div>
             <div className={`text-lg ${getRotationInfo('gold').color} font-semibold`}>
-              {getRotationInfo('gold').daysOff}
+              As-Needed
             </div>
             <div className="text-sm text-slate-400 mt-2">
               {teamRosters.gold.length} instructors
@@ -201,7 +201,7 @@ export function TeamManagementSection() {
             <h3 className="text-xl font-bold text-white flex items-center gap-2">
               🟡 Gold Team <span className="text-sm text-slate-400">({teamRosters.gold.length})</span>
             </h3>
-            <div className="text-sm text-yellow-300 font-semibold">Works Every Day</div>
+            <div className="text-sm text-yellow-300 font-semibold">As-Needed</div>
           </div>
           
           {teamRosters.gold.length === 0 ? (
@@ -249,8 +249,8 @@ export function TeamManagementSection() {
         <h4 className="text-blue-300 font-semibold mb-2">📚 How Teams Work</h4>
         <div className="text-sm text-slate-300 space-y-1">
           <p>• <strong>Red & Blue Teams:</strong> Rotate Mon/Tue and Wed/Thu off days every week</p>
-          <p>• <strong>Gold Team:</strong> Works every day (no rotation)</p>
-          <p>• <strong>Off-Day Bonus:</strong> Instructors working their off day get 1.2x balance multiplier</p>
+          <p>• <strong>Gold Team:</strong> As-needed(Special Teams) </p>
+          <p>• <strong>Off-Day Penalty:</strong> Instructors working their off day incur 1.2x balance multiplier</p>
           <p>• <strong>Weekends:</strong> Everyone works Fri/Sat/Sun (no days off)</p>
         </div>
       </div>
