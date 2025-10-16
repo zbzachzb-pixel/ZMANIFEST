@@ -67,7 +67,7 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
     if (a.hasOutsideVideo) count += 1
     return sum + count
   }, 0)
-  const availableSeats = load.capacity - totalPeople
+  const availableSeats = (load.capacity || 18) - totalPeople
   const maxStudents = Math.floor(availableSeats / 2)
   
   // Get instructors already on ANY load (not just this one)

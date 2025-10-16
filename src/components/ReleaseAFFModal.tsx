@@ -13,7 +13,7 @@ interface ReleaseAFFModalProps {
 export function ReleaseAFFModal({ instructor, onClose, onSuccess }: ReleaseAFFModalProps) {
   const [loading, setLoading] = useState(false)
   const [selectedStudents, setSelectedStudents] = useState<string[]>(
-    instructor.affStudents?.map(s => s.studentId) || []
+    instructor.affStudents?.map(s => s.id) || []
   )
   
   if (!instructor.affStudents || instructor.affStudents.length === 0) {
@@ -39,7 +39,7 @@ export function ReleaseAFFModal({ instructor, onClose, onSuccess }: ReleaseAFFMo
       
       // Filter out selected students
       const remainingStudents = instructor.affStudents.filter(
-        s => !selectedStudents.includes(s.studentId)
+        s => !selectedStudents.includes(s.id)
       )
       
       // Update instructor
@@ -78,22 +78,21 @@ export function ReleaseAFFModal({ instructor, onClose, onSuccess }: ReleaseAFFMo
             </label>
             
             {instructor.affStudents.map((student) => {
-              const startTime = new Date(student.startTime)
               return (
                 <label
-                  key={student.studentId}
+                  key={student.id}
                   className="flex items-center gap-3 p-3 bg-slate-700 rounded-lg cursor-pointer hover:bg-slate-600 transition-colors"
                 >
                   <input
                     type="checkbox"
-                    checked={selectedStudents.includes(student.studentId)}
-                    onChange={() => toggleStudent(student.studentId)}
+                    checked={selectedStudents.includes(student.id)}
+                    onChange={() => toggleStudent(student.id)}
                     className="w-5 h-5 rounded bg-slate-600 border-slate-500 text-blue-500"
                   />
                   <div className="flex-1">
                     <div className="text-white font-semibold">{student.name}</div>
                     <div className="text-xs text-slate-400">
-                      Started {startTime.toLocaleTimeString()}
+                      {student.name}
                     </div>
                   </div>
                 </label>

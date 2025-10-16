@@ -45,9 +45,9 @@ export function InstructorCard({
           <h3 className="text-xl font-bold text-white mb-2">{instructor.name}</h3>
           <div className="flex flex-wrap gap-2">
             {getTeamBadge()}
-            {instructor.tandem && <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">T</span>}
-            {instructor.aff && <span className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-xs font-semibold">A</span>}
-            {instructor.video && <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs font-semibold">V</span>}
+            {instructor.canTandem && <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-semibold">T</span>}
+            {instructor.canAFF && <span className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-xs font-semibold">A</span>}
+            {instructor.canVideo && <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs font-semibold">V</span>}
             {isAFFLocked && (
               <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded text-xs font-semibold">
                 🔒 AFF Locked

@@ -6,7 +6,8 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useQueue, useLoads, useActiveInstructors, useAssignments, useUpdateLoad } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { getCurrentPeriod, calculateInstructorBalance } from '@/lib/utils'
-import type { QueueStudent, Load, Instructor, Assignment } from '@/types'
+import type { QueueStudent, Load, Instructor, Assignment, LoadAssignment } from '@/types'
+
 
 interface AutoAssignSettings {
   delay: number
@@ -139,21 +140,31 @@ export function AutoAssignSystem() {
       }
       
       // Create assignment
-      const newAssignment = {
-        id: `assignment-${Date.now()}`,
+      const availableInstructors = clockedInInstructors.filter(inst => {
+        if (student.jumpType === 'tandem' && !inst.canTandem) return false
+        if (student.jumpType === 'aff' && !inst.canAFF) return false
+        // ... other checks
+        return true
+      })
+
+      const instructor = availableInstructors[0]  // Add this line
+
+      if (!instructor) continue  // Add this check
+
+      const newAssignment: LoadAssignment = {
+        id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         studentId: student.id,
+        instructorId: instructor.id,
+        instructorName: instructor.name,
         studentName: student.name,
+        studentWeight: student.weight,
         jumpType: student.jumpType,
-        instructorId: bestInstructor.id,
-        instructorName: bestInstructor.name,
-        weight: student.weight,
-        ...(student.jumpType === 'tandem' && {
-          tandemWeightTax: student.tandemWeightTax,
-          tandemHandcam: student.tandemHandcam,
-        }),
-        ...(student.jumpType === 'aff' && {
-          affLevel: student.affLevel,
-        }),
+        isRequest: student.isRequest,
+        tandemWeightTax: student.tandemWeightTax,
+        tandemHandcam: student.tandemHandcam,
+        affLevel: student.affLevel,
+        hasOutsideVideo: false,
+        videoInstructorId: null,
       }
       
       // Update load

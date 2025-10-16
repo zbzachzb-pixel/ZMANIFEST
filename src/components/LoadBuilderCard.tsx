@@ -55,7 +55,7 @@ export function LoadBuilderCard({
   const [lastMilestone, setLastMilestone] = useState<number | null>(null)
   const [showBreathing, setShowBreathing] = useState(false)
   
-  const { countdown, isActive } = useLoadCountdown(load, loadSchedulingSettings)
+  const { countdown } = useLoadCountdown(load, loadSchedulingSettings)
   
   const loadAssignments = load.assignments || []
   const isCompleted = load.status === 'completed'
@@ -63,7 +63,6 @@ export function LoadBuilderCard({
   const statusConfig = {
     building: { label: 'Building', emoji: '🔧', color: 'bg-slate-700', borderClass: 'border-slate-500/50' },
     ready: { label: 'Ready', emoji: '✅', color: 'bg-blue-600', borderClass: 'border-blue-500/50' },
-    boarding: { label: 'Boarding', emoji: '🚶', color: 'bg-yellow-600', borderClass: 'border-yellow-500/50' },
     departed: { label: 'Departed', emoji: '✈️', color: 'bg-green-600', borderClass: 'border-green-500/50' },
     completed: { label: 'Completed', emoji: '🎉', color: 'bg-purple-600', borderClass: 'border-purple-500/50' }
   }
@@ -74,9 +73,8 @@ export function LoadBuilderCard({
     const transitions: Load['status'][] = []
     
     if (load.status === 'building') transitions.push('ready')
-    if (load.status === 'ready') transitions.push('building', 'boarding')
-    if (load.status === 'boarding') transitions.push('ready', 'departed')
-    if (load.status === 'departed') transitions.push('boarding', 'completed')
+    if (load.status === 'ready') transitions.push('building', 'departed')
+    if (load.status === 'departed') transitions.push('ready', 'completed')
     if (load.status === 'completed') transitions.push('departed')
     
     return transitions
@@ -302,7 +300,7 @@ export function LoadBuilderCard({
   }
   
   const handleStatusChangeRequest = (newStatus: Load['status']) => {
-    if (newStatus === 'departed' && load.status === 'boarding' && unassignedCount > 0) {
+    if (newStatus === 'departed' && load.status === 'ready' && unassignedCount > 0) {
       alert('❌ Cannot mark as departed: All students must have instructors assigned!')
       return
     }
@@ -456,7 +454,7 @@ export function LoadBuilderCard({
       
       for (const assignment of loadAssignments) {
         await db.addToQueue({
-          id: assignment.studentId || `${Date.now()}_${Math.random()}`,
+          studentAccountId: studentAccountId,
           name: assignment.studentName,
           weight: assignment.studentWeight,
           jumpType: assignment.jumpType,
@@ -783,8 +781,6 @@ export function LoadBuilderCard({
                 className={`w-full font-bold py-2 px-4 rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
                   transition === 'ready' ?
                     'bg-blue-500 hover:bg-blue-600 text-white' :
-                  transition === 'boarding' ?
-                    'bg-yellow-500 hover:bg-yellow-600 text-white' :
                   transition === 'departed' ?
                     'bg-green-500 hover:bg-green-600 text-white' :
                   transition === 'completed' ?

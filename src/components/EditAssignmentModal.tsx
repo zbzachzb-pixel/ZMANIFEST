@@ -108,7 +108,7 @@ export function EditAssignmentModal({ assignment, onClose, onSuccess }: EditAssi
     if (!instructor.canVideo) return false
     if (instructor.id === instructorId) return false
     
-    if (instructor.videoRestricted) {
+    if (instructor.videoMinWeight != null || instructor.videoMaxWeight != null) {
       const mainInstructor = instructors.find(i => i.id === instructorId)
       if (mainInstructor) {
         const combinedWeight = mainInstructor.bodyWeight + studentWeight
@@ -191,10 +191,10 @@ export function EditAssignmentModal({ assignment, onClose, onSuccess }: EditAssi
         ...(jumpType === 'aff' && {
           affLevel
         }),
-        // Clear video if not tandem or not needed
+        // Fix: Use undefined instead of null
         ...(!hasOutsideVideo && { 
-          videoInstructorId: null,
-          videoInstructorName: null,
+          videoInstructorId: undefined,  // Changed from null
+          videoInstructorName: undefined,  // Changed from undefined
           hasOutsideVideo: false 
         })
       }

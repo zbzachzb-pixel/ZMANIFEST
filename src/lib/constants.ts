@@ -17,7 +17,7 @@ export const PAY_RATES = {
   VIDEO_INSTRUCTOR: 45,      // Outside video instructor fee
   
   // Special multipliers
-  OFF_DAY_MULTIPLIER: 1.2,   // 20% bonus for working on scheduled off day (balance only)
+  OFF_DAY_MULTIPLIER: 1.2 as number,   // 20% bonus for working on scheduled off day (balance only)
 } as const
 
 /**

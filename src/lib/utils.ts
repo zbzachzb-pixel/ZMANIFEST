@@ -99,7 +99,7 @@ export function calculateInstructorBalance(
     if (assignment.videoInstructorId === instructorId && 
         !assignment.isMissedJump && 
         !assignment.hasOutsideVideo) {
-      let videoPay = PAY_RATES.VIDEO_INSTRUCTOR
+      let videoPay: number = PAY_RATES.VIDEO_INSTRUCTOR
       
       // Apply off-day multiplier for balance fairness
       if (isWorkingOffDay(instructor, assignmentDate)) {

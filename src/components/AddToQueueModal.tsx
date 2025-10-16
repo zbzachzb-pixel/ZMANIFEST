@@ -308,8 +308,8 @@ export function AddToQueueModal({ isOpen, onClose, onSuccess }: AddToQueueModalP
         onClose={() => setShowAccountModal(false)}
         onSelectAccount={handleSelectAccount}
         accounts={studentAccounts}
-        onCreateAccount={createAccount}
-        onUpdateAccount={updateAccount}
+        onCreateAccount={async (account) => { await createAccount(account); }}
+        onUpdateAccount={async (id, updates) => { await updateAccount(id, updates); }}
       />
     </>
   )

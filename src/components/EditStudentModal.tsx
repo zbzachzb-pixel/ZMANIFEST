@@ -77,7 +77,7 @@ export function EditStudentModal({ student, onClose }: EditStudentModalProps) {
         studentAccountId: student.studentAccountId,
         name: name.trim(),
         weight,
-        jumpType,
+        jumpType: jumpType === 'video' ? 'tandem' : jumpType,
         isRequest,
         tandemWeightTax: jumpType === 'tandem' ? weightTax : undefined,
         tandemHandcam: jumpType === 'tandem' ? handcam : undefined,

@@ -57,7 +57,13 @@ export function getSuggestedInstructors(
     }
 
     // ✅ NEW: Check if instructor is available for this load based on timing
-    const available = isInstructorAvailableForLoad(inst, targetLoad, allLoads, loadSettings)
+    const available = isInstructorAvailableForLoad(
+      inst.id, 
+      targetLoad.position, 
+      allLoads,
+      loadSettings.instructorCycleTime,
+      loadSettings.minutesBetweenLoads
+    )
     if (!available) {
       console.log(`⏰ Instructor ${inst.name} not available for Load #${targetLoad.position}`)
       continue
@@ -103,7 +109,13 @@ export function getSuggestedInstructors(
       }
 
       // Check timing availability
-      const available = isInstructorAvailableForLoad(inst, targetLoad, allLoads, loadSettings)
+      const available = isInstructorAvailableForLoad(
+        inst.id, 
+        targetLoad.position, 
+        allLoads,
+        loadSettings.instructorCycleTime,
+        loadSettings.minutesBetweenLoads
+      )
       if (!available) {
         console.log(`⏰ Video instructor ${inst.name} not available for Load #${targetLoad.position}`)
         return false

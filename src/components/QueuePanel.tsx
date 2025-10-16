@@ -43,9 +43,9 @@ export function QueuePanel({ queue, instructors, onAddStudent }: QueuePanelProps
       if (!i.clockedIn) return false
       
       if (student.jumpType === 'tandem') {
-        return i.tandem && (!i.tandemWeightLimit || student.weight <= i.tandemWeightLimit)
+        return i.canTandem && (!i.tandemWeightLimit || student.weight <= i.tandemWeightLimit)
       } else if (student.jumpType === 'aff') {
-        return i.aff && (!i.affWeightLimit || student.weight <= i.affWeightLimit)
+        return i.canAFF && (!i.affWeightLimit || student.weight <= i.affWeightLimit)
       }
       return false
     })

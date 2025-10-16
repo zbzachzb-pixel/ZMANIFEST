@@ -162,10 +162,7 @@ export function ImportStudentsModal({ onClose }: ImportStudentsModalProps) {
               name: student.name,
               weight: student.weight,
               preferredJumpType: student.jumpType,
-              affLevel: student.jumpType === 'aff' ? student.affLevel : undefined,
-              totalJumps: 0,
-              totalTandemJumps: 0,
-              totalAFFJumps: 0
+              affLevel: student.jumpType === 'aff' ? student.affLevel : undefined
             }
             
             const createdAccount = await db.createStudentAccount(newAccount)
