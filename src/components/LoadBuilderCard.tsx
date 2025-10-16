@@ -47,7 +47,7 @@ export function LoadBuilderCard({
   const [dragOver, setDragOver] = useState(false)
   const [statusChangeConfirm, setStatusChangeConfirm] = useState<Load['status'] | null>(null)
   const [showDelayModal, setShowDelayModal] = useState(false)
-  const [delayMinutes, setDelayMinutes] = useState(20)
+  const [delayMinutes, setDelayMinutes] = useState(0)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [assignmentSelections, setAssignmentSelections] = useState<Record<string, {instructorId: string, videoInstructorId?: string}>>({})
@@ -1006,7 +1006,7 @@ export function LoadBuilderCard({
               onClick={() => setShowDelayModal(true)}
               className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm"
             >
-              ⏰ Delay Load
+              ⏰ Adjust Timer
             </button>
           )}
           
@@ -1049,35 +1049,86 @@ export function LoadBuilderCard({
         </div>
       )}
       
-      {/* Delay Modal */}
+      {/* Timer Adjustment Modal */}
       {showDelayModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-slate-700">
             <div className="p-6">
-              <h3 className="text-xl font-bold text-white mb-4">Delay Load</h3>
-              <label className="block text-sm font-semibold text-slate-300 mb-2">
-                Delay by (minutes)
-              </label>
-              <input
-                type="number"
-                min="5"
-                max="60"
-                value={delayMinutes}
-                onChange={(e) => setDelayMinutes(parseInt(e.target.value))}
-                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white mb-4"
-              />
+              <h3 className="text-xl font-bold text-white mb-4">Adjust Timer</h3>
+              <div className="mb-4">
+                <div className="text-sm text-slate-400 mb-2">
+                  Current time remaining: {countdown ? `${Math.floor(countdown / 60)}:${(countdown % 60).toString().padStart(2, '0')}` : 'N/A'}
+                </div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  Adjustment (use negative to shorten)
+                </label>
+                <div className="flex gap-2 mb-2">
+                  <button
+                    onClick={() => setDelayMinutes(-10)}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold"
+                  >
+                    -10
+                  </button>
+                  <button
+                    onClick={() => setDelayMinutes(-5)}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold"
+                  >
+                    -5
+                  </button>
+                  <button
+                    onClick={() => setDelayMinutes(0)}
+                    className="px-3 py-1 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-sm font-bold"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    onClick={() => setDelayMinutes(5)}
+                    className="px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-bold"
+                  >
+                    +5
+                  </button>
+                  <button
+                    onClick={() => setDelayMinutes(10)}
+                    className="px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-bold"
+                  >
+                    +10
+                  </button>
+                </div>
+                <input
+                  type="number"
+                  min="-60"
+                  max="60"
+                  value={delayMinutes}
+                  onChange={(e) => setDelayMinutes(parseInt(e.target.value) || 0)}
+                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white"
+                />
+                <div className="text-xs text-slate-400 mt-1">
+                  {delayMinutes > 0 ? `Timer will be delayed by ${delayMinutes} minutes` : 
+                   delayMinutes < 0 ? `Timer will be shortened by ${Math.abs(delayMinutes)} minutes` :
+                   'No change'}
+                </div>
+                {countdown && delayMinutes !== 0 && (
+                  <div className="text-sm text-blue-400 mt-2">
+                    New time: {Math.max(0, Math.floor((countdown + delayMinutes * 60) / 60))}:{((countdown + delayMinutes * 60) % 60).toString().padStart(2, '0')}
+                  </div>
+                )}
+              </div>
               <div className="flex gap-3">
                 <button
-                  onClick={() => setShowDelayModal(false)}
+                  onClick={() => {
+                    setShowDelayModal(false)
+                    setDelayMinutes(20)
+                  }}
                   className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelay}
-                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                  disabled={delayMinutes === 0}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Delay
+                  {delayMinutes > 0 ? 'Add Time' : delayMinutes < 0 ? 'Remove Time' : 'No Change'}
                 </button>
               </div>
             </div>
