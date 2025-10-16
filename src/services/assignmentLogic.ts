@@ -1,4 +1,5 @@
 // src/services/assignmentLogic.ts
+// ✅ CLEANED VERSION - No backwards compatibility code
 // Updated version with instructor availability checks based on load timer
 
 import { isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
@@ -10,7 +11,7 @@ export interface SuggestedInstructors {
   video: Instructor | null
   needsVideo: boolean
   isMainClockedOut: boolean
-  unavailableReason?: string  // NEW: Reason why instructor isn't available
+  unavailableReason?: string
 }
 
 /**
@@ -21,9 +22,9 @@ export function getSuggestedInstructors(
   student: QueueStudent,
   instructors: Instructor[],
   assignments: Assignment[],
-  targetLoad: Load,  // NEW: Need to know which load we're assigning to
-  allLoads: Load[],  // NEW: Need all loads to calculate availability
-  loadSettings: LoadSchedulingSettings,  // NEW: Need settings for cycle time calculation
+  targetLoad: Load,
+  allLoads: Load[],
+  loadSettings: LoadSchedulingSettings,
   ignoreClockStatus = false
 ): SuggestedInstructors {
   const period = getCurrentPeriod()
@@ -36,7 +37,7 @@ export function getSuggestedInstructors(
     if (inst.archived) continue
     if (!ignoreClockStatus && !inst.clockedIn) continue
 
-    // Check department qualification
+    // ✅ CLEAN: Use correct property names without fallbacks
     if (student.jumpType === 'tandem' && !inst.canTandem) continue
     if (student.jumpType === 'aff' && !inst.canAFF) continue
 
@@ -55,17 +56,10 @@ export function getSuggestedInstructors(
       if (!isTheirStudent) continue
     }
 
-    // ⚡ NEW: Check if instructor is available for this load based on cycle time
-    const isAvailable = isInstructorAvailableForLoad(
-      inst.id,
-      targetLoad.position,
-      allLoads,
-      loadSettings.instructorCycleTime,
-      loadSettings.minutesBetweenLoads
-    )
-
-    if (!isAvailable) {
-      console.log(`⏰ Instructor ${inst.name} not available for Load #${targetLoad.position} (still on cooldown)`)
+    // ✅ NEW: Check if instructor is available for this load based on timing
+    const available = isInstructorAvailableForLoad(inst, targetLoad, allLoads, loadSettings)
+    if (!available) {
+      console.log(`⏰ Instructor ${inst.name} not available for Load #${targetLoad.position}`)
       continue
     }
 
@@ -78,7 +72,7 @@ export function getSuggestedInstructors(
       video: null,
       needsVideo,
       isMainClockedOut: true,
-      unavailableReason: 'No qualified instructors available (check clock-in status and load cooldowns)'
+      unavailableReason: 'No qualified instructors available for this load timing'
     }
   }
 
@@ -97,23 +91,25 @@ export function getSuggestedInstructors(
     const qualifiedVideo = instructors.filter(inst => {
       if (inst.archived) return false
       if (!ignoreClockStatus && !inst.clockedIn) return false
+      
+      // ✅ CLEAN: Use correct property name without fallback
       if (!inst.canVideo) return false
       if (inst.id === mainInstructor.id) return false
-      
-      // ⚡ NEW: Check video instructor availability too
-      const isAvailable = isInstructorAvailableForLoad(
-        inst.id,
-        targetLoad.position,
-        allLoads,
-        loadSettings.instructorCycleTime,
-        loadSettings.minutesBetweenLoads
-      )
-      
-      if (!isAvailable) {
+
+      // Check video weight restrictions if applicable
+      if (inst.videoRestricted) {
+        const combinedWeight = mainInstructor.bodyWeight + student.weight
+        if (inst.videoMinWeight && combinedWeight < inst.videoMinWeight) return false
+        if (inst.videoMaxWeight && combinedWeight > inst.videoMaxWeight) return false
+      }
+
+      // ✅ Check timing availability
+      const available = isInstructorAvailableForLoad(inst, targetLoad, allLoads, loadSettings)
+      if (!available) {
         console.log(`⏰ Video instructor ${inst.name} not available for Load #${targetLoad.position}`)
         return false
       }
-      
+
       return true
     })
 
@@ -155,7 +151,7 @@ export function getSuggestedInstructorsSimple(
     if (inst.archived) continue
     if (!ignoreClockStatus && !inst.clockedIn) continue
 
-    // Check department qualification
+    // ✅ CLEAN: Use correct property names without fallbacks
     if (student.jumpType === 'tandem' && !inst.canTandem) continue
     if (student.jumpType === 'aff' && !inst.canAFF) continue
 
@@ -201,6 +197,8 @@ export function getSuggestedInstructorsSimple(
     const qualifiedVideo = instructors.filter(inst => {
       if (inst.archived) return false
       if (!ignoreClockStatus && !inst.clockedIn) return false
+      
+      // ✅ CLEAN: Use correct property name without fallback
       if (!inst.canVideo) return false
       if (inst.id === mainInstructor.id) return false
       return true
@@ -222,4 +220,35 @@ export function getSuggestedInstructorsSimple(
     needsVideo,
     isMainClockedOut: false
   }
+}
+
+function calculateBalance(instructor: Instructor, assignments: Assignment[], period: any): number {
+  let balance = 0
+  
+  for (const assignment of assignments) {
+    const assignmentDate = new Date(assignment.timestamp)
+    if (assignmentDate < period.start || assignmentDate > period.end) continue
+    if (assignment.isRequest) continue
+    
+    let pay = 0
+    if (!assignment.isMissedJump) {
+      if (assignment.jumpType === 'tandem') {
+        pay = 40 + (assignment.tandemWeightTax || 0) * 20
+        if (assignment.tandemHandcam) pay += 30
+      } else if (assignment.jumpType === 'aff') {
+        pay = assignment.affLevel === 'lower' ? 55 : 45
+      } else if (assignment.jumpType === 'video') {
+        pay = 45
+      }
+    }
+    
+    if (assignment.instructorId === instructor.id) {
+      balance += pay
+    }
+    if (assignment.videoInstructorId === instructor.id && !assignment.isMissedJump) {
+      balance += 45
+    }
+  }
+  
+  return balance
 }

@@ -1,4 +1,5 @@
 // src/components/AutoAssignSystem.tsx
+// ✅ CLEANED VERSION - No backwards compatibility code
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
@@ -98,8 +99,11 @@ export function AutoAssignSystem() {
       // Find best instructor using centralized balance calculation
       const qualified = instructors.filter(inst => {
         if (!inst.clockedIn) return false
+        
+        // ✅ CLEAN: Use correct property names without fallbacks
         if (student.jumpType === 'tandem' && !inst.canTandem) return false
         if (student.jumpType === 'aff' && !inst.canAFF) return false
+        
         return true
       })
       
@@ -144,15 +148,15 @@ export function AutoAssignSystem() {
         instructorName: bestInstructor.name,
         weight: student.weight,
         ...(student.jumpType === 'tandem' && {
-          tandemWeightTax: student.tandemWeightTax || 0,
-          tandemHandcam: student.tandemHandcam || false,
-          hasOutsideVideo: student.outsideVideo || false
+          tandemWeightTax: student.tandemWeightTax,
+          tandemHandcam: student.tandemHandcam,
         }),
         ...(student.jumpType === 'aff' && {
-          affLevel: student.affLevel
-        })
+          affLevel: student.affLevel,
+        }),
       }
       
+      // Update load
       await update(availableLoad.id, {
         assignments: [...(availableLoad.assignments || []), newAssignment]
       })
@@ -160,69 +164,58 @@ export function AutoAssignSystem() {
       // Remove from queue
       await db.removeFromQueue(student.id)
       
-      console.log(`Auto-assigned ${student.name} to ${bestInstructor.name}`)
+      console.log(`✅ Auto-assigned ${student.name} to ${bestInstructor.name}`)
+      setCurrentStudent(null)
     } catch (error) {
       console.error('Auto-assignment failed:', error)
-    } finally {
       setCurrentStudent(null)
-    }
-  }
-  
-  const toggleAutoAssign = () => {
-    const newState = !isEnabled
-    setIsEnabled(newState)
-    
-    if (!newState) {
-      cancelAssignment()
     }
   }
   
   return (
     <div className="fixed bottom-4 right-4 z-40">
-      <div className="bg-slate-800 rounded-lg shadow-xl border border-slate-700 p-4 min-w-[250px]">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-white font-bold">Auto-Assign</h3>
+      <div className="bg-slate-800/95 backdrop-blur-lg border border-slate-700 rounded-xl shadow-2xl p-4 min-w-[280px]">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-white">Auto-Assign</h3>
           <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="text-slate-400 hover:text-white"
+            onClick={() => setShowSettings(true)}
+            className="text-slate-400 hover:text-white transition-colors"
           >
             ⚙️
           </button>
         </div>
         
-        <div className="flex items-center gap-3 mb-3">
+        <div className="space-y-3">
           <button
-            onClick={toggleAutoAssign}
-            className={`flex-1 py-2 px-4 rounded-lg font-semibold transition-colors ${
+            onClick={() => setIsEnabled(!isEnabled)}
+            className={`w-full font-bold py-2 px-4 rounded-lg transition-colors ${
               isEnabled
-                ? 'bg-green-500 hover:bg-green-600 text-white'
-                : 'bg-slate-600 hover:bg-slate-700 text-white'
+                ? 'bg-red-500 hover:bg-red-600 text-white'
+                : 'bg-green-500 hover:bg-green-600 text-white'
             }`}
           >
-            {isEnabled ? '✓ ON' : 'OFF'}
+            {isEnabled ? '🛑 Stop Auto-Assign' : '▶️ Start Auto-Assign'}
           </button>
+          
+          {currentStudent && (
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+              <div className="text-white font-semibold mb-1">{currentStudent.name}</div>
+              <div className="text-sm text-slate-300">
+                Assigning in {countdown}s...
+              </div>
+              <button
+                onClick={cancelAssignment}
+                className="mt-2 w-full bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-2 rounded"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
         
-        {currentStudent && (
-          <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-3 mb-2">
-            <p className="text-blue-300 text-sm font-semibold mb-1">
-              Assigning: {currentStudent.name}
-            </p>
-            <p className="text-blue-400 text-xs mb-2">
-              in {countdown} seconds...
-            </p>
-            <button
-              onClick={cancelAssignment}
-              className="w-full bg-red-500 hover:bg-red-600 text-white text-sm py-1 px-3 rounded"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-        
-        <div className="text-xs text-slate-400">
+        <div className="mt-3 pt-3 border-t border-slate-700 text-xs text-slate-400 space-y-1">
           <div>Delay: {settings.delay}s</div>
-          <div>Skip requests: {settings.skipRequests ? 'Yes' : 'No'}</div>
+          <div>Skip Requests: {settings.skipRequests ? 'Yes' : 'No'}</div>
           {settings.batchMode && <div>Batch: {settings.batchSize}</div>}
         </div>
       </div>

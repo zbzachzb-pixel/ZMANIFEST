@@ -1,13 +1,9 @@
-// src/components/LoadBuilderCard.tsx - COMPLETE FILE WITH INSTRUCTOR AVAILABILITY FIX
-// ✅ NEW: 40-minute instructor cycle time enforcement
-// ✅ NEW: Instructors can only be on loads with proper spacing (e.g., 1,3,5,7 not 1,2,3,4)
-// ✅ Cascading timer system - loads marked ready get staggered timers
-// ✅ When first load departs, all subsequent loads reset to base intervals
+// src/components/LoadBuilderCard.tsx
+// ✅ COMPLETELY CLEANED VERSION - All backwards compatibility removed
+// ✅ 40-minute instructor cycle time enforcement
+// ✅ Instructors can only be on loads with proper spacing
+// ✅ Cascading timer system
 // ✅ Bidirectional transitions at all stages
-// ✅ Confirmation for moving from completed
-// ✅ Allow deletion of completed loads with extra confirmation
-// ✅ Fixed property names for backwards compatibility
-// ✅ Drag/drop disabled for completed loads (safety)
 
 'use client'
 
@@ -15,7 +11,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { useUpdateLoad, useDeleteLoad, useGroups } from '@/hooks/useDatabase'
 import { useLoadCountdown, isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
 import { db } from '@/services'
-import type { Load, Instructor, LoadSchedulingSettings, CreateQueueStudent } from '@/types'
+import type { Load, Instructor, LoadSchedulingSettings } from '@/types'
 
 interface LoadBuilderCardProps {
   load: Load
@@ -56,453 +52,48 @@ export function LoadBuilderCard({
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [assignmentSelections, setAssignmentSelections] = useState<Record<string, {instructorId: string, videoInstructorId?: string}>>({})
   const [assignLoading, setAssignLoading] = useState(false)
-  const [showBreathing, setShowBreathing] = useState(false)
   const [lastMilestone, setLastMilestone] = useState<number | null>(null)
+  const [showBreathing, setShowBreathing] = useState(false)
   
-  const { countdown, formattedTime, isReadyToDepart } = useLoadCountdown(load, loadSchedulingSettings, allLoads)
+  const { countdown, isActive } = useLoadCountdown(load, loadSchedulingSettings)
   
   const loadAssignments = load.assignments || []
-  
-  const totalPeople = loadAssignments.reduce((sum, assignment) => {
-    let count = 2
-    if (assignment.hasOutsideVideo || assignment.videoInstructorId) {
-      count += 1
-    }
-    return sum + count
-  }, 0)
-  
-  const unassignedCount = loadAssignments.filter(a => !a.instructorId).length
-  const percentFull = Math.round((totalPeople / (load.capacity || 18)) * 100)
-  const isOverCapacity = totalPeople > (load.capacity || 18)
-  const availableSlots = (load.capacity || 18) - totalPeople
   const isCompleted = load.status === 'completed'
-
+  
   const statusConfig = {
-    building: { label: 'Building', icon: '🔨', bgClass: 'bg-blue-500/10', textClass: 'text-blue-400', borderClass: 'border-blue-500/50' },
-    ready: { label: 'Ready', icon: '✅', bgClass: 'bg-green-500/10', textClass: 'text-green-400', borderClass: 'border-green-500/50' },
-    departed: { label: 'Departed', icon: '✈️', bgClass: 'bg-yellow-500/10', textClass: 'text-yellow-400', borderClass: 'border-yellow-500/50' },
-    completed: { label: 'Completed', icon: '🎉', bgClass: 'bg-purple-500/10', textClass: 'text-purple-400', borderClass: 'border-purple-500/50' }
+    building: { label: 'Building', emoji: '🔧', color: 'bg-slate-700', borderClass: 'border-slate-500/50' },
+    ready: { label: 'Ready', emoji: '✅', color: 'bg-blue-600', borderClass: 'border-blue-500/50' },
+    boarding: { label: 'Boarding', emoji: '🚶', color: 'bg-yellow-600', borderClass: 'border-yellow-500/50' },
+    departed: { label: 'Departed', emoji: '✈️', color: 'bg-green-600', borderClass: 'border-green-500/50' },
+    completed: { label: 'Completed', emoji: '🎉', color: 'bg-purple-600', borderClass: 'border-purple-500/50' }
   }
-
+  
   const currentStatus = statusConfig[load.status]
-
-  // ✅ BIDIRECTIONAL TRANSITIONS
+  
   const availableTransitions = useMemo(() => {
     const transitions: Load['status'][] = []
     
-    if (load.status === 'building') {
-      transitions.push('ready')
-    }
-    
-    if (load.status === 'ready') {
-      transitions.push('building', 'departed')
-    }
-    
-    if (load.status === 'departed') {
-      transitions.push('ready', 'completed')
-    }
-    
-    if (load.status === 'completed') {
-      transitions.push('departed')
-    }
+    if (load.status === 'building') transitions.push('ready')
+    if (load.status === 'ready') transitions.push('building', 'boarding')
+    if (load.status === 'boarding') transitions.push('ready', 'departed')
+    if (load.status === 'departed') transitions.push('boarding', 'completed')
+    if (load.status === 'completed') transitions.push('departed')
     
     return transitions
   }, [load.status])
-
-  // ==================== DRAG AND DROP HANDLERS ====================
   
-  const handleDragOver = (e: React.DragEvent) => {
-    if (isCompleted) return
-    if (load.status !== 'building') return
-    e.preventDefault()
-    setDragOver(true)
-    setDropTarget(load.id)
-  }
-
-  const handleDragLeave = () => {
-    setDragOver(false)
-    setDropTarget(null)
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
-    onDrop(load.id)
-  }
-
-  // ==================== STATUS CHANGE HANDLERS ====================
-
-  const handleStatusChangeRequest = (newStatus: Load['status']) => {
-    if (newStatus === 'ready' && isOverCapacity) {
-      alert('❌ Cannot mark as ready: Load is over capacity!')
-      return
-    }
-    if (newStatus === 'ready' && unassignedCount > 0) {
-      alert('❌ Cannot mark as ready: All students must have instructors assigned!')
-      return
-    }
-    
-    if (load.status === 'completed' && newStatus !== 'completed') {
-      if (!confirm('⚠️ This load is COMPLETED. Are you sure you want to move it back to "' + newStatus + '"? This should only be done to fix errors.')) {
-        return
-      }
-    }
-    
-    setStatusChangeConfirm(newStatus)
-  }
+  const totalPeople = loadAssignments.reduce((sum, a) => {
+    let count = 2
+    if (a.hasOutsideVideo) count += 1
+    return sum + count
+  }, 0)
   
-  const confirmStatusChange = async () => {
-    if (!statusChangeConfirm) return
-    
-    try {
-      const updates: Partial<Load> = { status: statusChangeConfirm }
-      
-      // ==================== HANDLE COUNTDOWN TIMER LOGIC ====================
-      
-      if (statusChangeConfirm === 'ready') {
-        // Check if there are any loads with LOWER position that are not departed/completed
-        const loadsBeforeThis = allLoads
-          .filter(l => (l.position || 0) < (load.position || 0))
-          .filter(l => l.status !== 'departed' && l.status !== 'completed')
-        
-        // Check if any loads before this one are still building
-        const hasUnreadyLoadsBefore = loadsBeforeThis.some(l => l.status === 'building')
-        
-        if (hasUnreadyLoadsBefore) {
-          // There are loads before this one that aren't ready yet - don't start timer
-          (updates as any).countdownStartTime = null
-        } else {
-          // No unready loads before this one - check if we should start/cascade timer
-          
-          // Find the FIRST ready load (lowest position)
-          const allReadyLoads = allLoads
-            .filter(l => l.status === 'ready' || l.id === load.id) // Include this load since we're marking it ready
-            .sort((a, b) => (a.position || 0) - (b.position || 0))
-          
-          const firstReadyLoad = allReadyLoads[0]
-          
-          // Check if THIS load is the first ready load
-          const isFirstReadyLoad = firstReadyLoad && firstReadyLoad.id === load.id
-          
-          if (isFirstReadyLoad) {
-            // This is the first ready load - start a timer
-            (updates as any).countdownStartTime = new Date().toISOString()
-          } else {
-            // There's another load that's ready before this one - don't set timer for this load
-            (updates as any).countdownStartTime = null
-          }
-        }
-      }
-      
-      if (statusChangeConfirm === 'building') {
-        if ((load as any).countdownStartTime) {
-          (updates as any).countdownStartTime = null
-        }
-      }
-      
-      if (statusChangeConfirm === 'departed') {
-        updates.departedAt = new Date().toISOString()
-      }
-      
-      if (statusChangeConfirm === 'completed') {
-        updates.completedAt = new Date().toISOString()
-      }
-      
-      // Update this load's status
-      await update(load.id, updates)
-      setStatusChangeConfirm(null)
-      
-      // ==================== UPDATE SUBSEQUENT READY LOADS WHEN MARKING READY ====================
-      
-      if (statusChangeConfirm === 'ready') {
-        // Check if we started a timer for this load
-        const startedTimer = (updates as any).countdownStartTime
-        
-        if (startedTimer) {
-          // This load got a timer - cascade to all ready loads that come after this one
-          
-          // Find all subsequent ready loads (including those that were waiting)
-          const subsequentReadyLoads = allLoads
-            .filter(l => l.status === 'ready' && l.position > (load.position || 0))
-            .sort((a, b) => (a.position || 0) - (b.position || 0))
-          
-          if (subsequentReadyLoads.length > 0) {
-            // Calculate remaining time for THIS load (the one we just marked ready)
-            const thisLoadStartTime = new Date(startedTimer).getTime()
-            const thisLoadTargetTime = thisLoadStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
-            const thisLoadRemainingMs = Math.max(0, thisLoadTargetTime - Date.now())
-            
-            // Update each subsequent ready load
-            for (const subsequentLoad of subsequentReadyLoads) {
-              const positionDiff = subsequentLoad.position - (load.position || 0)
-              
-              // Calculate target remaining time based on position difference from THIS load
-              const targetRemainingMs = thisLoadRemainingMs + (positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
-              
-              // Calculate startTime for this remaining time
-              const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
-              
-              await update(subsequentLoad.id, {
-                countdownStartTime: new Date(newStartTime).toISOString()
-              } as any)
-            }
-          }
-        }
-      }
-      
-      // ==================== RESET TIMERS WHEN LOAD DEPARTS ====================
-      
-      if (statusChangeConfirm === 'departed') {
-        // Find all subsequent ready loads and reset their timers to staggered intervals
-        const subsequentReadyLoads = allLoads
-          .filter(l => l.status === 'ready' && l.position > (load.position || 0))
-          .sort((a, b) => (a.position || 0) - (b.position || 0))
-        
-        // Reset each subsequent load's timer
-        for (let i = 0; i < subsequentReadyLoads.length; i++) {
-          const subsequentLoad = subsequentReadyLoads[i]
-          const positionDiff = i + 1 // 1st load after = 1, 2nd load after = 2, etc.
-          
-          // Calculate target remaining time: 20min, 40min, 60min, etc.
-          const targetRemainingMs = positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
-          
-          // Calculate startTime for this remaining time
-          // Formula: startTime = now + remaining - duration
-          const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
-          
-          await update(subsequentLoad.id, {
-            countdownStartTime: new Date(newStartTime).toISOString()
-          } as any)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to update status:', error)
-      alert('Failed to update status')
-    }
-  }
+  const availableSlots = (load.capacity || 18) - totalPeople
+  const isOverCapacity = totalPeople > (load.capacity || 18)
   
-  // ==================== DELETE HANDLERS ====================
+  const unassignedCount = loadAssignments.filter(a => !a.instructorId).length
   
-  const handleDelete = () => {
-    setShowDeleteConfirm(true)
-  }
-  
-  const confirmDelete = async () => {
-    setShowDeleteConfirm(false)
-    
-    if (load.status === 'completed') {
-      if (!confirm('⚠️ This load is COMPLETED. Are you sure you want to DELETE it? This cannot be undone!')) {
-        return
-      }
-    }
-    
-    try {
-      await deleteLoad(load.id)
-      
-      // ==================== RECALCULATE TIMERS FOR SUBSEQUENT LOADS ====================
-      
-      // If the deleted load was ready with an active timer, recalculate subsequent loads
-      if (load.status === 'ready' && (load as any).countdownStartTime) {
-        // Find all ready loads that came after this one
-        const subsequentReadyLoads = allLoads
-          .filter(l => l.status === 'ready' && l.position > (load.position || 0))
-          .sort((a, b) => (a.position || 0) - (b.position || 0))
-        
-        if (subsequentReadyLoads.length > 0) {
-          // Find the NEW first ready load after deletion
-          const allRemainingReadyLoads = allLoads
-            .filter(l => l.id !== load.id && l.status === 'ready')
-            .sort((a, b) => (a.position || 0) - (b.position || 0))
-          
-          const newFirstReadyLoad = allRemainingReadyLoads[0]
-          
-          if (newFirstReadyLoad) {
-            // Check if the new first ready load has an active timer
-            const firstHasTimer = (newFirstReadyLoad as any).countdownStartTime
-            
-            if (firstHasTimer) {
-              // Recalculate all subsequent loads based on the new first ready load
-              const firstLoadStartTime = new Date((newFirstReadyLoad as any).countdownStartTime).getTime()
-              const firstLoadTargetTime = firstLoadStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
-              const firstLoadRemainingMs = Math.max(0, firstLoadTargetTime - Date.now())
-              
-              for (const subsequentLoad of allRemainingReadyLoads.slice(1)) {
-                const positionDiff = subsequentLoad.position - newFirstReadyLoad.position
-                
-                // Calculate target remaining time
-                const targetRemainingMs = firstLoadRemainingMs + (positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
-                
-                // Calculate new startTime
-                const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
-                
-                await update(subsequentLoad.id, {
-                  countdownStartTime: new Date(newStartTime).toISOString()
-                } as any)
-              }
-            } else if (newFirstReadyLoad.id === subsequentReadyLoads[0]?.id) {
-              // The deleted load was the first ready load, and the next one doesn't have a timer
-              // Start a timer for the new first ready load
-              await update(newFirstReadyLoad.id, {
-                countdownStartTime: new Date().toISOString()
-              } as any)
-              
-              // Then cascade to subsequent loads
-              const nowStartTime = Date.now()
-              const nowTargetTime = nowStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
-              const nowRemainingMs = loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
-              
-              for (const subsequentLoad of allRemainingReadyLoads.slice(1)) {
-                const positionDiff = subsequentLoad.position - newFirstReadyLoad.position
-                const targetRemainingMs = nowRemainingMs + (positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
-                const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
-                
-                await update(subsequentLoad.id, {
-                  countdownStartTime: new Date(newStartTime).toISOString()
-                } as any)
-              }
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Failed to delete load:', error)
-      alert('Failed to delete load')
-    }
-  }
-
-  // ==================== ASSIGNMENT HANDLERS ====================
-  
-  const removeFromLoad = async (assignmentId: string) => {
-    try {
-      const assignment = loadAssignments.find(a => a.id === assignmentId)
-      if (!assignment) return
-      
-      const updatedAssignments = loadAssignments.filter(a => a.id !== assignmentId)
-      await update(load.id, { assignments: updatedAssignments })
-      
-      const queueStudent: CreateQueueStudent = {
-        studentAccountId: assignment.studentId,
-        name: assignment.studentName,
-        weight: assignment.studentWeight,
-        jumpType: assignment.jumpType,
-        isRequest: assignment.isRequest || false,
-        tandemWeightTax: assignment.tandemWeightTax,
-        tandemHandcam: assignment.tandemHandcam || false,
-        outsideVideo: assignment.hasOutsideVideo,
-        affLevel: assignment.affLevel,
-        groupId: assignment.groupId
-      }
-      const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-      await db.addToQueue(queueStudent, priorityTimestamp)
-    } catch (error) {
-      console.error('Failed to remove assignment:', error)
-      alert('Failed to remove assignment')
-    }
-  }
-  
-  const handleDelay = () => {
-    setShowDelayModal(true)
-  }
-  
-  const confirmDelay = () => {
-    onDelay(load.id, delayMinutes)
-    setShowDelayModal(false)
-    setDelayMinutes(20)
-  }
-  
-  // ==================== INSTRUCTOR ASSIGNMENT LOGIC ====================
-  
-  const handleAssignInstructors = async () => {
-    setAssignLoading(true)
-    try {
-      const updatedAssignments = loadAssignments.map(assignment => {
-        if (!assignment.instructorId && assignmentSelections[assignment.id]) {
-          const selection = assignmentSelections[assignment.id]
-          const instructor = instructors.find(i => i.id === selection.instructorId)
-          const videoInstructor = selection.videoInstructorId 
-            ? instructors.find(i => i.id === selection.videoInstructorId)
-            : null
-          return {
-            ...assignment,
-            instructorId: selection.instructorId,
-            instructorName: instructor?.name || '',
-            ...(selection.videoInstructorId && {
-              videoInstructorId: selection.videoInstructorId,
-              videoInstructorName: videoInstructor?.name || ''
-            })
-          }
-        }
-        return assignment
-      })
-      await update(load.id, { assignments: updatedAssignments })
-      setShowAssignModal(false)
-    } catch (error) {
-      console.error('Failed to assign instructors:', error)
-      alert('Failed to assign instructors: ' + (error as Error).message)
-    } finally {
-      setAssignLoading(false)
-    }
-  }
-  
-  // 🔥 NEW: Check instructor availability based on load position and 40-minute cycle
-  const getQualifiedInstructors = (assignment: typeof loadAssignments[0]) => {
-    const clockedIn = instructors.filter(i => i.clockedIn)
-    const qualified = clockedIn.filter(instructor => {
-      // 🔥 Check availability based on load position and cycle time
-      const isAvailable = isInstructorAvailableForLoad(
-        instructor.id,
-        load.position || 0,
-        allLoads,
-        loadSchedulingSettings.instructorCycleTime,
-        loadSchedulingSettings.minutesBetweenLoads
-      )
-      
-      if (!isAvailable) return false
-      
-      const canTandem = (instructor as any).canTandem ?? (instructor as any).tandem
-      const canAFF = (instructor as any).canAFF ?? (instructor as any).aff
-      if (assignment.jumpType === 'tandem' && !canTandem) return false
-      if (assignment.jumpType === 'aff' && !canAFF) return false
-      if (assignment.jumpType === 'tandem' && instructor.tandemWeightLimit) {
-        const totalWeight = assignment.studentWeight + (assignment.tandemWeightTax || 0)
-        if (totalWeight > instructor.tandemWeightLimit) return false
-      }
-      if (assignment.jumpType === 'aff' && instructor.affWeightLimit) {
-        if (assignment.studentWeight > instructor.affWeightLimit) return false
-      }
-      return true
-    })
-    return qualified.sort((a, b) => {
-      const balanceA = instructorBalances.get(a.id) || 0
-      const balanceB = instructorBalances.get(b.id) || 0
-      return balanceA - balanceB
-    })
-  }
-  
-  // 🔥 NEW: Check video instructor availability
-  const getVideoInstructors = () => {
-    return instructors.filter(i => {
-      const canVideo = (i as any).canVideo ?? (i as any).video
-      if (!i.clockedIn || !canVideo) return false
-      
-      // 🔥 Check availability based on load position
-      const isAvailable = isInstructorAvailableForLoad(
-        i.id,
-        load.position || 0,
-        allLoads,
-        loadSchedulingSettings.instructorCycleTime,
-        loadSchedulingSettings.minutesBetweenLoads
-      )
-      
-      return isAvailable
-    }).sort((a, b) => {
-      const balanceA = instructorBalances.get(a.id) || 0
-      const balanceB = instructorBalances.get(b.id) || 0
-      return balanceA - balanceB
-    })
-  }
-  
-  // 🔥 NEW: Auto-select instructors with availability checking
+  // ✅ CLEAN: Auto-select instructors with availability checking
   const autoSelectInstructors = useMemo(() => {
     if (!showAssignModal) return {}
     
@@ -510,7 +101,7 @@ export function LoadBuilderCard({
     const usedMainInstructors = new Set<string>()
     const usedVideoInstructors = new Set<string>()
     
-    // 🔥 Only track instructors already assigned on THIS load
+    // Only track instructors already assigned on THIS load
     const assignments = loadAssignments || []
     assignments.forEach(a => {
       if (a.instructorId) {
@@ -531,7 +122,7 @@ export function LoadBuilderCard({
         // Only exclude if already used on THIS load
         if (usedMainInstructors.has(instructor.id)) return false
         
-        // 🔥 Check if instructor is available for this load based on 40-minute cycle
+        // Check if instructor is available for this load based on 40-minute cycle
         const isAvailable = isInstructorAvailableForLoad(
           instructor.id,
           load.position || 0,
@@ -542,11 +133,9 @@ export function LoadBuilderCard({
         
         if (!isAvailable) return false
         
-        const canTandem = (instructor as any).canTandem ?? (instructor as any).tandem
-        const canAFF = (instructor as any).canAFF ?? (instructor as any).aff
-        
-        if (assignment.jumpType === 'tandem' && !canTandem) return false
-        if (assignment.jumpType === 'aff' && !canAFF) return false
+        // ✅ CLEAN: Use correct property names directly
+        if (assignment.jumpType === 'tandem' && !instructor.canTandem) return false
+        if (assignment.jumpType === 'aff' && !instructor.canAFF) return false
         
         if (assignment.jumpType === 'tandem' && instructor.tandemWeightLimit) {
           const totalWeight = assignment.studentWeight + (assignment.tandemWeightTax || 0)
@@ -570,13 +159,13 @@ export function LoadBuilderCard({
         
         if (assignment.hasOutsideVideo && assignment.jumpType === 'tandem') {
           const videoQualified = clockedIn.filter(i => {
-            const canVideo = (i as any).canVideo ?? (i as any).video
-            if (!i.clockedIn || !canVideo) return false
+            // ✅ CLEAN: Use correct property name directly
+            if (!i.clockedIn || !i.canVideo) return false
             if (i.id === selectedInstructor.id) return false
             if (usedVideoInstructors.has(i.id)) return false
             if (usedMainInstructors.has(i.id)) return false
             
-            // 🔥 Check if video instructor is available for this load
+            // Check if video instructor is available for this load
             const isAvailable = isInstructorAvailableForLoad(
               i.id,
               load.position || 0,
@@ -617,7 +206,7 @@ export function LoadBuilderCard({
     }
   }, [showAssignModal])
 
-  // ==================== MILESTONE BREATHING EFFECTS ====================
+  // Milestone breathing effects
   useEffect(() => {
     if (load.status !== 'ready' || !countdown) {
       setLastMilestone(null)
@@ -626,14 +215,12 @@ export function LoadBuilderCard({
 
     const minutes = Math.floor(countdown / 60)
     
-    // Check for 20-minute milestone
     if (minutes === 19 && lastMilestone !== 20) {
       setLastMilestone(20)
       setShowBreathing(true)
       setTimeout(() => setShowBreathing(false), 1000)
     }
     
-    // Check for 10-minute milestone
     if (minutes === 9 && lastMilestone !== 10) {
       setLastMilestone(10)
       setShowBreathing(true)
@@ -662,32 +249,381 @@ export function LoadBuilderCard({
     const minutes = Math.floor(countdown / 60)
     
     if (minutes >= 20) {
-      // > 20 minutes: Blue/Default
       return {
         bg: 'bg-white/10',
         border: 'border-blue-500/50',
         glow: showBreathing ? 'shadow-[0_0_30px_rgba(59,130,246,0.6)]' : ''
       }
     } else if (minutes >= 10) {
-      // 10-20 minutes: Orange
       return {
         bg: 'bg-orange-900/20',
         border: 'border-orange-500/60',
         glow: showBreathing ? 'shadow-[0_0_30px_rgba(251,146,60,0.6)]' : ''
       }
     } else {
-      // < 10 minutes: Red
       return {
         bg: 'bg-red-900/20',
         border: 'border-red-500/60',
-        glow: showBreathing ? 'shadow-[0_0_30px_rgba(239,68,68,0.6)]' : 'shadow-[0_0_20px_rgba(239,68,68,0.4)]'
+        glow: showBreathing ? 'shadow-[0_0_30px_rgba(239,68,68,0.6)]' : ''
       }
     }
   }
 
   const colors = getLoadColors()
-
-  // ==================== RENDER ====================
+  
+  const handleDragOver = (e: React.DragEvent) => {
+    if (isCompleted) return
+    e.preventDefault()
+    setDragOver(true)
+    setDropTarget(load.id)
+  }
+  
+  const handleDragLeave = () => {
+    setDragOver(false)
+    setDropTarget(null)
+  }
+  
+  const handleDrop = (e: React.DragEvent) => {
+    if (isCompleted) return
+    e.preventDefault()
+    setDragOver(false)
+    setDropTarget(null)
+    onDrop(load.id)
+  }
+  
+  const removeFromLoad = async (assignmentId: string) => {
+    if (isCompleted) return
+    try {
+      const updatedAssignments = loadAssignments.filter(a => a.id !== assignmentId)
+      await update(load.id, { assignments: updatedAssignments })
+    } catch (error) {
+      console.error('Failed to remove from load:', error)
+    }
+  }
+  
+  const handleStatusChangeRequest = (newStatus: Load['status']) => {
+    if (newStatus === 'departed' && load.status === 'boarding' && unassignedCount > 0) {
+      alert('❌ Cannot mark as departed: All students must have instructors assigned!')
+      return
+    }
+    if (newStatus === 'ready' && unassignedCount > 0) {
+      alert('❌ Cannot mark as ready: All students must have instructors assigned!')
+      return
+    }
+    
+    if (load.status === 'completed' && newStatus !== 'completed') {
+      if (!confirm('⚠️ This load is COMPLETED. Are you sure you want to move it back to "' + newStatus + '"? This should only be done to fix errors.')) {
+        return
+      }
+    }
+    
+    setStatusChangeConfirm(newStatus)
+  }
+  
+  const confirmStatusChange = async () => {
+    if (!statusChangeConfirm) return
+    
+    try {
+      const updates: Partial<Load> = { status: statusChangeConfirm }
+      
+      // Handle countdown timer logic
+      if (statusChangeConfirm === 'ready') {
+        const loadsBeforeThis = allLoads
+          .filter(l => (l.position || 0) < (load.position || 0))
+          .filter(l => l.status !== 'departed' && l.status !== 'completed')
+        
+        const hasUnreadyLoadsBefore = loadsBeforeThis.some(l => l.status === 'building')
+        
+        if (hasUnreadyLoadsBefore) {
+          (updates as any).countdownStartTime = null
+        } else {
+          const allReadyLoads = allLoads
+            .filter(l => l.status === 'ready' || l.id === load.id)
+            .sort((a, b) => (a.position || 0) - (b.position || 0))
+          
+          const firstReadyLoad = allReadyLoads[0]
+          const isFirstReadyLoad = firstReadyLoad && firstReadyLoad.id === load.id
+          
+          if (isFirstReadyLoad) {
+            (updates as any).countdownStartTime = new Date().toISOString()
+          } else {
+            (updates as any).countdownStartTime = null
+          }
+        }
+      }
+      
+      if (statusChangeConfirm === 'building') {
+        if ((load as any).countdownStartTime) {
+          (updates as any).countdownStartTime = null
+        }
+      }
+      
+      if (statusChangeConfirm === 'departed') {
+        updates.departedAt = new Date().toISOString()
+      }
+      
+      if (statusChangeConfirm === 'completed') {
+        updates.completedAt = new Date().toISOString()
+      }
+      
+      await update(load.id, updates)
+      setStatusChangeConfirm(null)
+      
+      // Update subsequent ready loads when marking ready
+      if (statusChangeConfirm === 'ready') {
+        const startedTimer = (updates as any).countdownStartTime
+        
+        if (startedTimer) {
+          const subsequentReadyLoads = allLoads
+            .filter(l => l.status === 'ready' && l.position > (load.position || 0))
+            .sort((a, b) => (a.position || 0) - (b.position || 0))
+          
+          if (subsequentReadyLoads.length > 0) {
+            const thisLoadStartTime = new Date(startedTimer).getTime()
+            const thisLoadTargetTime = thisLoadStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+            const thisLoadRemainingMs = loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
+            
+            for (const subsequentLoad of subsequentReadyLoads) {
+              const positionDiff = subsequentLoad.position - (load.position || 0)
+              const targetRemainingMs = thisLoadRemainingMs + (positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+              const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+              
+              await update(subsequentLoad.id, {
+                countdownStartTime: new Date(newStartTime).toISOString()
+              } as any)
+            }
+          }
+        }
+      }
+      
+      // Handle departed status - reset subsequent ready loads
+      if (statusChangeConfirm === 'departed') {
+        const currentReadyLoads = allLoads
+          .filter(l => l.status === 'ready')
+          .sort((a, b) => (a.position || 0) - (b.position || 0))
+        
+        if (currentReadyLoads.length > 0) {
+          const firstReadyLoad = currentReadyLoads[0]
+          
+          await update(firstReadyLoad.id, {
+            countdownStartTime: new Date().toISOString()
+          } as any)
+          
+          const nowStartTime = Date.now()
+          const nowTargetTime = nowStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+          const nowRemainingMs = loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
+          
+          for (const subsequentLoad of currentReadyLoads.slice(1)) {
+            const positionDiff = subsequentLoad.position - firstReadyLoad.position
+            const targetRemainingMs = nowRemainingMs + (positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+            const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+            
+            await update(subsequentLoad.id, {
+              countdownStartTime: new Date(newStartTime).toISOString()
+            } as any)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to update status:', error)
+      alert('Failed to update status')
+    }
+  }
+  
+  const handleDelay = async () => {
+    try {
+      await onDelay(load.id, delayMinutes)
+      setShowDelayModal(false)
+    } catch (error) {
+      console.error('Failed to delay load:', error)
+      alert('Failed to delay load')
+    }
+  }
+  
+  const handleDelete = async () => {
+    if (!showDeleteConfirm) {
+      setShowDeleteConfirm(true)
+      return
+    }
+    
+    try {
+      if (isCompleted) {
+        if (!confirm('⚠️ This load is COMPLETED. Are you absolutely sure you want to delete it?')) {
+          setShowDeleteConfirm(false)
+          return
+        }
+      }
+      
+      for (const assignment of loadAssignments) {
+        await db.addToQueue({
+          id: assignment.studentId || `${Date.now()}_${Math.random()}`,
+          name: assignment.studentName,
+          weight: assignment.studentWeight,
+          jumpType: assignment.jumpType,
+          addedAt: new Date().toISOString(),
+          isRequest: assignment.isRequest,
+          ...(assignment.jumpType === 'tandem' && {
+            tandemWeightTax: assignment.tandemWeightTax,
+            tandemHandcam: assignment.tandemHandcam,
+            outsideVideo: assignment.hasOutsideVideo,
+          }),
+          ...(assignment.jumpType === 'aff' && {
+            affLevel: assignment.affLevel,
+          }),
+        })
+      }
+      
+      await deleteLoad(load.id)
+      
+      // Handle timer cascading after deletion
+      if (load.status === 'ready' && (load as any).countdownStartTime) {
+        const allRemainingReadyLoads = allLoads
+          .filter(l => l.id !== load.id && l.status === 'ready')
+          .sort((a, b) => (a.position || 0) - (b.position || 0))
+        
+        if (allRemainingReadyLoads.length > 0) {
+          const newFirstReadyLoad = allRemainingReadyLoads[0]
+          
+          if ((newFirstReadyLoad as any).countdownStartTime) {
+            const remainingTime = Math.max(0, 
+              new Date((newFirstReadyLoad as any).countdownStartTime).getTime() + 
+              (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000) - 
+              Date.now()
+            )
+            
+            if (remainingTime > 0) {
+              const targetRemainingMs = loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
+              
+              for (const subsequentLoad of allRemainingReadyLoads) {
+                const positionDiff = subsequentLoad.position - newFirstReadyLoad.position
+                const targetRemainingMs = loadSchedulingSettings.minutesBetweenLoads * 60 * 1000 + (positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+                const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+                
+                await update(subsequentLoad.id, {
+                  countdownStartTime: new Date(newStartTime).toISOString()
+                } as any)
+              }
+            } else if (newFirstReadyLoad.id === allRemainingReadyLoads[0]?.id) {
+              await update(newFirstReadyLoad.id, {
+                countdownStartTime: new Date().toISOString()
+              } as any)
+              
+              const nowStartTime = Date.now()
+              const nowTargetTime = nowStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+              const nowRemainingMs = loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
+              
+              for (const subsequentLoad of allRemainingReadyLoads.slice(1)) {
+                const positionDiff = subsequentLoad.position - newFirstReadyLoad.position
+                const targetRemainingMs = nowRemainingMs + (positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+                const newStartTime = Date.now() + targetRemainingMs - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+                
+                await update(subsequentLoad.id, {
+                  countdownStartTime: new Date(newStartTime).toISOString()
+                } as any)
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to delete load:', error)
+      alert('Failed to delete load')
+    }
+  }
+  
+  const handleBulkAssign = async () => {
+    if (Object.keys(assignmentSelections).length === 0) {
+      alert('No instructor selections made')
+      return
+    }
+    
+    setAssignLoading(true)
+    try {
+      const updatedAssignments = loadAssignments.map(assignment => {
+        const selection = assignmentSelections[assignment.id]
+        if (selection) {
+          const instructor = instructors.find(i => i.id === selection.instructorId)
+          const videoInstructor = selection.videoInstructorId
+            ? instructors.find(i => i.id === selection.videoInstructorId)
+            : null
+          return {
+            ...assignment,
+            instructorId: selection.instructorId,
+            instructorName: instructor?.name || '',
+            ...(selection.videoInstructorId && {
+              videoInstructorId: selection.videoInstructorId,
+              videoInstructorName: videoInstructor?.name || ''
+            })
+          }
+        }
+        return assignment
+      })
+      await update(load.id, { assignments: updatedAssignments })
+      setShowAssignModal(false)
+    } catch (error) {
+      console.error('Failed to assign instructors:', error)
+      alert('Failed to assign instructors: ' + (error as Error).message)
+    } finally {
+      setAssignLoading(false)
+    }
+  }
+  
+  // ✅ CLEAN: Check instructor availability based on load position and 40-minute cycle
+  const getQualifiedInstructors = (assignment: typeof loadAssignments[0]) => {
+    const clockedIn = instructors.filter(i => i.clockedIn)
+    const qualified = clockedIn.filter(instructor => {
+      // Check availability based on load position and cycle time
+      const isAvailable = isInstructorAvailableForLoad(
+        instructor.id,
+        load.position || 0,
+        allLoads,
+        loadSchedulingSettings.instructorCycleTime,
+        loadSchedulingSettings.minutesBetweenLoads
+      )
+      
+      if (!isAvailable) return false
+      
+      // ✅ CLEAN: Use correct property names directly
+      if (assignment.jumpType === 'tandem' && !instructor.canTandem) return false
+      if (assignment.jumpType === 'aff' && !instructor.canAFF) return false
+      if (assignment.jumpType === 'tandem' && instructor.tandemWeightLimit) {
+        const totalWeight = assignment.studentWeight + (assignment.tandemWeightTax || 0)
+        if (totalWeight > instructor.tandemWeightLimit) return false
+      }
+      if (assignment.jumpType === 'aff' && instructor.affWeightLimit) {
+        if (assignment.studentWeight > instructor.affWeightLimit) return false
+      }
+      return true
+    })
+    return qualified.sort((a, b) => {
+      const balanceA = instructorBalances.get(a.id) || 0
+      const balanceB = instructorBalances.get(b.id) || 0
+      return balanceA - balanceB
+    })
+  }
+  
+  // ✅ CLEAN: Check video instructor availability
+  const getVideoInstructors = () => {
+    return instructors.filter(i => {
+      // ✅ CLEAN: Use correct property name directly
+      if (!i.clockedIn || !i.canVideo) return false
+      
+      // Check availability based on load position
+      const isAvailable = isInstructorAvailableForLoad(
+        i.id,
+        load.position || 0,
+        allLoads,
+        loadSchedulingSettings.instructorCycleTime,
+        loadSchedulingSettings.minutesBetweenLoads
+      )
+      
+      return isAvailable
+    }).sort((a, b) => {
+      const balanceA = instructorBalances.get(a.id) || 0
+      const balanceB = instructorBalances.get(b.id) || 0
+      return balanceA - balanceB
+    })
+  }
   
   return (
     <>
@@ -695,190 +631,112 @@ export function LoadBuilderCard({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`rounded-xl shadow-xl p-6 border-2 transition-all ${colors.bg} ${colors.border} ${colors.glow} ${
-          dragOver && load.status === 'building' ? 'scale-105 ring-4 ring-blue-500/50' : ''
-        } ${dropTarget === load.id && load.status === 'building' ? 'ring-2 ring-blue-500' : ''}`}
+        className={`${colors.bg} ${colors.glow} border-2 ${colors.border} rounded-xl p-4 transition-all duration-300 ${
+          dragOver && dropTarget === load.id ? 'ring-4 ring-blue-400 scale-105' : ''
+        } ${isCompleted ? 'opacity-75' : ''}`}
       >
         {/* Header */}
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex items-center justify-between mb-3">
           <div>
-            <h3 className="text-xl font-bold text-white">{load.name || `Load ${load.position}`}</h3>
-            <div className="flex items-center gap-2 mt-1">
-              <span className={`px-3 py-1 rounded-full text-sm font-semibold ${currentStatus.bgClass} ${currentStatus.textClass}`}>
-                {currentStatus.icon} {currentStatus.label}
-              </span>
-              <span className={`text-sm font-semibold ${isOverCapacity ? 'text-red-400' : 'text-blue-400'}`}>
-                {totalPeople}/{load.capacity || 18} ({percentFull}%)
-              </span>
-            </div>
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <span className="text-2xl">{currentStatus.emoji}</span>
+              {load.name}
+            </h3>
+            <p className="text-sm text-slate-400">
+              Capacity: {totalPeople}/{load.capacity || 18} • Slots: {availableSlots}
+            </p>
           </div>
-          <button
-            onClick={handleDelete}
-            className="text-red-400 hover:text-red-300 transition-colors p-2"
-            title="Delete load"
-          >
-            🗑️
-          </button>
-        </div>
-
-        {/* Countdown Timer */}
-        {load.status === 'ready' && countdown !== null && (
-          <div className={`mb-4 p-4 rounded-lg border-2 ${
-            isReadyToDepart ? 'bg-green-500/20 border-green-500 animate-pulse' : 
-            countdown && countdown < 600 ? 'bg-red-500/20 border-red-500' : 
-            countdown && countdown < 1200 ? 'bg-orange-500/20 border-orange-500' : 
-            'bg-blue-500/20 border-blue-500'
-          }`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="text-3xl">
-                  {isReadyToDepart ? '✅' : 
-                   countdown && countdown < 600 ? '🚨' : 
-                   countdown && countdown < 1200 ? '⏰' : 
-                   '⏱️'}
-                </div>
-                <div>
-                  <div className="text-sm text-slate-300">
-                    {isReadyToDepart ? 'READY TO DEPART!' : 
-                     countdown && countdown < 600 ? 'URGENT - Departs Soon!' :
-                     countdown && countdown < 1200 ? 'Warning - Departs in' :
-                     'Departs in'}
-                  </div>
-                  <div className={`text-2xl font-bold ${
-                    countdown && countdown < 600 ? 'text-red-300' :
-                    countdown && countdown < 1200 ? 'text-orange-300' :
-                    'text-white'
-                  }`}>{formattedTime}</div>
-                </div>
+          
+          {/* Timer Display */}
+          {load.status === 'ready' && countdown && (
+            <div className="text-right">
+              <div className={`text-3xl font-bold ${
+                Math.floor(countdown / 60) >= 20 ? 'text-blue-400' :
+                Math.floor(countdown / 60) >= 10 ? 'text-orange-400' :
+                'text-red-400'
+              }`}>
+                {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
               </div>
-              {!isReadyToDepart && (
-                <button
-                  onClick={handleDelay}
-                  className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 font-bold py-2 px-4 rounded-lg transition-colors text-sm"
-                >
-                  ⏰ Delay
-                </button>
-              )}
+              <div className="text-xs text-slate-400">until departure</div>
             </div>
-          </div>
-        )}
-
+          )}
+        </div>
+        
+        {/* Status Badge */}
+        <div className="mb-4">
+          <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${currentStatus.color} text-white`}>
+            {currentStatus.label}
+          </span>
+        </div>
+        
         {/* Assignments List */}
-        <div className="space-y-2 mb-4 max-h-[400px] overflow-y-auto">
+        <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
           {loadAssignments.length === 0 ? (
-            <div className="text-center py-8 text-slate-400 border-2 border-dashed border-slate-600 rounded-lg">
-              {isCompleted ? 'No assignments on this load' : 'Drop students here'}
+            <div className="text-center text-slate-400 py-4">
+              Drop students here
             </div>
           ) : (
             (() => {
-              const grouped: Record<string, typeof loadAssignments> = {}
-              const individual: typeof loadAssignments = []
+              const groupedData: { [key: string]: typeof loadAssignments } = {}
+              
               loadAssignments.forEach(assignment => {
-                if (assignment.groupId) {
-                  if (!grouped[assignment.groupId]) grouped[assignment.groupId] = []
-                  grouped[assignment.groupId].push(assignment)
-                } else {
-                  individual.push(assignment)
+                const groupKey = (assignment as any).originalGroupId || assignment.id
+                if (!groupedData[groupKey]) {
+                  groupedData[groupKey] = []
                 }
+                groupedData[groupKey].push(assignment)
               })
+              
               return (
                 <>
-                  {Object.entries(grouped).map(([groupId, groupAssignments]) => {
-                    const group = groups.find(g => g.id === groupId)
-                    if (!group) return null
-                    return (
-                      <div 
-                        key={groupId}
-                        draggable={!isCompleted && load.status === 'building'}
-                        onDragStart={() => !isCompleted && load.status === 'building' && onDragStart('group', groupId, load.id)}
-                        onDragEnd={onDragEnd}
-                        className={`bg-gradient-to-br from-purple-500/10 to-blue-500/10 border-2 border-purple-500/40 rounded-xl p-3 space-y-2 transition-all ${
-                          !isCompleted && load.status === 'building' ? 'cursor-move hover:bg-purple-500/20 hover:border-purple-500/60' : 'cursor-default'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="text-purple-300 font-bold text-sm">👥 {group.name}</div>
+                  {Object.entries(groupedData).map(([groupKey, assignments]) => (
+                    <div key={groupKey}>
+                      {assignments.length > 1 && (
+                        <div className="bg-purple-500/20 border border-purple-500/40 rounded-lg p-2 mb-1">
+                          <div className="text-xs font-bold text-purple-300">
+                            👥 GROUP ({assignments.length} students)
+                          </div>
                         </div>
-                        {groupAssignments.map(assignment => (
-                          <div key={assignment.id} className="bg-white/5 rounded-lg p-2 border border-white/10">
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-semibold text-white text-sm">{assignment.studentName}</span>
-                                  {assignment.isRequest && <span className="text-yellow-400 text-xs">⭐</span>}
-                                </div>
-                                <div className="text-xs text-slate-400 mt-1">
-                                  {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
-                                  {assignment.tandemWeightTax && ` • Tax: ${assignment.tandemWeightTax}`}
-                                  {assignment.tandemHandcam && ' • 📹 Handcam'}
-                                  {assignment.hasOutsideVideo && ' • 🎥 Video'}
-                                  {assignment.affLevel && ` • ${assignment.affLevel}`}
-                                </div>
-                                {assignment.instructorId ? (
-                                  <div className="text-xs text-green-400 mt-1">
-                                    TI: {assignment.instructorName}
-                                    {assignment.videoInstructorId && ` • 📹 ${assignment.videoInstructorName}`}
-                                  </div>
-                                ) : (
-                                  <div className="text-xs text-red-400 mt-1">TI: 🔴 Not assigned</div>
-                                )}
+                      )}
+                      
+                      {assignments.map(assignment => (
+                        <div
+                          key={assignment.id}
+                          draggable={!isCompleted && load.status === 'building'}
+                          onDragStart={() => onDragStart('assignment', assignment.id, load.id)}
+                          onDragEnd={onDragEnd}
+                          className={`bg-white/5 border border-white/10 rounded-lg p-3 ${
+                            !isCompleted && load.status === 'building' ? 'cursor-move hover:bg-white/10' : 'cursor-default'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="font-semibold text-white">{assignment.studentName}</div>
+                              <div className="text-sm text-slate-400">
+                                {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
+                                {assignment.tandemWeightTax && ` • Tax: ${assignment.tandemWeightTax}`}
+                                {assignment.hasOutsideVideo && ' • 🎥 Video'}
                               </div>
-                              {!isCompleted && load.status === 'building' && (
-                                <button
-                                  onClick={() => removeFromLoad(assignment.id)}
-                                  className="ml-2 p-1 text-red-400 hover:text-red-300 transition-colors"
-                                >
-                                  ✕
-                                </button>
+                              {assignment.instructorId ? (
+                                <div className="text-sm text-green-400 mt-1">
+                                  TI: {assignment.instructorName}
+                                  {assignment.videoInstructorId && ` • 📹 ${assignment.videoInstructorName}`}
+                                </div>
+                              ) : (
+                                <div className="text-sm text-red-400 mt-1">TI: 🔴 Not assigned</div>
                               )}
                             </div>
+                            {!isCompleted && load.status === 'building' && (
+                              <button
+                                onClick={() => removeFromLoad(assignment.id)}
+                                className="ml-2 p-1 text-red-400 hover:text-red-300 transition-colors"
+                              >
+                                ✕
+                              </button>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    )
-                  })}
-                  
-                  {individual.map(assignment => (
-                    <div
-                      key={assignment.id}
-                      draggable={!isCompleted && load.status === 'building'}
-                      onDragStart={() => !isCompleted && load.status === 'building' && onDragStart('assignment', assignment.id, load.id)}
-                      onDragEnd={onDragEnd}
-                      className={`bg-white/5 rounded-lg p-3 border border-white/10 transition-all ${
-                        !isCompleted && load.status === 'building' ? 'cursor-move hover:bg-white/10 hover:border-white/20' : 'cursor-default'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-white">{assignment.studentName}</span>
-                            {assignment.isRequest && <span className="text-yellow-400 text-sm">⭐</span>}
-                          </div>
-                          <div className="text-sm text-slate-400 mt-1">
-                            {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
-                            {assignment.tandemWeightTax && ` • Tax: ${assignment.tandemWeightTax}`}
-                            {assignment.tandemHandcam && ' • 📹 Handcam'}
-                            {assignment.hasOutsideVideo && ' • 🎥 Video'}
-                            {assignment.affLevel && ` • ${assignment.affLevel}`}
-                          </div>
-                          {assignment.instructorId ? (
-                            <div className="text-sm text-green-400 mt-1">
-                              TI: {assignment.instructorName}
-                              {assignment.videoInstructorId && ` • 📹 ${assignment.videoInstructorName}`}
-                            </div>
-                          ) : (
-                            <div className="text-sm text-red-400 mt-1">TI: 🔴 Not assigned</div>
-                          )}
                         </div>
-                        {!isCompleted && load.status === 'building' && (
-                          <button
-                            onClick={() => removeFromLoad(assignment.id)}
-                            className="ml-2 p-1 text-red-400 hover:text-red-300 transition-colors"
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
+                      ))}
                     </div>
                   ))}
                 </>
@@ -923,83 +781,142 @@ export function LoadBuilderCard({
                 onClick={() => handleStatusChangeRequest(transition as Load['status'])}
                 disabled={loading}
                 className={`w-full font-bold py-2 px-4 rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
-                  transition === 'ready' ? 'bg-green-500 hover:bg-green-600 text-white' :
-                  transition === 'departed' ? 'bg-yellow-500 hover:bg-yellow-600 text-white' :
-                  transition === 'building' ? 'bg-blue-500 hover:bg-blue-600 text-white' :
-                  transition === 'completed' ? 'bg-purple-500 hover:bg-purple-600 text-white' :
-                  'bg-slate-600 hover:bg-slate-500 text-white'
+                  transition === 'ready' ?
+                    'bg-blue-500 hover:bg-blue-600 text-white' :
+                  transition === 'boarding' ?
+                    'bg-yellow-500 hover:bg-yellow-600 text-white' :
+                  transition === 'departed' ?
+                    'bg-green-500 hover:bg-green-600 text-white' :
+                  transition === 'completed' ?
+                    'bg-purple-500 hover:bg-purple-600 text-white' :
+                    'bg-slate-600 hover:bg-slate-700 text-white'
                 }`}
               >
-                {transitionConfig.icon} Mark as {transitionConfig.label}
+                {transitionConfig.emoji} Mark as {transitionConfig.label}
               </button>
             )
           })}
+          
+          {load.status === 'ready' && isActive && (
+            <button
+              onClick={() => setShowDelayModal(true)}
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm"
+            >
+              ⏰ Delay Load
+            </button>
+          )}
+          
+          <button
+            onClick={handleDelete}
+            disabled={loading}
+            className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm disabled:opacity-50"
+          >
+            🗑️ Delete Load
+          </button>
         </div>
       </div>
-
-      {/* Status Change Confirmation Modal */}
+      
+      {/* Confirmation Modal */}
       {statusChangeConfirm && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setStatusChangeConfirm(null)}>
-          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-blue-500" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-slate-700">
             <div className="p-6">
-              <h2 className="text-2xl font-bold text-white mb-4">Confirm Status Change</h2>
+              <h3 className="text-xl font-bold text-white mb-4">Confirm Status Change</h3>
               <p className="text-slate-300 mb-6">
-                Are you sure you want to mark <strong>{load.name}</strong> as <strong className="text-blue-400">{statusConfig[statusChangeConfirm].label}</strong>?
+                Change load status to <span className="font-bold text-blue-400">{statusConfig[statusChangeConfirm].label}</span>?
               </p>
               <div className="flex gap-3">
-                <button onClick={() => setStatusChangeConfirm(null)} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors">Cancel</button>
-                <button onClick={confirmStatusChange} className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors">Confirm</button>
+                <button
+                  onClick={() => setStatusChangeConfirm(null)}
+                  className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmStatusChange}
+                  disabled={loading}
+                  className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Confirm
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setShowDeleteConfirm(false)}>
-          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-red-500" onClick={(e) => e.stopPropagation()}>
-            <div className="p-6">
-              <h2 className="text-2xl font-bold text-white mb-4">⚠️ Delete Load</h2>
-              <p className="text-slate-300 mb-4">Are you sure you want to delete <strong>{load.name}</strong>?</p>
-              {loadAssignments.length > 0 && <p className="text-slate-400 text-sm mb-4">{loadAssignments.length} assignment(s) will be moved back to the queue.</p>}
-              <div className="flex gap-3 mt-6">
-                <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors">Cancel</button>
-                <button onClick={confirmDelete} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-colors">Delete</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
+      
       {/* Delay Modal */}
       {showDelayModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setShowDelayModal(false)}>
-          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-orange-500" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-slate-700">
             <div className="p-6">
-              <h2 className="text-2xl font-bold text-white mb-4">⏰ Delay Load</h2>
-              <p className="text-slate-300 mb-4">How many minutes would you like to delay <strong>{load.name}</strong>?</p>
+              <h3 className="text-xl font-bold text-white mb-4">Delay Load</h3>
+              <label className="block text-sm font-semibold text-slate-300 mb-2">
+                Delay by (minutes)
+              </label>
               <input
-                type="number" min="1" max="120" value={delayMinutes}
-                onChange={(e) => setDelayMinutes(parseInt(e.target.value) || 20)}
-                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white mb-6 focus:outline-none focus:border-orange-500"
+                type="number"
+                min="5"
+                max="60"
+                value={delayMinutes}
+                onChange={(e) => setDelayMinutes(parseInt(e.target.value))}
+                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white mb-4"
               />
               <div className="flex gap-3">
-                <button onClick={() => setShowDelayModal(false)} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors">Cancel</button>
-                <button onClick={confirmDelay} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-4 rounded-lg transition-colors">Delay {delayMinutes} min</button>
+                <button
+                  onClick={() => setShowDelayModal(false)}
+                  className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelay}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  Delay
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
-
+      
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-slate-700">
+            <div className="p-6">
+              <h3 className="text-xl font-bold text-white mb-4">Confirm Delete</h3>
+              <p className="text-slate-300 mb-6">
+                {isCompleted 
+                  ? '⚠️ This is a COMPLETED load. Are you absolutely sure you want to delete it?'
+                  : 'Are you sure you want to delete this load? Students will be returned to the queue.'}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Assign Instructors Modal */}
       {showAssignModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setShowAssignModal(false)}>
-          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-2 border-purple-500" onClick={(e) => e.stopPropagation()}>
-            <div className="p-6 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
-              <h2 className="text-2xl font-bold text-white">👤 Assign Instructors - {load.name}</h2>
-              <p className="text-sm text-slate-400 mt-1">{unassignedCount} student(s) need instructor assignment</p>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-y-auto border border-slate-700">
+            <div className="border-b border-slate-700 p-6">
+              <h3 className="text-2xl font-bold text-white">Assign Instructors</h3>
             </div>
             
             <div className="p-6 space-y-4">
@@ -1074,19 +991,19 @@ export function LoadBuilderCard({
               })}
             </div>
             
-            <div className="border-t border-slate-700 p-6 sticky bottom-0 bg-slate-800 flex gap-3">
+            <div className="border-t border-slate-700 p-6 flex gap-3">
               <button
                 onClick={() => setShowAssignModal(false)}
-                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={handleAssignInstructors}
+                onClick={handleBulkAssign}
                 disabled={assignLoading || Object.keys(assignmentSelections).length === 0}
-                className="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {assignLoading ? '⏳ Assigning...' : '✓ Assign Instructors'}
+                {assignLoading ? '⏳ Assigning...' : '✓ Assign All'}
               </button>
             </div>
           </div>

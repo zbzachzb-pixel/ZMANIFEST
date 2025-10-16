@@ -1,4 +1,5 @@
-// src/components/OptimizeLoadModal.tsx - COMPLETE FIXED VERSION
+// src/components/OptimizeLoadModal.tsx
+// ✅ COMPLETELY CLEANED VERSION
 'use client'
 
 import React, { useState, useMemo } from 'react'
@@ -126,47 +127,41 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
             return false
           }
           
-          // 🔧 CRITICAL FIX: Check BOTH old and new property names
-          const canTandem = (instructor as any).canTandem ?? (instructor as any).tandem
-          const canAFF = (instructor as any).canAFF ?? (instructor as any).aff
-          const canVideo = (instructor as any).canVideo ?? (instructor as any).video
-          
-          if (student.jumpType === 'tandem' && !canTandem) {
-            console.log(`❌ ${instructor.name}: can't do tandem`)
+          // ✅ CLEAN: Use correct property names directly
+          if (student.jumpType === 'tandem' && !instructor.canTandem) {
+            console.log(`⏭️  ${instructor.name}: not tandem qualified`)
             return false
           }
-          if (student.jumpType === 'aff' && !canAFF) {
-            console.log(`❌ ${instructor.name}: can't do AFF`)
-            return false
-          }
-          if (student.jumpType === 'video' && !canVideo) {
-            console.log(`❌ ${instructor.name}: can't do video`)
+          if (student.jumpType === 'aff' && !instructor.canAFF) {
+            console.log(`⏭️  ${instructor.name}: not AFF qualified`)
             return false
           }
           
-          const totalWeight = student.weight + (student.tandemWeightTax || 0)
+          // Check weight limits
           if (student.jumpType === 'tandem' && instructor.tandemWeightLimit) {
+            const totalWeight = student.weight + (student.tandemWeightTax || 0)
             if (totalWeight > instructor.tandemWeightLimit) {
-              console.log(`❌ ${instructor.name}: weight limit exceeded`)
-              return false
-            }
-          }
-          if (student.jumpType === 'aff' && instructor.affWeightLimit) {
-            if (student.weight > instructor.affWeightLimit) {
-              console.log(`❌ ${instructor.name}: AFF weight limit exceeded`)
+              console.log(`⏭️  ${instructor.name}: weight limit exceeded (${totalWeight} > ${instructor.tandemWeightLimit})`)
               return false
             }
           }
           
-          if (student.jumpType === 'aff' && instructor.affLocked) {
-            const isTheirStudent = instructor.affStudents?.some(s => s.name === student.name)
-            if (!isTheirStudent) {
-              console.log(`❌ ${instructor.name}: AFF locked`)
+          if (student.jumpType === 'aff') {
+            if (instructor.affWeightLimit && student.weight > instructor.affWeightLimit) {
+              console.log(`⏭️  ${instructor.name}: AFF weight limit exceeded`)
               return false
+            }
+            
+            if (instructor.affLocked) {
+              const hasThisStudent = instructor.affStudents?.some(s => s.name === student.name)
+              if (!hasThisStudent) {
+                console.log(`⏭️  ${instructor.name}: AFF locked, not their student`)
+                return false
+              }
             }
           }
           
-          console.log(`✅ ${instructor.name}: QUALIFIED!`)
+          console.log(`✅ ${instructor.name}: qualified (balance: $${instructorBalances.get(instructor.id) || 0})`)
           return true
         })
         .sort((a, b) => {
@@ -176,44 +171,66 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
         })
       
       if (qualifiedInstructors.length === 0) {
-        console.log(`⚠️  No qualified instructors for ${student.name}`)
-        continue
+        console.log(`❌ No qualified instructors for ${student.name}`)
+        break
       }
       
       const bestInstructor = qualifiedInstructors[0]
-      console.log(`✅ Selected ${bestInstructor.name}`)
-      
+      console.log(`📌 Selected: ${bestInstructor.name}`)
       usedInstructors.add(bestInstructor.id)
       
-      // Find video instructor if needed
-      let videoInstructor: Instructor | undefined
-      if (student.outsideVideo && student.jumpType === 'tandem') {
-        const videoInstructors = clockedInInstructors.filter(i => {
-          // 🔧 CRITICAL FIX: Check BOTH old and new property names
-          const canVideo = (i as any).canVideo ?? (i as any).video
-          
-          if (!canVideo) return false
-          if (i.id === bestInstructor.id) return false
-          if (usedVideoInstructors.has(i.id)) return false
-          if (usedInstructors.has(i.id)) return false
-          
-          if ((i as any).videoRestricted) {
-            const combinedWeight = bestInstructor.bodyWeight + student.weight
-            if ((i as any).videoMinWeight && combinedWeight < (i as any).videoMinWeight) return false
-            if ((i as any).videoMaxWeight && combinedWeight > (i as any).videoMaxWeight) return false
-          }
-          
-          return true
-        }).sort((a, b) => {
-          const balanceA = instructorBalances.get(a.id) || 0
-          const balanceB = instructorBalances.get(b.id) || 0
-          return balanceA - balanceB
-        })
+      // Handle video instructor if needed
+      let videoInstructor: Instructor | undefined = undefined
+      if (student.jumpType === 'tandem' && student.outsideVideo) {
+        console.log(`🎥 Looking for video instructor...`)
+        
+        const videoInstructors = clockedInInstructors
+          .filter(i => {
+            // ✅ CLEAN: Use correct property name directly
+            if (!i.canVideo) {
+              console.log(`  ⏭️  ${i.name}: not video qualified`)
+              return false
+            }
+            if (i.id === bestInstructor.id) {
+              console.log(`  ⏭️  ${i.name}: is main instructor`)
+              return false
+            }
+            if (usedVideoInstructors.has(i.id)) {
+              console.log(`  ⏭️  ${i.name}: already used as video`)
+              return false
+            }
+            if (usedInstructors.has(i.id)) {
+              console.log(`  ⏭️  ${i.name}: already on another load`)
+              return false
+            }
+            
+            if (i.videoRestricted) {
+              const combinedWeight = bestInstructor.bodyWeight + student.weight
+              if (i.videoMinWeight && combinedWeight < i.videoMinWeight) {
+                console.log(`  ⏭️  ${i.name}: combined weight too low`)
+                return false
+              }
+              if (i.videoMaxWeight && combinedWeight > i.videoMaxWeight) {
+                console.log(`  ⏭️  ${i.name}: combined weight too high`)
+                return false
+              }
+            }
+            
+            console.log(`  ✅ ${i.name}: qualified (balance: $${instructorBalances.get(i.id) || 0})`)
+            return true
+          }).sort((a, b) => {
+            const balanceA = instructorBalances.get(a.id) || 0
+            const balanceB = instructorBalances.get(b.id) || 0
+            return balanceA - balanceB
+          })
         
         if (videoInstructors.length > 0) {
           videoInstructor = videoInstructors[0]
+          console.log(`📌 Video selected: ${videoInstructor.name}`)
           usedVideoInstructors.add(videoInstructor.id)
           usedInstructors.add(videoInstructor.id)
+        } else {
+          console.log(`❌ No video instructor available`)
         }
       }
       

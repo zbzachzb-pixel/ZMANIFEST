@@ -1,18 +1,18 @@
+// src/components/AssignStudentModal.tsx
+// ✅ CLEANED VERSION - No backwards compatibility code
 'use client'
 
 import React, { useState, useMemo } from 'react'
 import { useInstructors, useAssignments, useCreateAssignment } from '@/hooks/useDatabase'
 import { db } from '@/services'
-import { getCurrentPeriod } from '@/lib/utils'
-import type { QueueStudent, Instructor, Assignment, Period } from '@/types'
+import { getCurrentPeriod, calculateInstructorBalance } from '@/lib/utils'
+import type { QueueStudent, Instructor, Assignment } from '@/types'
 
 interface AssignStudentModalProps {
   students: QueueStudent[]
   onClose: () => void
   onSuccess: () => void
 }
-
-import { calculateInstructorBalance } from '@/lib/utils'
 
 export function AssignStudentModal({ students, onClose, onSuccess }: AssignStudentModalProps) {
   const { data: allInstructors } = useInstructors()
@@ -25,7 +25,6 @@ export function AssignStudentModal({ students, onClose, onSuccess }: AssignStude
   const period = getCurrentPeriod()
   const clockedInInstructors = allInstructors.filter(i => !i.archived && i.clockedIn)
   
-  const { data: instructors } = useInstructors()
   const student = students[0]
   const needsTandem = student.jumpType === 'tandem'
   const needsAFF = student.jumpType === 'aff'
@@ -33,66 +32,68 @@ export function AssignStudentModal({ students, onClose, onSuccess }: AssignStude
   const maxWeight = student.weight + (student.tandemWeightTax || 0)
   
   const suggestedMain = useMemo(() => {
-  const qualified = clockedInInstructors.filter(instructor => {
-    // ✅ FIXED: Use correct property names
-    if (needsTandem && !instructor.canTandem) return false
-    if (needsAFF && !instructor.canAFF) return false
-    
-    if (needsTandem && instructor.tandemWeightLimit && maxWeight > instructor.tandemWeightLimit) {
-      return false
-    }
-    
-    if (needsAFF && instructor.affWeightLimit && student.weight > instructor.affWeightLimit) {
-      return false
-    }
-    
-    if (needsAFF && instructor.affLocked) {
-      const hasThisStudent = instructor.affStudents?.some(s => s.studentId === student.id)
-      if (!hasThisStudent) return false
-    }
-    
-    return true
-  })
-  
-  qualified.sort((a, b) => {
-    const balanceA = calculateBalance(a, assignments, period)
-    const balanceB = calculateBalance(b, assignments, period)
-    return balanceA - balanceB
-  })
-  
-  return qualified[0] || null
-}, [clockedInInstructors, assignments, needsTandem, needsAFF, maxWeight, period, student])
-
-// Also find the video instructor section around line 60:
-const suggestedVideo = useMemo(() => {
-  if (!needsVideo) return null
-  
-  const qualified = clockedInInstructors.filter(instructor => {
-    // ✅ FIXED: Use correct property name
-    if (!instructor.canVideo) return false
-    if (selectedMainId && instructor.id === selectedMainId) return false
-    
-    if (instructor.videoRestricted && selectedMainId) {
-      const mainInstructor = allInstructors.find(i => i.id === selectedMainId)
-      if (mainInstructor) {
-        const combinedWeight = mainInstructor.bodyWeight + student.weight
-        
-        if (instructor.videoMinWeight && combinedWeight < instructor.videoMinWeight) return false
-        if (instructor.videoMaxWeight && combinedWeight > instructor.videoMaxWeight) return false
+    const qualified = clockedInInstructors.filter(instructor => {
+      // ✅ CLEAN: Use correct property names without fallbacks
+      if (needsTandem && !instructor.canTandem) return false
+      if (needsAFF && !instructor.canAFF) return false
+      
+      if (needsTandem && instructor.tandemWeightLimit && maxWeight > instructor.tandemWeightLimit) {
+        return false
       }
-    }
+      
+      if (needsAFF && instructor.affWeightLimit && student.weight > instructor.affWeightLimit) {
+        return false
+      }
+      
+      if (needsAFF && instructor.affLocked) {
+        const hasThisStudent = instructor.affStudents?.some(s => s.name === student.name)
+        if (!hasThisStudent) return false
+      }
+      
+      return true
+    })
     
-    return true
-  })
+    if (qualified.length === 0) return null
+    
+    qualified.sort((a, b) => {
+      const balanceA = calculateInstructorBalance(a.id, assignments, allInstructors, period)
+      const balanceB = calculateInstructorBalance(b.id, assignments, allInstructors, period)
+      return balanceA - balanceB
+    })
+    
+    return qualified[0]
+  }, [clockedInInstructors, needsTandem, needsAFF, maxWeight, student, assignments, allInstructors, period])
   
-  qualified.sort((a, b) => {
-    const balanceA = calculateBalance(a, assignments, period)
-    const balanceB = calculateBalance(b, assignments, period)
-    return balanceA - balanceB
-  })
-  
-  return qualified[0] || null
-}, [needsVideo, clockedInInstructors, selectedMainId, allInstructors, student, assignments, period])
+  const suggestedVideo = useMemo(() => {
+    if (!needsVideo) return null
+    
+    const qualified = clockedInInstructors.filter(instructor => {
+      // ✅ CLEAN: Use correct property name without fallback
+      if (!instructor.canVideo) return false
+      if (instructor.id === selectedMainId) return false
+      
+      if (instructor.videoRestricted) {
+        const mainInstructor = allInstructors.find(i => i.id === selectedMainId)
+        if (mainInstructor) {
+          const combinedWeight = mainInstructor.bodyWeight + student.weight
+          if (instructor.videoMinWeight && combinedWeight < instructor.videoMinWeight) return false
+          if (instructor.videoMaxWeight && combinedWeight > instructor.videoMaxWeight) return false
+        }
+      }
+      
+      return true
+    })
+    
+    if (qualified.length === 0) return null
+    
+    qualified.sort((a, b) => {
+      const balanceA = calculateInstructorBalance(a.id, assignments, allInstructors, period)
+      const balanceB = calculateInstructorBalance(b.id, assignments, allInstructors, period)
+      return balanceA - balanceB
+    })
+    
+    return qualified[0]
+  }, [needsVideo, clockedInInstructors, selectedMainId, student, assignments, allInstructors, period])
   
   React.useEffect(() => {
     if (suggestedMain && !selectedMainId) {
@@ -101,12 +102,12 @@ const suggestedVideo = useMemo(() => {
   }, [suggestedMain, selectedMainId])
   
   React.useEffect(() => {
-    if (suggestedVideo && !selectedVideoId) {
+    if (suggestedVideo && !selectedVideoId && needsVideo) {
       setSelectedVideoId(suggestedVideo.id)
     }
-  }, [suggestedVideo, selectedVideoId])
+  }, [suggestedVideo, selectedVideoId, needsVideo])
   
-  const handleSubmit = async () => {
+  const handleAssign = async () => {
     if (!selectedMainId) {
       alert('Please select a main instructor')
       return
@@ -118,180 +119,140 @@ const suggestedVideo = useMemo(() => {
     }
     
     try {
+      const mainInstructor = allInstructors.find(i => i.id === selectedMainId)
+      const videoInstructor = needsVideo ? allInstructors.find(i => i.id === selectedVideoId) : null
+      
+      if (!mainInstructor) {
+        alert('Invalid instructor selection')
+        return
+      }
+      
       for (const student of students) {
-        const assignmentData: any = {
-          instructorId: selectedMainId,
-          name: student.name,
-          weight: student.weight,
+        await create({
+          studentId: student.id,
+          studentName: student.name,
+          instructorId: mainInstructor.id,
+          instructorName: mainInstructor.name,
           jumpType: student.jumpType,
+          weight: student.weight,
           isRequest: student.isRequest || false,
-        }
+          isMissedJump: false,
+          timestamp: new Date().toISOString(),
+          ...(student.jumpType === 'tandem' && {
+            tandemWeightTax: student.tandemWeightTax,
+            tandemHandcam: student.tandemHandcam,
+          }),
+          ...(student.jumpType === 'aff' && {
+            affLevel: student.affLevel,
+          }),
+          ...(needsVideo && videoInstructor && {
+            videoInstructorId: videoInstructor.id,
+            videoInstructorName: videoInstructor.name,
+          }),
+        })
         
-        if (student.jumpType === 'tandem') {
-          assignmentData.tandemWeightTax = student.tandemWeightTax || 0
-          assignmentData.tandemHandcam = student.tandemHandcam || false
-          
-          if (student.outsideVideo && selectedVideoId) {
-            assignmentData.hasOutsideVideo = true
-            assignmentData.videoInstructorId = selectedVideoId
-          }
-        } else if (student.jumpType === 'aff') {
-          assignmentData.affLevel = student.affLevel || 'lower'
-          
-          const instructor = allInstructors.find(i => i.id === selectedMainId)
-          if (instructor) {
-            const updatedAffStudents = [
-              ...(instructor.affStudents || []),
-              {
-                name: student.name,
-                startTime: new Date().toISOString(),
-                studentId: student.id
-              }
-            ]
-            
-            await db.updateInstructor(selectedMainId, {
-              affLocked: true,
-              affStudents: updatedAffStudents
-            })
-          }
-        }
-        
-        await create(assignmentData)
         await db.removeFromQueue(student.id)
       }
       
       onSuccess()
       onClose()
     } catch (error) {
-      console.error('Failed to assign students:', error)
+      console.error('Failed to assign:', error)
       alert('Failed to assign students. Please try again.')
     }
   }
   
-  const selectedMain = allInstructors.find(i => i.id === selectedMainId)
-  const mainBalance = selectedMain ? calculateBalance(selectedMain, assignments, period) : 0
+  const mainOptions = clockedInInstructors.filter(instructor => {
+    // ✅ CLEAN: Use correct property names without fallbacks
+    if (needsTandem && !instructor.canTandem) return false
+    if (needsAFF && !instructor.canAFF) return false
+    return true
+  })
   
-  const selectedVideo = allInstructors.find(i => i.id === selectedVideoId)
-  const videoBalance = selectedVideo ? calculateBalance(selectedVideo, assignments, period) : 0
+  const videoOptions = clockedInInstructors.filter(instructor => {
+    // ✅ CLEAN: Use correct property name without fallback
+    if (!instructor.canVideo) return false
+    if (instructor.id === selectedMainId) return false
+    return true
+  })
   
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-white/20">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-white">
-              Assign Student{students.length > 1 ? 's' : ''}
-            </h2>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-          
-          <div className="mb-6 bg-blue-500/20 border border-blue-500/30 rounded-lg p-4">
-            <h3 className="text-white font-semibold mb-2">Students to Assign:</h3>
-            <ul className="space-y-1">
-              {students.map(s => (
-                <li key={s.id} className="text-slate-300 text-sm">
-                  • {s.name} ({s.weight} lbs, {s.jumpType.toUpperCase()})
-                  {s.outsideVideo && ' + Video'}
-                  {s.isRequest && ' - REQUEST'}
-                </li>
-              ))}
-            </ul>
-          </div>
-          
-          {suggestedMain && (
-            <div className="mb-6 bg-green-500/20 border border-green-500/30 rounded-lg p-4">
-              <p className="text-slate-300 text-sm">
-                ✅ Suggested: <strong className="text-white">{suggestedMain.name}</strong> (Balance: ${calculateBalance(suggestedMain, assignments, period)})
-              </p>
-            </div>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-slate-700">
+        <div className="border-b border-slate-700 p-6">
+          <h2 className="text-2xl font-bold text-white">
+            Assign {students.length} Student{students.length > 1 ? 's' : ''}
+          </h2>
+          {students.length === 1 && (
+            <p className="text-sm text-slate-400 mt-1">
+              {student.name} • {student.jumpType.toUpperCase()} • {student.weight} lbs
+            </p>
           )}
-          
-          <div className="mb-6">
+        </div>
+        
+        <div className="p-6 space-y-4">
+          {/* Main Instructor */}
+          <div>
             <label className="block text-sm font-semibold text-slate-300 mb-2">
-              Main Instructor
+              Main Instructor {suggestedMain && '(Suggested: ' + suggestedMain.name + ')'}
             </label>
             <select
               value={selectedMainId}
               onChange={(e) => setSelectedMainId(e.target.value)}
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
             >
-              <option key="placeholder-main" value="">Select instructor...</option>
-              {clockedInInstructors.map((instructor, index) => {
-                const balance = calculateInstructorBalance(instructor.id, assignments, instructors, period)
-                const isSuggested = suggestedMain?.id === instructor.id
+              <option value="">Select Instructor</option>
+              {mainOptions.map(instructor => {
+                const balance = calculateInstructorBalance(instructor.id, assignments, allInstructors, period)
                 return (
-                  <option key={`main-${instructor.id || index}`} value={instructor.id}>
-                    {instructor.name} - Balance: ${balance}{isSuggested ? ' ⭐ SUGGESTED' : ''}
+                  <option key={instructor.id} value={instructor.id}>
+                    {instructor.name} (${balance.toFixed(2)})
                   </option>
                 )
               })}
             </select>
-            {selectedMain && (
-              <p className="text-xs text-slate-400 mt-1">
-                Current Balance: ${mainBalance}
-              </p>
-            )}
           </div>
           
+          {/* Video Instructor */}
           {needsVideo && (
-            <div className="mb-6">
+            <div>
               <label className="block text-sm font-semibold text-slate-300 mb-2">
-                Video Instructor (Required)
+                Video Instructor {suggestedVideo && '(Suggested: ' + suggestedVideo.name + ')'}
               </label>
-              {suggestedVideo && (
-                <div className="bg-green-500/20 border border-green-500/30 rounded-lg p-3 mb-3 text-sm">
-                  <p className="text-slate-300">
-                    ✅ Suggested: <strong className="text-white">{suggestedVideo.name}</strong> (Balance: ${calculateBalance(suggestedVideo, assignments, period)})
-                  </p>
-                </div>
-              )}
               <select
                 value={selectedVideoId}
                 onChange={(e) => setSelectedVideoId(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
+                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
               >
-                <option key="placeholder-video" value="">Select video instructor...</option>
-                {clockedInInstructors
-                  .filter(i => i.video && i.id !== selectedMainId)
-                  .map((instructor, index) => {
-                    const balance = calculateInstructorBalance(instructor.id, assignments, instructors, period)
-                    const isSuggested = suggestedVideo?.id === instructor.id
-                    return (
-                      <option key={`video-${instructor.id || index}`} value={instructor.id}>
-                        {instructor.name} - Balance: ${balance}{isSuggested ? ' ⭐ SUGGESTED' : ''}
-                      </option>
-                    )
-                  })}
+                <option value="">Select Video Instructor</option>
+                {videoOptions.map(instructor => {
+                  const balance = calculateInstructorBalance(instructor.id, assignments, allInstructors, period)
+                  return (
+                    <option key={instructor.id} value={instructor.id}>
+                      {instructor.name} (${balance.toFixed(2)})
+                    </option>
+                  )
+                })}
               </select>
-              {selectedVideo && (
-                <p className="text-xs text-slate-400 mt-1">
-                  Current Balance: ${videoBalance}
-                </p>
-              )}
             </div>
           )}
-          
-          <div className="flex gap-3 pt-4">
-            <button
-              onClick={handleSubmit}
-              disabled={loading || !selectedMainId || (needsVideo && !selectedVideoId)}
-              className="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Assigning...' : `Assign ${students.length} Student${students.length > 1 ? 's' : ''}`}
-            </button>
-            <button
-              onClick={onClose}
-              disabled={loading}
-              className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
-            >
-              Cancel
-            </button>
-          </div>
+        </div>
+        
+        <div className="border-t border-slate-700 p-6 flex gap-3">
+          <button
+            onClick={handleAssign}
+            disabled={loading || !selectedMainId || (needsVideo && !selectedVideoId)}
+            className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? '⏳ Assigning...' : `Assign ${students.length} Student${students.length > 1 ? 's' : ''}`}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>
