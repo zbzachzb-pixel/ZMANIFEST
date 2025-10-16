@@ -1,4 +1,7 @@
 // src/app/loads/page.tsx - COMPLETE FIXED FILE
+// ✅ FIXED: Group weight validation added
+// ✅ FIXED: Original queue timestamp preservation added
+
 'use client'
 
 import React, { useState, useMemo, useEffect } from 'react'
@@ -31,50 +34,30 @@ export default function LoadBuilderPage() {
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set())
   const [draggedItem, setDraggedItem] = useState<{ type: 'student' | 'assignment' | 'group', id: string, sourceLoadId?: string } | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
   const [statusFilter, setStatusFilter] = useState<'all' | 'building' | 'ready' | 'departed' | 'completed'>('all')
   const [optimizeLoadId, setOptimizeLoadId] = useState<string | null>(null)
-
-  // Load scheduling settings
-  // Load scheduling settings - Load from Firebase on mount
-const [loadSettings, setLoadSettings] = useState<LoadSchedulingSettings>({
-  minutesBetweenLoads: 20,
-  instructorCycleTime: 40,
-  defaultPlaneCapacity: 18
-})
-
-useEffect(() => {
-    db.getLoadSchedulingSettings().then(settings => {
-      if (settings) {
-        setLoadSettings(settings)
-      } else {
-        // Fallback to localStorage
-        const saved = localStorage.getItem('loadSchedulingSettings')
-        if (saved) {
-          try {
-            setLoadSettings(JSON.parse(saved))
-          } catch (e) {
-            console.error('Failed to load settings')
-          }
-        }
-      }
-    }).catch(error => {
-      console.error('Failed to load settings from Firebase:', error)
-    })
-  }, [])
-
-  // Subscribe to real-time settings updates
+  const [loadSettings, setLoadSettings] = useState<LoadSchedulingSettings>({
+    minutesBetweenLoads: 20,
+    instructorCycleTime: 40,
+    defaultPlaneCapacity: 18
+  })
+  
+  // ============================================
+  // EFFECTS - ALWAYS IN SAME ORDER
+  // ============================================
+  
+  // Load settings from localStorage
   useEffect(() => {
-    const unsubscribe = db.subscribeToLoadSchedulingSettings((settings) => {
-      if (settings) {
-        setLoadSettings(settings)
-        localStorage.setItem('loadSchedulingSettings', JSON.stringify(settings))
+    const savedSettings = localStorage.getItem('loadSchedulingSettings')
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings)
+        setLoadSettings(parsed)
+      } catch (e) {
+        console.error('Failed to parse load settings')
       }
-    })
-    
-    return () => unsubscribe()
+    }
   }, [])
-
   
   // ============================================
   // COMPUTED VALUES
@@ -87,32 +70,32 @@ useEffect(() => {
     const balances = new Map<string, number>()
     
     instructors.forEach(instructor => {
-      const instructorAssignments = assignments.filter(a => {
-        const assignmentDate = new Date(a.timestamp)
-        return (
-          assignmentDate >= period.start &&
-          assignmentDate <= period.end &&
-          (a.instructorId === instructor.id || a.videoInstructorId === instructor.id)
-        )
-      })
-      
       let balance = 0
-      instructorAssignments.forEach(a => {
-        if (a.isMissedJump) return
+      
+      for (const assignment of assignments) {
+        const assignmentDate = new Date(assignment.timestamp)
+        if (assignmentDate < period.start || assignmentDate > period.end) continue
+        if (assignment.isRequest) continue
         
-        if (a.instructorId === instructor.id && !a.isRequest) {
-          if (a.jumpType === 'tandem') {
-            balance += 40 + (a.tandemWeightTax || 0) * 20
-            if (a.tandemHandcam) balance += 30
-          } else if (a.jumpType === 'aff') {
-            balance += a.affLevel === 'lower' ? 55 : 45
+        let pay = 0
+        if (!assignment.isMissedJump) {
+          if (assignment.jumpType === 'tandem') {
+            pay = 40 + (assignment.tandemWeightTax || 0) * 20
+            if (assignment.tandemHandcam) pay += 30
+          } else if (assignment.jumpType === 'aff') {
+            pay = assignment.affLevel === 'lower' ? 55 : 45
+          } else if (assignment.jumpType === 'video') {
+            pay = 45
           }
         }
         
-        if (a.videoInstructorId === instructor.id && !a.isRequest) {
+        if (assignment.instructorId === instructor.id) {
+          balance += pay
+        }
+        if (assignment.videoInstructorId === instructor.id && !assignment.isMissedJump) {
           balance += 45
         }
-      })
+      }
       
       balances.set(instructor.id, balance)
     })
@@ -121,30 +104,40 @@ useEffect(() => {
   }, [instructors, assignments, period])
   
   // Filter queue
-  // Filter queue
-const filteredQueue = useMemo(() => {
-  return queue
-    .filter(student => {
-      const matchesSearch = searchTerm === '' || 
-        student.name.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesType = selectedJumpType === 'all' || student.jumpType === selectedJumpType
-      return matchesSearch && matchesType
-    })
-    .sort((a, b) => {
-      // Sort by timestamp - oldest first (FIFO)
-      return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    })
-}, [queue, searchTerm, selectedJumpType])
-  // Group queue students
-  const queueGroups = useMemo(() => {
-    return groups.map(groupDoc => {
-      const groupId = groupDoc.id
-      const students = filteredQueue.filter(s => s.groupId === groupId)
-      return students.length > 0 ? { ...groupDoc, students, groupId } : null
-    }).filter((g): g is (Group & { students: QueueStudent[], groupId: string }) => g !== null)
-  }, [filteredQueue, groups])
+  const filteredQueue = useMemo(() => {
+    return queue
+      .filter(s => {
+        if (searchTerm) {
+          const search = searchTerm.toLowerCase()
+          if (!s.name.toLowerCase().includes(search)) return false
+        }
+        if (selectedJumpType !== 'all' && s.jumpType !== selectedJumpType) {
+          return false
+        }
+        return true
+      })
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+  }, [queue, searchTerm, selectedJumpType])
   
-  // Separate individual students (those without a groupId)
+  // Get queue groups
+  const queueGroups = useMemo(() => {
+  return groups.map(groupDoc => {
+    const groupId = groupDoc.id
+    const students = filteredQueue.filter(s => s.groupId === groupId)
+    
+    // Only return groups that have students in the current filtered queue
+    if (students.length > 0) {
+      return {
+        ...groupDoc,
+        students,
+        groupId
+      }
+    }
+    return null
+  }).filter((g): g is (Group & { students: QueueStudent[], groupId: string }) => g !== null)
+}, [filteredQueue, groups])
+  
+  // Separate individual students
   const individualStudents = useMemo(() => {
     const groupedIds = new Set(queueGroups.flatMap(g => g.students.map(s => s.id)))
     return filteredQueue.filter(s => !groupedIds.has(s.id))
@@ -168,14 +161,60 @@ const filteredQueue = useMemo(() => {
   const buildingLoads = loads.filter(l => l.status === 'building')
   
   // ============================================
+  // ✅ BUG FIX #2: Group weight validation function
+  // ============================================
+  
+  const validateGroupAssignments = (
+    students: QueueStudent[],
+    targetLoad: Load
+  ): { valid: boolean; errors: string[] } => {
+    const errors: string[] = []
+    
+    // Get available instructors for this load
+    const availableInstructors = instructors.filter(i => {
+      if (!i.clockedIn) return false
+      
+      // Check if available for this load timing
+      return isInstructorAvailableForLoad(
+        i.id,
+        targetLoad.position || 0,
+        loads,
+        loadSettings.instructorCycleTime,
+        loadSettings.minutesBetweenLoads
+      )
+    })
+    
+    // Check each student
+    for (const student of students) {
+      const totalWeight = student.weight + (student.tandemWeightTax || 0)
+      
+      const qualified = availableInstructors.filter(i => {
+        if (student.jumpType === 'tandem') {
+          if (!i.canTandem) return false
+          if (i.tandemWeightLimit && totalWeight > i.tandemWeightLimit) return false
+        } else if (student.jumpType === 'aff') {
+          if (!i.canAFF) return false
+          if (i.affWeightLimit && student.weight > i.affWeightLimit) return false
+        }
+        return true
+      })
+      
+      if (qualified.length === 0) {
+        errors.push(`${student.name} (${totalWeight}lbs) - No qualified instructor available`)
+      }
+    }
+    
+    return { valid: errors.length === 0, errors }
+  }
+  
+  // ============================================
   // HANDLERS
   // ============================================
   
   const handleCreateLoad = async () => {
     try {
-      // Get current load scheduling settings
       const savedSettings = localStorage.getItem('loadSchedulingSettings')
-      let defaultCapacity = 18 // fallback default
+      let defaultCapacity = 18
       
       if (savedSettings) {
         try {
@@ -210,81 +249,63 @@ const filteredQueue = useMemo(() => {
       const currentDelay = load.delayMinutes || 0
       const newDelay = currentDelay + minutes
       
-      // Update the delay
       await updateLoad(loadId, {
         delayMinutes: newDelay
       })
       
-      // 🔥 NEW: Auto re-optimize affected loads
-      console.log(`⏰ Delayed ${load.name} by ${minutes} minutes. Checking for re-optimization...`)
+      console.log(`⏰ Delayed ${load.name} by ${minutes} minutes. Total delay: ${newDelay} minutes`)
       
-      // Find all building loads that could be affected
-      const buildingLoadsToOptimize = loads.filter(l => 
-        l.status === 'building' && 
-        l.id !== loadId &&
-        (l.assignments || []).some(a => !a.instructorId)
-      )
+      // Auto re-optimize affected loads
+      const buildingLoads = loads.filter(l => l.status === 'building')
       
-      if (buildingLoadsToOptimize.length > 0) {
-        console.log(`🔄 Re-optimizing ${buildingLoadsToOptimize.length} building loads...`)
+      if (buildingLoads.length > 0) {
+        console.log('🔄 Re-optimizing building loads after delay...')
         
-        for (const buildingLoad of buildingLoadsToOptimize) {
-          const unassignedAssignments = (buildingLoad.assignments || []).filter(a => !a.instructorId)
-          
-          if (unassignedAssignments.length === 0) continue
-          
+        for (const buildingLoad of buildingLoads) {
           const updatedAssignments = [...(buildingLoad.assignments || [])]
           let madeChanges = false
           
-          for (const assignment of unassignedAssignments) {
-            const availableInstructors = instructors
-              .filter(i => {
-                if (!i.clockedIn) return false
-                
-                const isAvailable = isInstructorAvailableForLoad(
-                  i.id,
-                  buildingLoad.position || 0,
-                  loads,
-                  loadSettings.instructorCycleTime,
-                  loadSettings.minutesBetweenLoads
-                )
-                
-                if (!isAvailable) return false
-                
-                const canTandem = (i as any).canTandem ?? (i as any).tandem
-                const canAFF = (i as any).canAFF ?? (i as any).aff
-                
-                if (assignment.jumpType === 'tandem' && !canTandem) return false
-                if (assignment.jumpType === 'aff' && !canAFF) return false
-                
-                if (assignment.jumpType === 'tandem' && i.tandemWeightLimit) {
-                  const totalWeight = assignment.studentWeight + (assignment.tandemWeightTax || 0)
-                  if (totalWeight > i.tandemWeightLimit) return false
-                }
-                if (assignment.jumpType === 'aff' && i.affWeightLimit) {
-                  if (assignment.studentWeight > i.affWeightLimit) return false
-                }
-                
-                return true
-              })
-              .sort((a, b) => {
-                const balanceA = instructorBalances.get(a.id) || 0
-                const balanceB = instructorBalances.get(b.id) || 0
-                return balanceA - balanceB
-              })
-            
-            if (availableInstructors.length > 0) {
-              const bestInstructor = availableInstructors[0]
+          for (const assignment of updatedAssignments) {
+            if (!assignment.instructorId) {
+              const availableInstructors = instructors
+                .filter(i => {
+                  if (!i.clockedIn) return false
+                  
+                  const canTandem = i.canTandem
+                  const canAFF = i.canAFF
+                  
+                  if (assignment.jumpType === 'tandem' && !canTandem) return false
+                  if (assignment.jumpType === 'aff' && !canAFF) return false
+                  
+                  if (assignment.jumpType === 'tandem' && i.tandemWeightLimit) {
+                    const totalWeight = assignment.studentWeight + (assignment.tandemWeightTax || 0)
+                    if (totalWeight > i.tandemWeightLimit) return false
+                  }
+                  if (assignment.jumpType === 'aff' && i.affWeightLimit) {
+                    if (assignment.studentWeight > i.affWeightLimit) return false
+                  }
+                  
+                  return true
+                })
+                .sort((a, b) => {
+                  const balanceA = instructorBalances.get(a.id) || 0
+                  const balanceB = instructorBalances.get(b.id) || 0
+                  return balanceA - balanceB
+                })
               
-              const assignmentIndex = updatedAssignments.findIndex(a => a.id === assignment.id)
-              if (assignmentIndex >= 0) {
-                updatedAssignments[assignmentIndex] = {
-                  ...updatedAssignments[assignmentIndex],
-                  instructorId: bestInstructor.id,
-                  instructorName: bestInstructor.name
+              if (availableInstructors.length > 0) {
+                const bestInstructor = availableInstructors[0]
+                
+                const assignmentIndex = updatedAssignments.findIndex(a => a.id === assignment.id)
+                if (assignmentIndex >= 0) {
+                  updatedAssignments[assignmentIndex] = {
+                    ...updatedAssignments[assignmentIndex],
+                    instructorId: bestInstructor.id,
+                    instructorName: bestInstructor.name
+                  }
+                  madeChanges = true
+                  console.log(`✅ Re-assigned ${assignment.studentName} to ${bestInstructor.name} on ${buildingLoad.name}`)
                 }
-                madeChanges = true
-                console.log(`✅ Re-assigned ${assignment.studentName} to ${bestInstructor.name} on ${buildingLoad.name}`)
               }
             }
           }
@@ -309,258 +330,178 @@ const filteredQueue = useMemo(() => {
   
   const handleDragStart = (type: 'student' | 'assignment' | 'group', id: string, sourceLoadId?: string) => {
     setDraggedItem({ type, id, sourceLoadId })
-    setIsDragging(true)
   }
   
   const handleDragEnd = () => {
     setDraggedItem(null)
     setDropTarget(null)
-    setIsDragging(false)
   }
   
-  // Handle dropping groups/students back to queue
   const handleDropToQueue = async () => {
-    if (!draggedItem) return
+    if (!draggedItem || !draggedItem.sourceLoadId) return
     
     try {
-      // Only handle drops from loads (must have sourceLoadId)
-      if (!draggedItem.sourceLoadId) {
-        handleDragEnd()
-        return
-      }
-      
       const sourceLoad = loads.find(l => l.id === draggedItem.sourceLoadId)
       if (!sourceLoad) return
       
-      if (draggedItem.type === 'group') {
-        // Dropping entire group back to queue
-        const groupId = draggedItem.id
-        const groupAssignments = sourceLoad.assignments?.filter(a => a.groupId === groupId) || []
-        
-        if (groupAssignments.length === 0) return
-        
-        // Update the Group document to include the student IDs
-        const group = groups.find(g => g.id === groupId)
-        if (!group) return  // ✅ Early return if no group
-        
-        const studentIdsToAdd = groupAssignments.map(a => a.studentId)
-        const updatedStudentIds = [...new Set([...group.studentIds, ...studentIdsToAdd])]
-        await db.updateGroup(groupId, { studentIds: updatedStudentIds })
-        
-        // Remove group assignments from load
-        await updateLoad(sourceLoad.id, {
-          assignments: sourceLoad.assignments?.filter(a => a.groupId !== groupId) || []
-        })
-        
-        // Add all students back to queue with PRIORITY
-        const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-        
-        // ✅ Add the for loop here
-        for (const assignment of groupAssignments) {
-          // Try to find existing student account by name
-          const existingAccounts = await db.searchStudentAccounts(assignment.studentName)
-          let studentAccountId: string
-
-          if (existingAccounts.length > 0) {
-            // Use existing student account
-            studentAccountId = existingAccounts[0].id  // ✅ Use .id
-          } else {
-            // Create new student account
-            const newAccount = await db.createStudentAccount({
-              studentId: `STUDENT-${Date.now()}`,
-              name: assignment.studentName,
-              weight: assignment.studentWeight,
-              preferredJumpType: assignment.jumpType,
-              affLevel: assignment.jumpType === 'aff' ? assignment.affLevel : undefined
-            })
-            studentAccountId = newAccount.id  // ✅ Use .id
-          }
-
-          const queueStudent: CreateQueueStudent = {
-            studentAccountId: studentAccountId,
-            name: assignment.studentName,
-            weight: assignment.studentWeight,
-            jumpType: assignment.jumpType,
-            isRequest: false,
-            tandemWeightTax: assignment.tandemWeightTax || 0,
-            tandemHandcam: assignment.tandemHandcam || false,
-            outsideVideo: assignment.hasOutsideVideo,
-            affLevel: assignment.affLevel,
-            groupId: group.id  // ✅ Safe because we returned early if !group
-          }
-          
-          await db.addToQueue(queueStudent, priorityTimestamp)
-        }
-        
-      } else if (draggedItem.type === 'assignment') {
-        // Dropping single assignment back to queue
-        const assignment = sourceLoad.assignments?.find(a => a.id === draggedItem.id)
-        if (!assignment) return
-        
-        // If student has groupId, update the Group document
-        if (assignment.groupId) {
-          const group = groups.find(g => g.id === assignment.groupId)
-          if (group && !group.studentIds.includes(assignment.studentId)) {
-            await db.updateGroup(assignment.groupId, { 
-              studentIds: [...group.studentIds, assignment.studentId]
-            })
-          }
-        }
-        
-        // Remove assignment from load
-        await updateLoad(sourceLoad.id, {
-          assignments: sourceLoad.assignments?.filter(a => a.id !== draggedItem.id) || []
-        })
-        
-        // Add student back to queue with PRIORITY
-        const priorityTimestamp = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-        
-        const queueStudent: CreateQueueStudent = {
-          studentAccountId: assignment.studentId,
-          name: assignment.studentName,
-          weight: assignment.studentWeight,
-          jumpType: assignment.jumpType,
-          isRequest: false,
-          tandemWeightTax: assignment.tandemWeightTax || 0,
-          tandemHandcam: assignment.tandemHandcam || false,
-          outsideVideo: assignment.hasOutsideVideo,
-          affLevel: assignment.affLevel,
-          groupId: assignment.groupId
-        }
-        
-        await db.addToQueue(queueStudent, priorityTimestamp)
-      }
+      const assignment = sourceLoad.assignments?.find(a => a.id === draggedItem.id)
+      if (!assignment) return
+      
+      const updatedAssignments = sourceLoad.assignments?.filter(a => a.id !== draggedItem.id) || []
+      await updateLoad(sourceLoad.id, { assignments: updatedAssignments })
+      
+      // ✅ BUG FIX #3: Preserve original timestamp
+      const timestamp = assignment.originalQueueTimestamp || 
+        new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      
+      await db.addToQueue({
+        studentAccountId: assignment.studentId,
+        name: assignment.studentName,
+        weight: assignment.studentWeight,
+        jumpType: assignment.jumpType,
+        isRequest: assignment.isRequest,
+        tandemWeightTax: assignment.tandemWeightTax,
+        tandemHandcam: assignment.tandemHandcam,
+        outsideVideo: assignment.hasOutsideVideo,
+        affLevel: assignment.affLevel,
+        groupId: assignment.groupId
+      }, timestamp)
+      
+      setDraggedItem(null)
     } catch (error) {
-      console.error('Failed to return to queue:', error)
-      alert('Failed to return to queue')
-    } finally {
-      handleDragEnd()
+      console.error('Failed to move student to queue:', error)
+      alert('Failed to move student to queue')
     }
   }
   
   const handleDrop = async (loadId: string) => {
     if (!draggedItem) return
     
+    const load = loads.find(l => l.id === loadId)
+    if (!load) return
+    
     try {
-      const load = loads.find(l => l.id === loadId)
-      if (!load) return
-      
-      // Check if we're dropping a GROUP from another LOAD
-      if (draggedItem.type === 'group' && draggedItem.sourceLoadId) {
-        const sourceLoad = loads.find(l => l.id === draggedItem.sourceLoadId)
-        const targetLoad = loads.find(l => l.id === loadId)
-        
-        if (!sourceLoad || !targetLoad || sourceLoad.id === targetLoad.id) return
-        
-        const groupId = draggedItem.id
-        
-        // Find all assignments with this groupId in the source load
-        const groupAssignments = sourceLoad.assignments?.filter(a => a.groupId === groupId) || []
-        if (groupAssignments.length === 0) return
-        
-        // Remove group assignments from source load
-        await updateLoad(sourceLoad.id, {
-          assignments: sourceLoad.assignments?.filter(a => a.groupId !== groupId) || []
-        })
-        
-        // Add group assignments to target load
-        await updateLoad(targetLoad.id, {
-          assignments: [...(targetLoad.assignments || []), ...groupAssignments]
-        })
-        
-      } else if (draggedItem.type === 'group' && !draggedItem.sourceLoadId) {
-        // Dropping a GROUP from QUEUE
-        const groupId = draggedItem.id
-        const group = groups.find(g => g.id === groupId)
-        if (!group) return
-        
-        // Find all students in this group by their groupId property
-        const groupStudents = queue.filter(s => s.groupId === groupId)
-        if (groupStudents.length === 0) return
-        
-        // Create assignments for all students in the group
-        const newAssignments: LoadAssignment[] = []
-        
-        for (const student of groupStudents) {
-          const newAssignment: LoadAssignment = {
-            id: `${Date.now()}-${Math.random()}`,
-            studentId: student.id,
-            studentName: student.name,
-            studentWeight: student.weight,
-            jumpType: student.jumpType,
-            hasOutsideVideo: student.outsideVideo || false,
-            affLevel: student.affLevel,
-            tandemWeightTax: student.tandemWeightTax,
-            tandemHandcam: student.tandemHandcam,
-            instructorId: '',
-            videoInstructorId: student.outsideVideo ? '' : undefined,
-            groupId: groupId,
-            isRequest: student.isRequest,
-            originalQueueTimestamp: student.timestamp
-          }
-          newAssignments.push(newAssignment)
-        }
-        
-        await updateLoad(load.id, {
-          assignments: [...(load.assignments || []), ...newAssignments]
-        })
-        
-        // Remove all students in the group from queue
-        for (const student of groupStudents) {
-          await db.removeFromQueue(student.id)
-        }
-        
-      } else if (draggedItem.type === 'student' && !draggedItem.sourceLoadId) {
-        // Dropping a SINGLE STUDENT from QUEUE
+      if (draggedItem.type === 'student') {
         const student = queue.find(s => s.id === draggedItem.id)
         if (!student) return
         
+        // Check capacity
+        const currentPeople = (load.assignments || []).reduce((sum, a) => {
+          return sum + 2 + (a.hasOutsideVideo ? 1 : 0)
+        }, 0)
+        const newPeople = 2 + (student.outsideVideo ? 1 : 0)
+        
+        if (currentPeople + newPeople > (load.capacity || 18)) {
+          alert(`❌ Not enough capacity. Need ${newPeople} seats, only ${(load.capacity || 18) - currentPeople} available.`)
+          return
+        }
+        
+        // ✅ BUG FIX #3: Create assignment with original timestamp preserved
         const newAssignment: LoadAssignment = {
           id: `${Date.now()}-${Math.random()}`,
           studentId: student.id,
+          instructorId: null,
           studentName: student.name,
           studentWeight: student.weight,
           jumpType: student.jumpType,
-          hasOutsideVideo: student.outsideVideo || false,
-          affLevel: student.affLevel,
+          isRequest: student.isRequest,
+          originalQueueTimestamp: student.timestamp, // Preserve original timestamp
           tandemWeightTax: student.tandemWeightTax,
           tandemHandcam: student.tandemHandcam,
-          instructorId: '',
-          videoInstructorId: student.outsideVideo ? '' : undefined,
-          groupId: student.groupId,
-          isRequest: student.isRequest,
-          originalQueueTimestamp: student.timestamp
+          hasOutsideVideo: student.outsideVideo,
+          affLevel: student.affLevel
         }
         
-        await updateLoad(load.id, {
+        await updateLoad(loadId, {
           assignments: [...(load.assignments || []), newAssignment]
         })
         
-        await db.removeFromQueue(draggedItem.id)
+        await db.removeFromQueue(student.id)
+        
+      } else if (draggedItem.type === 'group') {
+        // ✅ BUG FIX #2: Validate group weight limits
+        const group = groups.find(g => g.id === draggedItem.id)
+        if (!group) return
+        
+        const groupStudents = queue.filter(s => group.studentIds.includes(s.id))
+        
+        // VALIDATE WEIGHT LIMITS
+        const validation = validateGroupAssignments(groupStudents, load)
+        if (!validation.valid) {
+          alert(`❌ Cannot assign group to ${load.name}:\n\n${validation.errors.join('\n')}`)
+          return
+        }
+        
+        // Check capacity
+        const currentPeople = (load.assignments || []).reduce((sum, a) => {
+          return sum + 2 + (a.hasOutsideVideo ? 1 : 0)
+        }, 0)
+        
+        const newPeople = groupStudents.reduce((sum, s) => {
+          return sum + 2 + (s.outsideVideo ? 1 : 0)
+        }, 0)
+        
+        if (currentPeople + newPeople > (load.capacity || 18)) {
+          alert(`❌ Not enough capacity. Need ${newPeople} seats, only ${(load.capacity || 18) - currentPeople} available.`)
+          return
+        }
+        
+        // ✅ BUG FIX #3: Create assignments with original timestamps preserved
+        const newAssignments: LoadAssignment[] = groupStudents.map(student => ({
+          id: `${Date.now()}-${Math.random()}`,
+          studentId: student.id,
+          instructorId: null,
+          studentName: student.name,
+          studentWeight: student.weight,
+          jumpType: student.jumpType,
+          isRequest: student.isRequest,
+          groupId: group.id,
+          originalQueueTimestamp: student.timestamp, // Preserve original timestamp
+          tandemWeightTax: student.tandemWeightTax,
+          tandemHandcam: student.tandemHandcam,
+          hasOutsideVideo: student.outsideVideo,
+          affLevel: student.affLevel
+        }))
+        
+        await updateLoad(loadId, {
+          assignments: [...(load.assignments || []), ...newAssignments]
+        })
+        
+        await db.removeMultipleFromQueue(groupStudents.map(s => s.id))
         
       } else if (draggedItem.type === 'assignment' && draggedItem.sourceLoadId) {
-        // Moving assignment between loads
+        // Moving between loads
         const sourceLoad = loads.find(l => l.id === draggedItem.sourceLoadId)
-        const targetLoad = loads.find(l => l.id === loadId)
-        
-        if (!sourceLoad || !targetLoad || sourceLoad.id === targetLoad.id) return
+        if (!sourceLoad) return
         
         const assignment = sourceLoad.assignments?.find(a => a.id === draggedItem.id)
         if (!assignment) return
         
-        await updateLoad(sourceLoad.id, {
-          assignments: sourceLoad.assignments?.filter(a => a.id !== draggedItem.id) || []
-        })
+        // Check capacity in target load
+        const currentPeople = (load.assignments || []).reduce((sum, a) => {
+          return sum + 2 + (a.hasOutsideVideo ? 1 : 0)
+        }, 0)
+        const newPeople = 2 + (assignment.hasOutsideVideo ? 1 : 0)
         
-        await updateLoad(targetLoad.id, {
-          assignments: [...(targetLoad.assignments || []), assignment]
+        if (currentPeople + newPeople > (load.capacity || 18)) {
+          alert(`❌ Not enough capacity. Need ${newPeople} seats, only ${(load.capacity || 18) - currentPeople} available.`)
+          return
+        }
+        
+        // Remove from source
+        const updatedSourceAssignments = sourceLoad.assignments?.filter(a => a.id !== draggedItem.id) || []
+        await updateLoad(sourceLoad.id, { assignments: updatedSourceAssignments })
+        
+        // Add to target
+        await updateLoad(loadId, {
+          assignments: [...(load.assignments || []), assignment]
         })
       }
+      
+      setDraggedItem(null)
     } catch (error) {
-      console.error('Failed to handle drop:', error)
-      alert('Failed to move item')
-    } finally {
-      handleDragEnd()
+      console.error('Failed to drop item:', error)
+      alert('Failed to assign to load')
     }
   }
   
@@ -568,80 +509,59 @@ const filteredQueue = useMemo(() => {
   // RENDER
   // ============================================
   
-  if (loadsLoading) {
+  if (loadsLoading || queueLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
-        <div className="text-white text-xl">Loading loads...</div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-white text-lg">Loading...</p>
+        </div>
       </div>
     )
   }
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-8">
-      <div className="max-w-[2000px] mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-4 lg:p-8">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold text-white">🛫 Load Builder</h1>
-          <div className="flex gap-3">
-            <button
-              onClick={() => {
-                const buildingLoad = loads.find(l => 
-                  l.status === 'building' && 
-                  (l.assignments || []).some(a => !a.instructorId)
-                )
-                if (buildingLoad) {
-                  setOptimizeLoadId(buildingLoad.id)
-                } else {
-                  alert('No loads with unassigned students found. Add students to a load first!')
-                }
-              }}
-              className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
-            >
-              ⚡ Optimize Loads
-            </button>
+        <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-xl p-6 mb-8 border border-white/20">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-white mb-2">🛫 Load Builder</h1>
+              <p className="text-slate-300">Drag students from queue to loads</p>
+            </div>
             <button
               onClick={handleCreateLoad}
-              disabled={loadsLoading}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:opacity-50"
+              className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg"
             >
-              + New Load
+              ➕ New Load
             </button>
+          </div>
+          
+          {/* Status Filter Tabs */}
+          <div className="mt-6 flex flex-wrap gap-2">
+            {(['all', 'building', 'ready', 'departed', 'completed'] as const).map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                  statusFilter === status
+                    ? 'bg-blue-500 text-white shadow-lg'
+                    : 'bg-white/10 text-slate-300 hover:bg-white/20'
+                }`}
+              >
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+                <span className="ml-2 text-xs">({loadCounts[status]})</span>
+              </button>
+            ))}
           </div>
         </div>
         
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
-          {/* Main Content - Loads */}
+        {/* Main Content */}
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+          {/* Loads Grid */}
           <div className="xl:col-span-3">
-            {/* Status Filter Tabs */}
-            <div className="mb-6">
-              <div className="flex gap-3 overflow-x-auto pb-2">
-                {(['all', 'building', 'ready', 'departed', 'completed'] as const).map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setStatusFilter(status)}
-                    className={`px-6 py-3 rounded-lg font-semibold transition-all whitespace-nowrap ${
-                      statusFilter === status
-                        ? 'bg-blue-500/30 text-white shadow-lg scale-105 border-2 border-blue-400'
-                        : 'text-slate-400 hover:text-white hover:bg-white/10'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      {status === 'all' && '📋 All Loads'}
-                      {status === 'building' && '🔨 Building'}
-                      {status === 'ready' && '✅ Ready'}
-                      {status === 'departed' && '✈️ Departed'}
-                      {status === 'completed' && '🎉 Completed'}
-                      <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs">
-                        {loadCounts[status]}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Loads Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-4">
               {filteredLoads.length === 0 ? (
                 <div className="col-span-full text-center text-slate-400 py-12">
                   <p className="text-xl mb-2">
@@ -714,15 +634,15 @@ const filteredQueue = useMemo(() => {
                   placeholder="Search students..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-slate-400"
                 />
                 
                 <div className="flex gap-2">
-                  {(['all', 'tandem', 'aff'] as const).map(type => (
+                  {(['all', 'tandem', 'aff'] as const).map((type) => (
                     <button
                       key={type}
                       onClick={() => setSelectedJumpType(type)}
-                      className={`flex-1 px-3 py-2 rounded-lg font-semibold transition-colors ${
+                      className={`flex-1 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
                         selectedJumpType === type
                           ? 'bg-blue-500 text-white'
                           : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
