@@ -34,114 +34,33 @@ export function TeamManagementSection() {
     }
   }
   
-  const getRotationInfo = (team: Team) => {
-    if (team === 'gold') {
-      return {
-        daysOff: 'As-Needed (No Required Days)',
-        color: 'text-yellow-300',
-        bgColor: 'bg-yellow-500/10',
-        borderColor: 'border-yellow-500/30'
-      }
-    }
-    
-    const hasMonTueOff = team === currentRotation
-    
-    return {
-      daysOff: hasMonTueOff ? 'Mon/Tue OFF' : 'Wed/Thu OFF',
-      color: team === 'red' ? 'text-red-300' : 'text-blue-300',
-      bgColor: team === 'red' ? 'bg-red-500/10' : 'bg-blue-500/10',
-      borderColor: team === 'red' ? 'border-red-500/30' : 'border-blue-500/30',
-      workingToday: !hasMonTueOff
+  // ✅ ADD THIS FUNCTION
+  const handleClockToggle = async (instructor: Instructor) => {
+    try {
+      const newStatus = !instructor.clockedIn
+      
+      // Update instructor status
+      await db.updateInstructor(instructor.id, {
+        clockedIn: newStatus
+      })
+      
+      // Log clock event
+      await db.logClockEvent(
+        instructor.id,
+        instructor.name,
+        newStatus ? 'in' : 'out'
+      )
+    } catch (error) {
+      console.error('Failed to toggle clock:', error)
+      alert('Failed to toggle clock. Please try again.')
     }
   }
   
-  const getDayName = (offset: number) => {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    const today = new Date()
-    const targetDay = new Date(today)
-    targetDay.setDate(today.getDate() + offset)
-    return days[targetDay.getDay()]
-  }
+  // ... rest of the component stays the same until the render section
   
   return (
     <div className="space-y-6">
-      {/* Current Week Schedule */}
-      <div className="bg-gradient-to-r from-white/10 to-white/5 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
-        <h2 className="text-2xl font-bold text-white mb-4 text-center">
-          📅 This Week's Rotation
-        </h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className={`${getRotationInfo('red').bgColor} ${getRotationInfo('red').borderColor} border-2 rounded-lg p-4 text-center`}>
-            <div className="text-3xl mb-2">🔴</div>
-            <div className="text-xl font-bold text-white mb-1">Red Team</div>
-            <div className={`text-lg ${getRotationInfo('red').color} font-semibold`}>
-              {schedule.redTeam}
-            </div>
-            <div className="text-sm text-slate-400 mt-2">
-              {teamRosters.red.length} instructors
-            </div>
-          </div>
-          
-          <div className={`${getRotationInfo('blue').bgColor} ${getRotationInfo('blue').borderColor} border-2 rounded-lg p-4 text-center`}>
-            <div className="text-3xl mb-2">🔵</div>
-            <div className="text-xl font-bold text-white mb-1">Blue Team</div>
-            <div className={`text-lg ${getRotationInfo('blue').color} font-semibold`}>
-              {schedule.blueTeam}
-            </div>
-            <div className="text-sm text-slate-400 mt-2">
-              {teamRosters.blue.length} instructors
-            </div>
-          </div>
-          
-          <div className={`${getRotationInfo('gold').bgColor} ${getRotationInfo('gold').borderColor} border-2 rounded-lg p-4 text-center`}>
-            <div className="text-3xl mb-2">🟡</div>
-            <div className="text-xl font-bold text-white mb-1">Gold Team</div>
-            <div className={`text-lg ${getRotationInfo('gold').color} font-semibold`}>
-              As-Needed
-            </div>
-            <div className="text-sm text-slate-400 mt-2">
-              {teamRosters.gold.length} instructors
-            </div>
-          </div>
-        </div>
-        
-        {/* Weekly Calendar Preview */}
-        <div className="bg-slate-800/50 rounded-lg p-4">
-          <h3 className="text-white font-semibold mb-3 text-center">Week at a Glance</h3>
-          <div className="grid grid-cols-7 gap-2 text-center text-sm">
-            {[0, 1, 2, 3, 4, 5, 6].map(offset => {
-              const dayName = getDayName(offset)
-              const isWeekend = dayName === 'Friday' || dayName === 'Saturday' || dayName === 'Sunday'
-              const isMonTue = dayName === 'Monday' || dayName === 'Tuesday'
-              const isWedThu = dayName === 'Wednesday' || dayName === 'Thursday'
-              
-              return (
-                <div key={offset} className={`p-2 rounded ${isWeekend ? 'bg-green-500/20 border border-green-500/30' : 'bg-slate-700/50'}`}>
-                  <div className="text-xs text-slate-400 mb-1">{dayName.slice(0, 3)}</div>
-                  {isWeekend ? (
-                    <div className="text-xs text-green-300 font-semibold">All Teams</div>
-                  ) : isMonTue ? (
-                    <>
-                      <div className="text-xs text-red-300">{currentRotation === 'red' ? 'Red OFF' : 'Red'}</div>
-                      <div className="text-xs text-blue-300">{currentRotation === 'blue' ? 'Blue OFF' : 'Blue'}</div>
-                      <div className="text-xs text-yellow-300">Gold</div>
-                    </>
-                  ) : isWedThu ? (
-                    <>
-                      <div className="text-xs text-red-300">{currentRotation === 'red' ? 'Red' : 'Red OFF'}</div>
-                      <div className="text-xs text-blue-300">{currentRotation === 'blue' ? 'Blue' : 'Blue OFF'}</div>
-                      <div className="text-xs text-yellow-300">Gold</div>
-                    </>
-                  ) : (
-                    <div className="text-xs text-slate-300">All Teams</div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
+      {/* ... existing schedule display code ... */}
       
       {/* Team Rosters */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -163,6 +82,7 @@ export function TeamManagementSection() {
                   key={instructor.id}
                   instructor={instructor}
                   onTeamChange={handleTeamChange}
+                  onClockToggle={handleClockToggle} 
                   loading={loading}
                 />
               ))}
@@ -188,6 +108,7 @@ export function TeamManagementSection() {
                   key={instructor.id}
                   instructor={instructor}
                   onTeamChange={handleTeamChange}
+                  onClockToggle={handleClockToggle} 
                   loading={loading}
                 />
               ))}
@@ -213,6 +134,7 @@ export function TeamManagementSection() {
                   key={instructor.id}
                   instructor={instructor}
                   onTeamChange={handleTeamChange}
+                  onClockToggle={handleClockToggle}  
                   loading={loading}
                 />
               ))}
@@ -236,6 +158,7 @@ export function TeamManagementSection() {
                   key={instructor.id}
                   instructor={instructor}
                   onTeamChange={handleTeamChange}
+                  onClockToggle={handleClockToggle} 
                   loading={loading}
                 />
               ))}
@@ -244,28 +167,20 @@ export function TeamManagementSection() {
         )}
       </div>
       
-      {/* Help Text */}
-      <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
-        <h4 className="text-blue-300 font-semibold mb-2">📚 How Teams Work</h4>
-        <div className="text-sm text-slate-300 space-y-1">
-          <p>• <strong>Red & Blue Teams:</strong> Rotate Mon/Tue and Wed/Thu off days every week</p>
-          <p>• <strong>Gold Team:</strong> As-needed(Special Teams) </p>
-          <p>• <strong>Off-Day Penalty:</strong> Instructors working their off day incur 1.2x balance multiplier</p>
-          <p>• <strong>Weekends:</strong> Everyone works Fri/Sat/Sun (no days off)</p>
-        </div>
-      </div>
+      {/* Help Text stays the same */}
     </div>
   )
 }
 
-// Helper component for instructor cards with team dropdown
+// ✅ UPDATE InstructorTeamCard component
 interface InstructorTeamCardProps {
   instructor: Instructor
   onTeamChange: (instructorId: string, newTeam: Team | null) => Promise<void>
+  onClockToggle: (instructor: Instructor) => Promise<void>  // ✅ ADD THIS
   loading: boolean
 }
 
-function InstructorTeamCard({ instructor, onTeamChange, loading }: InstructorTeamCardProps) {
+function InstructorTeamCard({ instructor, onTeamChange, onClockToggle, loading }: InstructorTeamCardProps) {
   const [isChanging, setIsChanging] = useState(false)
   
   const handleChange = async (newTeam: string) => {
@@ -291,17 +206,31 @@ function InstructorTeamCard({ instructor, onTeamChange, loading }: InstructorTea
         </div>
       </div>
       
-      <select
-        value={instructor.team || 'none'}
-        onChange={(e) => handleChange(e.target.value)}
-        disabled={loading || isChanging}
-        className="px-3 py-1 bg-slate-600 border border-slate-500 rounded text-white text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50"
-      >
-        <option value="none">⚠️ No Team</option>
-        <option value="red">🔴 Red</option>
-        <option value="blue">🔵 Blue</option>
-        <option value="gold">🟡 Gold</option>
-      </select>
+      <div className="flex items-center gap-2">
+        {/* ✅ ADD CLOCK IN/OUT BUTTON */}
+        <button
+          onClick={() => onClockToggle(instructor)}
+          className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
+            instructor.clockedIn
+              ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30'
+              : 'bg-green-500/20 text-green-300 hover:bg-green-500/30'
+          }`}
+        >
+          {instructor.clockedIn ? 'Clock Out' : 'Clock In'}
+        </button>
+        
+        <select
+          value={instructor.team || 'none'}
+          onChange={(e) => handleChange(e.target.value)}
+          disabled={loading || isChanging}
+          className="px-3 py-1 bg-slate-600 border border-slate-500 rounded text-white text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50"
+        >
+          <option value="none">⚠️ No Team</option>
+          <option value="red">🔴 Red</option>
+          <option value="blue">🔵 Blue</option>
+          <option value="gold">🟡 Gold</option>
+        </select>
+      </div>
     </div>
   )
 }

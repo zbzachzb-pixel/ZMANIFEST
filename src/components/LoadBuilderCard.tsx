@@ -11,7 +11,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { useUpdateLoad, useDeleteLoad, useGroups } from '@/hooks/useDatabase'
 import { useLoadCountdown, isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
 import { db } from '@/services'
-import type { Load, Instructor, LoadSchedulingSettings } from '@/types'
+import type { Load, Instructor, LoadSchedulingSettings, CreateQueueStudent } from '@/types'
 
 interface LoadBuilderCardProps {
   load: Load
@@ -291,14 +291,38 @@ export function LoadBuilderCard({
   }
   
   const removeFromLoad = async (assignmentId: string) => {
-    if (isCompleted) return
-    try {
-      const updatedAssignments = loadAssignments.filter(a => a.id !== assignmentId)
-      await update(load.id, { assignments: updatedAssignments })
-    } catch (error) {
-      console.error('Failed to remove from load:', error)
+  if (isCompleted) return
+  try {
+    const assignment = loadAssignments.find(a => a.id === assignmentId)
+    if (!assignment) return
+    
+    // Remove from load
+    const updatedAssignments = loadAssignments.filter(a => a.id !== assignmentId)
+    await update(load.id, { assignments: updatedAssignments })
+    
+    // Use original timestamp if available, otherwise use priority timestamp
+    const timestamp = assignment.originalQueueTimestamp || 
+      new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    
+    const queueStudent: CreateQueueStudent = {
+      studentAccountId: assignment.studentId,
+      name: assignment.studentName,
+      weight: assignment.studentWeight,
+      jumpType: assignment.jumpType,
+      isRequest: assignment.isRequest,
+      tandemWeightTax: assignment.tandemWeightTax,
+      tandemHandcam: assignment.tandemHandcam,
+      outsideVideo: assignment.hasOutsideVideo,
+      affLevel: assignment.affLevel,
+      groupId: assignment.groupId
     }
+    
+    await db.addToQueue(queueStudent, timestamp)  // ✅ Use preserved timestamp
+  } catch (error) {
+    console.error('Failed to remove from load:', error)
+    alert('Failed to remove student from load')
   }
+}
   
   const handleStatusChangeRequest = (newStatus: Load['status']) => {
     if (newStatus === 'departed' && load.status === 'ready' && unassignedCount > 0) {

@@ -165,6 +165,7 @@ export interface LoadAssignment {
   videoInstructorId?: string | null
   videoInstructorName?: string
   affLevel?: 'upper' | 'lower'
+  originalQueueTimestamp?: string
 }
 
 export interface Load {

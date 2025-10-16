@@ -121,15 +121,20 @@ useEffect(() => {
   }, [instructors, assignments, period])
   
   // Filter queue
-  const filteredQueue = useMemo(() => {
-    return queue.filter(student => {
+  // Filter queue
+const filteredQueue = useMemo(() => {
+  return queue
+    .filter(student => {
       const matchesSearch = searchTerm === '' || 
         student.name.toLowerCase().includes(searchTerm.toLowerCase())
       const matchesType = selectedJumpType === 'all' || student.jumpType === selectedJumpType
       return matchesSearch && matchesType
     })
-  }, [queue, searchTerm, selectedJumpType])
-  
+    .sort((a, b) => {
+      // Sort by timestamp - oldest first (FIFO)
+      return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    })
+}, [queue, searchTerm, selectedJumpType])
   // Group queue students
   const queueGroups = useMemo(() => {
     return groups.map(groupDoc => {
@@ -490,7 +495,8 @@ useEffect(() => {
             instructorId: '',
             videoInstructorId: student.outsideVideo ? '' : undefined,
             groupId: groupId,
-            isRequest: student.isRequest
+            isRequest: student.isRequest,
+            originalQueueTimestamp: student.timestamp
           }
           newAssignments.push(newAssignment)
         }
@@ -522,7 +528,8 @@ useEffect(() => {
           instructorId: '',
           videoInstructorId: student.outsideVideo ? '' : undefined,
           groupId: student.groupId,
-          isRequest: student.isRequest
+          isRequest: student.isRequest,
+          originalQueueTimestamp: student.timestamp
         }
         
         await updateLoad(load.id, {
