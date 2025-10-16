@@ -282,6 +282,9 @@ export class FirebaseService implements DatabaseService {
   async updateLoad(id: string, updates: UpdateLoad): Promise<void> {
     const loadRef = ref(this.db, `loads/${id}`)
     
+    // Clean the data before the transaction to avoid context issues
+    const cleanedUpdates = this.cleanData(updates)
+    
     try {
       await runTransaction(loadRef, (currentLoad) => {
         if (!currentLoad) {
@@ -289,10 +292,10 @@ export class FirebaseService implements DatabaseService {
         }
         
         // Validate instructor assignments don't conflict
-        if (updates.assignments) {
+        if (cleanedUpdates.assignments) {
           const instructorUsage = new Map<string, string[]>()
           
-          for (const assignment of updates.assignments) {
+          for (const assignment of cleanedUpdates.assignments) {
             if (assignment.instructorId) {
               if (!instructorUsage.has(assignment.instructorId)) {
                 instructorUsage.set(assignment.instructorId, [])
@@ -317,7 +320,7 @@ export class FirebaseService implements DatabaseService {
         }
         
         // Apply updates atomically
-        return { ...currentLoad, ...this.cleanData(updates) }
+        return { ...currentLoad, ...cleanedUpdates }
       })
       
       console.log(`✅ Load ${id} updated atomically`)
