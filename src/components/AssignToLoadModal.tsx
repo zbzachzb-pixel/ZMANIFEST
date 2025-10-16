@@ -1,5 +1,5 @@
 // src/components/AssignToLoadModal.tsx
-// ✅ CLEANED VERSION - No backwards compatibility code
+// ✅ FIXED: Removed videoRestricted property access
 'use client'
 
 import React, { useState, useMemo } from 'react'
@@ -35,7 +35,7 @@ export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
     if (a.hasOutsideVideo) count += 1
     return sum + count
   }, 0)
-  const availableSeats = load.capacity - totalPeople
+  const availableSeats = (load.capacity || 18) - totalPeople
   
   // Get qualified instructors for selected student
   const qualifiedInstructors = useMemo(() => {
@@ -43,7 +43,6 @@ export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
     
     return clockedInInstructors
       .filter(instructor => {
-        // ✅ CLEAN: Check department qualification using correct property names
         if (selectedStudent.jumpType === 'tandem' && !instructor.canTandem) return false
         if (selectedStudent.jumpType === 'aff' && !instructor.canAFF) return false
         if (selectedStudent.jumpType === 'video' && !instructor.canVideo) return false
@@ -77,13 +76,16 @@ export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
     if (!selectedStudent) return []
     
     return clockedInInstructors
-      // ✅ CLEAN: Use correct property name
       .filter(i => 
         i.canVideo && 
         i.id !== selectedInstructorId &&
-        (!i.videoRestricted || 
+        (
+          // ✅ FIXED: If no restrictions, allow all
+          (i.videoMinWeight == null && i.videoMaxWeight == null) ||
+          // If restrictions exist, check weight
           (selectedStudent.weight >= (i.videoMinWeight || 0) && 
-           selectedStudent.weight <= (i.videoMaxWeight || 999)))
+           selectedStudent.weight <= (i.videoMaxWeight || 999))
+        )
       )
       .filter(i => {
         // Not already on load
@@ -126,62 +128,57 @@ export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
     const instructor = allInstructors.find(i => i.id === selectedInstructorId)
     const videoInstructor = hasOutsideVideo ? allInstructors.find(i => i.id === videoInstructorId) : null
     
-    if (!instructor) return
+    if (!instructor) {
+      alert('Invalid instructor selection')
+      return
+    }
     
     try {
-      // Create assignment for load
       const newAssignment = {
-        id: Date.now().toString(),
+        id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        studentId: selectedStudent.id,
         instructorId: instructor.id,
         instructorName: instructor.name,
         studentName: selectedStudent.name,
         studentWeight: selectedStudent.weight,
         jumpType: selectedStudent.jumpType,
-        isRequest: selectedStudent.isRequest,
-        ...(selectedStudent.jumpType === 'tandem' && {
-          tandemWeightTax: selectedStudent.tandemWeightTax,
-          tandemHandcam: selectedStudent.tandemHandcam,
-        }),
-        ...(selectedStudent.jumpType === 'aff' && {
-          affLevel: selectedStudent.affLevel,
-        }),
-        ...(hasOutsideVideo && videoInstructor && {
-          hasOutsideVideo: true,
-          videoInstructorId: videoInstructor.id,
-          videoInstructorName: videoInstructor.name,
-        }),
+        isRequest: selectedStudent.isRequest || false,
+        tandemWeightTax: selectedStudent.tandemWeightTax || 0,
+        tandemHandcam: selectedStudent.tandemHandcam || false,
+        affLevel: selectedStudent.affLevel,
+        hasOutsideVideo: hasOutsideVideo,
+        videoInstructorId: videoInstructor?.id || null,
+        videoInstructorName: videoInstructor?.name,
+        groupId: selectedStudent.groupId
       }
       
-      // Update load with new assignment
-      const updatedAssignments = [...(load.assignments || []), newAssignment]
-      await update(load.id, { assignments: updatedAssignments })
+      const currentAssignments = load.assignments || []
+      await update(load.id, {
+        assignments: [...currentAssignments, newAssignment]
+      })
       
-      // Remove student from queue
       await db.removeFromQueue(selectedStudent.id)
       
-      // Reset form
+      // Reset selections
       setSelectedStudentId('')
       setSelectedInstructorId('')
       setHasOutsideVideo(false)
       setVideoInstructorId('')
-      
-      // Close modal if no more seats
-      if (availableSeats <= 2) {
-        onClose()
-      }
     } catch (error) {
-      console.error('Failed to assign:', error)
-      alert('Failed to assign student. Please try again.')
+      console.error('Failed to assign to load:', error)
+      alert('Failed to assign. Please try again.')
     }
   }
   
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 rounded-xl shadow-2xl max-w-lg w-full border border-slate-700">
+      <div className="bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-700">
         <div className="border-b border-slate-700 p-6">
-          <h2 className="text-2xl font-bold text-white">Assign Student to {load.name}</h2>
+          <h2 className="text-2xl font-bold text-white">
+            Assign to Load #{load.position || 'Next'}
+          </h2>
           <p className="text-sm text-slate-400 mt-1">
-            Available seats: {availableSeats}
+            Available Seats: {availableSeats}/{load.capacity || 18}
           </p>
         </div>
         
@@ -189,112 +186,112 @@ export function AssignToLoadModal({ load, onClose }: AssignToLoadModalProps) {
           {/* Student Selection */}
           <div>
             <label className="block text-sm font-semibold text-slate-300 mb-2">
-              Select Student
+              Select Student *
             </label>
             <select
               value={selectedStudentId}
-              onChange={(e) => setSelectedStudentId(e.target.value)}
+              onChange={(e) => {
+                setSelectedStudentId(e.target.value)
+                setSelectedInstructorId('')
+                setVideoInstructorId('')
+              }}
               className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
             >
-              <option value="">Choose a student</option>
+              <option value="">Choose from queue...</option>
               {queue.map(student => (
                 <option key={student.id} value={student.id}>
-                  {student.name} - {student.jumpType.toUpperCase()} ({student.weight} lbs)
+                  {student.name} ({student.weight} lbs) - {student.jumpType.toUpperCase()}
+                  {student.isRequest && ' [REQUEST]'}
                 </option>
               ))}
             </select>
           </div>
           
-          {/* Instructor Selection */}
           {selectedStudent && (
             <>
+              {/* Main Instructor */}
               <div>
                 <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Select Instructor
+                  Main Instructor *
                 </label>
                 <select
                   value={selectedInstructorId}
                   onChange={(e) => setSelectedInstructorId(e.target.value)}
                   className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                 >
-                  <option value="">Choose an instructor</option>
+                  <option value="">Select instructor...</option>
                   {qualifiedInstructors.map(({ instructor, balance }) => (
                     <option key={instructor.id} value={instructor.id}>
-                      {instructor.name} (${balance.toFixed(2)})
+                      {instructor.name} (Balance: ${balance})
                     </option>
                   ))}
                 </select>
+                {qualifiedInstructors.length === 0 && (
+                  <p className="text-xs text-red-400 mt-1">No qualified instructors available</p>
+                )}
               </div>
               
-              {/* Video Checkbox */}
+              {/* Outside Video */}
               {selectedStudent.jumpType === 'tandem' && (
-                <>
-                  <div className="flex items-center gap-3">
+                <div>
+                  <div className="flex items-center gap-3 mb-2">
                     <input
                       type="checkbox"
-                      id="hasVideo"
+                      id="outsideVideo"
                       checked={hasOutsideVideo}
                       onChange={(e) => setHasOutsideVideo(e.target.checked)}
                       className="w-5 h-5 rounded border-slate-600 bg-slate-700"
                     />
-                    <label htmlFor="hasVideo" className="text-sm font-semibold text-slate-300">
-                      Has outside video
+                    <label htmlFor="outsideVideo" className="text-sm font-semibold text-slate-300">
+                      Outside Video (+$45)
                     </label>
                   </div>
                   
                   {hasOutsideVideo && (
                     <div>
                       <label className="block text-sm font-semibold text-slate-300 mb-2">
-                        Video Instructor
+                        Video Instructor *
                       </label>
                       <select
                         value={videoInstructorId}
                         onChange={(e) => setVideoInstructorId(e.target.value)}
                         className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                       >
-                        <option value="">Choose video instructor</option>
+                        <option value="">Select video instructor...</option>
                         {videoInstructors.map(instructor => (
                           <option key={instructor.id} value={instructor.id}>
                             {instructor.name}
                           </option>
                         ))}
                       </select>
+                      {videoInstructors.length === 0 && (
+                        <p className="text-xs text-red-400 mt-1">No video instructors available</p>
+                      )}
                     </div>
                   )}
-                </>
-              )}
-              
-              {/* Assignment Preview */}
-              {selectedInstructorId && (
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
-                  <p className="text-sm font-semibold text-blue-300 mb-2">Assignment Preview:</p>
-                  <p className="text-white">
-                    👤 {allInstructors.find(i => i.id === selectedInstructorId)?.name} + {selectedStudent.name}
-                  </p>
-                  <p className="text-xs text-slate-300">
-                    {selectedStudent.jumpType.toUpperCase()} • {selectedStudent.weight} lbs
-                    {hasOutsideVideo && videoInstructorId && ` • 📹 ${allInstructors.find(i => i.id === videoInstructorId)?.name}`}
-                  </p>
                 </div>
               )}
             </>
           )}
-        </div>
-        
-        <div className="border-t border-slate-700 p-6 flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
-          >
-            Close
-          </button>
-          <button
-            onClick={handleAssign}
-            disabled={loading || !selectedStudentId || !selectedInstructorId || (hasOutsideVideo && !videoInstructorId)}
-            className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Assigning...' : '✓ Assign to Load'}
-          </button>
+          
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              onClick={handleAssign}
+              disabled={loading || !selectedStudentId || !selectedInstructorId || (hasOutsideVideo && !videoInstructorId)}
+              className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? '⏳ Assigning...' : 'Assign to Load'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

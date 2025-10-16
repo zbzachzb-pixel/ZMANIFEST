@@ -1,5 +1,5 @@
 // src/components/AddJumpModal.tsx
-// ✅ COMPLETELY CLEANED VERSION
+// ✅ FIXED: Removed videoRestricted property access
 'use client'
 
 import React, { useState } from 'react'
@@ -34,13 +34,17 @@ export function AddJumpModal({ instructor, onClose }: AddJumpModalProps) {
   // AFF specific
   const [affLevel, setAffLevel] = useState<AFFLevel>('lower')
   
-  // ✅ CLEAN: Use correct property names
+  // ✅ FIXED: Check if video restrictions exist by looking at min/max weight properties
   const videoInstructors = instructors.filter(i => 
     i.canVideo && 
     i.clockedIn && 
     i.id !== instructor.id &&
-    (!i.videoRestricted || 
-      (studentWeight >= (i.videoMinWeight || 0) && studentWeight <= (i.videoMaxWeight || 999)))
+    (
+      // If no restrictions are set (both null/undefined), instructor can take any video
+      (i.videoMinWeight == null && i.videoMaxWeight == null) ||
+      // If restrictions exist, check if student weight is within range
+      (studentWeight >= (i.videoMinWeight || 0) && studentWeight <= (i.videoMaxWeight || 999))
+    )
   )
   
   // ✅ CLEAN: Get instructors who can cover
@@ -184,36 +188,31 @@ export function AddJumpModal({ instructor, onClose }: AddJumpModalProps) {
                 onChange={(e) => setCoveringForId(e.target.value)}
                 className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
               >
-                <option value="">Select covering instructor...</option>
+                <option value="">Select instructor...</option>
                 {potentialCoverInstructors.map(i => (
                   <option key={i.id} value={i.id}>{i.name}</option>
                 ))}
               </select>
-              <p className="text-xs text-slate-400 mt-2">
-                Payment will go to the covering instructor
-              </p>
             </div>
           )}
           
           {/* Tandem Options */}
           {jumpType === 'tandem' && (
             <>
-              <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Weight Tax
-                </label>
-                <select
-                  value={tandemWeightTax}
-                  onChange={(e) => setTandemWeightTax(parseInt(e.target.value))}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value={0}>No Tax ($0)</option>
-                  <option value={1}>1x Tax (+$20)</option>
-                  <option value={2}>2x Tax (+$40)</option>
-                  <option value={3}>3x Tax (+$60)</option>
-                  <option value={4}>4x Tax (+$80)</option>
-                  <option value={5}>5x Tax (+$100)</option>
-                </select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">
+                    Weight Tax (0-5)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="5"
+                    value={tandemWeightTax}
+                    onChange={(e) => setTandemWeightTax(parseInt(e.target.value))}
+                    className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
               
               <div className="flex items-center gap-3">
@@ -225,7 +224,7 @@ export function AddJumpModal({ instructor, onClose }: AddJumpModalProps) {
                   className="w-5 h-5 rounded border-slate-600 bg-slate-700"
                 />
                 <label htmlFor="handcam" className="text-sm font-semibold text-slate-300">
-                  Handcam (+$30)
+                  Handcam Video (+$30)
                 </label>
               </div>
               

@@ -182,57 +182,57 @@ export function OptimizeLoadModal({ load, onClose }: OptimizeLoadModalProps) {
       // Handle video instructor if needed
       let videoInstructor: Instructor | undefined = undefined
       if (student.jumpType === 'tandem' && student.outsideVideo) {
-        console.log(`🎥 Looking for video instructor...`)
-        
-        const videoInstructors = clockedInInstructors
-          .filter(i => {
-            // ✅ CLEAN: Use correct property name directly
-            if (!i.canVideo) {
-              console.log(`  ⏭️  ${i.name}: not video qualified`)
-              return false
-            }
-            if (i.id === bestInstructor.id) {
-              console.log(`  ⏭️  ${i.name}: is main instructor`)
-              return false
-            }
-            if (usedVideoInstructors.has(i.id)) {
-              console.log(`  ⏭️  ${i.name}: already used as video`)
-              return false
-            }
-            if (usedInstructors.has(i.id)) {
-              console.log(`  ⏭️  ${i.name}: already on another load`)
-              return false
-            }
-            
-            if (i.videoRestricted) {
-              const combinedWeight = bestInstructor.bodyWeight + student.weight
-              if (i.videoMinWeight && combinedWeight < i.videoMinWeight) {
-                console.log(`  ⏭️  ${i.name}: combined weight too low`)
-                return false
-              }
-              if (i.videoMaxWeight && combinedWeight > i.videoMaxWeight) {
-                console.log(`  ⏭️  ${i.name}: combined weight too high`)
-                return false
-              }
-            }
-            
-            console.log(`  ✅ ${i.name}: qualified (balance: $${instructorBalances.get(i.id) || 0})`)
-            return true
-          }).sort((a, b) => {
-            const balanceA = instructorBalances.get(a.id) || 0
-            const balanceB = instructorBalances.get(b.id) || 0
-            return balanceA - balanceB
-          })
-        
-        if (videoInstructors.length > 0) {
-          videoInstructor = videoInstructors[0]
-          console.log(`📌 Video selected: ${videoInstructor.name}`)
-          usedVideoInstructors.add(videoInstructor.id)
-          usedInstructors.add(videoInstructor.id)
-        } else {
-          console.log(`❌ No video instructor available`)
+  console.log(`🎥 Looking for video instructor...`)
+  
+  const videoInstructors = clockedInInstructors
+    .filter(i => {
+      if (!i.canVideo) {
+        console.log(`  ⏭️  ${i.name}: not video qualified`)
+        return false
+      }
+      if (i.id === bestInstructor.id) {
+        console.log(`  ⏭️  ${i.name}: is main instructor`)
+        return false
+      }
+      if (usedVideoInstructors.has(i.id)) {
+        console.log(`  ⏭️  ${i.name}: already used as video`)
+        return false
+      }
+      if (usedInstructors.has(i.id)) {
+        console.log(`  ⏭️  ${i.name}: already on another load`)
+        return false
+      }
+      
+      // ✅ FIXED: Check if video restrictions exist by looking at min/max weight properties
+      if (i.videoMinWeight != null || i.videoMaxWeight != null) {
+        const combinedWeight = bestInstructor.bodyWeight + student.weight
+        if (i.videoMinWeight && combinedWeight < i.videoMinWeight) {
+          console.log(`  ⏭️  ${i.name}: combined weight too low`)
+          return false
+        }
+        if (i.videoMaxWeight && combinedWeight > i.videoMaxWeight) {
+          console.log(`  ⏭️  ${i.name}: combined weight too high`)
+          return false
         }
       }
+      
+      console.log(`  ✅ ${i.name}: qualified (balance: $${instructorBalances.get(i.id) || 0})`)
+      return true
+    }).sort((a, b) => {
+      const balanceA = instructorBalances.get(a.id) || 0
+      const balanceB = instructorBalances.get(b.id) || 0
+      return balanceA - balanceB
+    })
+  
+  if (videoInstructors.length > 0) {
+    videoInstructor = videoInstructors[0]
+    console.log(`📌 Video selected: ${videoInstructor.name}`)
+    usedVideoInstructors.add(videoInstructor.id)
+    usedInstructors.add(videoInstructor.id)
+  } else {
+    console.log(`❌ No video instructor available`)
+  }
+}
       
       plan.push({ student, instructor: bestInstructor, videoInstructor })
     }

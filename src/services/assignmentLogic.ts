@@ -92,18 +92,17 @@ export function getSuggestedInstructors(
       if (inst.archived) return false
       if (!ignoreClockStatus && !inst.clockedIn) return false
       
-      // ✅ CLEAN: Use correct property name without fallback
       if (!inst.canVideo) return false
       if (inst.id === mainInstructor.id) return false
 
-      // Check video weight restrictions if applicable
-      if (inst.videoRestricted) {
+      // ✅ FIXED: Check video weight restrictions if applicable
+      if (inst.videoMinWeight != null || inst.videoMaxWeight != null) {
         const combinedWeight = mainInstructor.bodyWeight + student.weight
         if (inst.videoMinWeight && combinedWeight < inst.videoMinWeight) return false
         if (inst.videoMaxWeight && combinedWeight > inst.videoMaxWeight) return false
       }
 
-      // ✅ Check timing availability
+      // Check timing availability
       const available = isInstructorAvailableForLoad(inst, targetLoad, allLoads, loadSettings)
       if (!available) {
         console.log(`⏰ Video instructor ${inst.name} not available for Load #${targetLoad.position}`)
