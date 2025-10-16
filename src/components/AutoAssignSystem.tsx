@@ -96,92 +96,80 @@ export function AutoAssignSystem() {
   }
   
   const performAutoAssignment = async (student: QueueStudent) => {
-    try {
-      // Find best instructor using centralized balance calculation
-      const qualified = instructors.filter(inst => {
-        if (!inst.clockedIn) return false
-        
-        // ✅ CLEAN: Use correct property names without fallbacks
-        if (student.jumpType === 'tandem' && !inst.canTandem) return false
-        if (student.jumpType === 'aff' && !inst.canAFF) return false
-        
-        return true
-      })
+  try {
+    // Find best instructor using centralized balance calculation
+    const qualified = instructors.filter(inst => {
+      if (!inst.clockedIn) return false
       
-      if (qualified.length === 0) {
-        console.log('No qualified instructors available')
-        setCurrentStudent(null)
-        return
-      }
+      if (student.jumpType === 'tandem' && !inst.canTandem) return false
+      if (student.jumpType === 'aff' && !inst.canAFF) return false
       
-      // Sort by balance using centralized function
-      qualified.sort((a, b) => {
-        const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period)
-        const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period)
-        return balanceA - balanceB
-      })
-      
-      const bestInstructor = qualified[0]
-      
-      // Find available load
-      const availableLoad = loads.find(load => {
-        const usedSeats = (load.assignments || []).reduce((sum, a) => {
-          if (a.jumpType === 'tandem') return sum + 2
-          if (a.jumpType === 'aff') return sum + 2
-          return sum + 1
-        }, 0)
-        return usedSeats < (load.capacity || 18)
-      })
-      
-      if (!availableLoad) {
-        console.log('No available loads')
-        setCurrentStudent(null)
-        return
-      }
-      
-      // Create assignment
-      const availableInstructors = clockedInInstructors.filter(inst => {
-        if (student.jumpType === 'tandem' && !inst.canTandem) return false
-        if (student.jumpType === 'aff' && !inst.canAFF) return false
-        // ... other checks
-        return true
-      })
-
-      const instructor = availableInstructors[0]  // Add this line
-
-      if (!instructor) continue  // Add this check
-
-      const newAssignment: LoadAssignment = {
-        id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        studentId: student.id,
-        instructorId: instructor.id,
-        instructorName: instructor.name,
-        studentName: student.name,
-        studentWeight: student.weight,
-        jumpType: student.jumpType,
-        isRequest: student.isRequest,
-        tandemWeightTax: student.tandemWeightTax,
-        tandemHandcam: student.tandemHandcam,
-        affLevel: student.affLevel,
-        hasOutsideVideo: false,
-        videoInstructorId: null,
-      }
-      
-      // Update load
-      await update(availableLoad.id, {
-        assignments: [...(availableLoad.assignments || []), newAssignment]
-      })
-      
-      // Remove from queue
-      await db.removeFromQueue(student.id)
-      
-      console.log(`✅ Auto-assigned ${student.name} to ${bestInstructor.name}`)
+      return true
+    })
+    
+    if (qualified.length === 0) {
+      console.log('No qualified instructors available')
       setCurrentStudent(null)
-    } catch (error) {
-      console.error('Auto-assignment failed:', error)
-      setCurrentStudent(null)
+      return
     }
+    
+    // Sort by balance using centralized function
+    qualified.sort((a, b) => {
+      const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period)
+      const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period)
+      return balanceA - balanceB
+    })
+    
+    const bestInstructor = qualified[0]
+    
+    // Find available load
+    const availableLoad = loads.find(load => {
+      const usedSeats = (load.assignments || []).reduce((sum, a) => {
+        if (a.jumpType === 'tandem') return sum + 2
+        if (a.jumpType === 'aff') return sum + 2
+        return sum + 1
+      }, 0)
+      return usedSeats < (load.capacity || 18)
+    })
+    
+    if (!availableLoad) {
+      console.log('No available loads')
+      setCurrentStudent(null)
+      return
+    }
+    
+    // Create assignment - USE bestInstructor directly
+    const newAssignment: LoadAssignment = {
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      studentId: student.id,
+      instructorId: bestInstructor.id,
+      instructorName: bestInstructor.name,
+      studentName: student.name,
+      studentWeight: student.weight,
+      jumpType: student.jumpType,
+      isRequest: student.isRequest,
+      tandemWeightTax: student.tandemWeightTax,
+      tandemHandcam: student.tandemHandcam,
+      affLevel: student.affLevel,
+      hasOutsideVideo: false,
+      videoInstructorId: null,
+    }
+    
+    // Update load
+    await update(availableLoad.id, {
+      assignments: [...(availableLoad.assignments || []), newAssignment]
+    })
+    
+    // Remove from queue
+    await db.removeFromQueue(student.id)
+    
+    console.log(`✅ Auto-assigned ${student.name} to ${bestInstructor.name}`)
+    setCurrentStudent(null)
+  } catch (error) {
+    console.error('Auto-assignment failed:', error)
+    setCurrentStudent(null)
   }
+}
   
   return (
     <div className="fixed bottom-4 right-4 z-40">

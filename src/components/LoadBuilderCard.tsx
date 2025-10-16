@@ -55,7 +55,8 @@ export function LoadBuilderCard({
   const [lastMilestone, setLastMilestone] = useState<number | null>(null)
   const [showBreathing, setShowBreathing] = useState(false)
   
-  const { countdown } = useLoadCountdown(load, loadSchedulingSettings)
+  const { countdown, isReadyToDepart } = useLoadCountdown(load, loadSchedulingSettings)
+  const isActive = countdown !== null
   
   const loadAssignments = load.assignments || []
   const isCompleted = load.status === 'completed'
@@ -454,11 +455,10 @@ export function LoadBuilderCard({
       
       for (const assignment of loadAssignments) {
         await db.addToQueue({
-          studentAccountId: studentAccountId,
+          studentAccountId: assignment.studentId,  // ✅ Use the studentId from the assignment
           name: assignment.studentName,
           weight: assignment.studentWeight,
           jumpType: assignment.jumpType,
-          addedAt: new Date().toISOString(),
           isRequest: assignment.isRequest,
           ...(assignment.jumpType === 'tandem' && {
             tandemWeightTax: assignment.tandemWeightTax,
