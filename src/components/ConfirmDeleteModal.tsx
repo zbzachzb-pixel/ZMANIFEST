@@ -1,42 +1,52 @@
 // src/components/ConfirmDeleteModal.tsx
+// Add isOpen to the interface
+
+'use client'
+
 import React from 'react'
 
 interface ConfirmDeleteModalProps {
-  count: number
+  isOpen: boolean  // ✅ Add this
+  title: string
+  message: string
   onConfirm: () => void
   onCancel: () => void
+  loading?: boolean
 }
 
-export function ConfirmDeleteModal({ count, onConfirm, onCancel }: ConfirmDeleteModalProps) {
+export function ConfirmDeleteModal({
+  isOpen,
+  title,
+  message,
+  onConfirm,
+  onCancel,
+  loading = false
+}: ConfirmDeleteModalProps) {
+  if (!isOpen) return null
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl border border-red-500/30 max-w-md w-full p-6 animate-in zoom-in-95 duration-200">
-        <div className="flex items-start gap-4 mb-6">
-          <div className="flex-shrink-0 w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
-            <span className="text-2xl">🗑️</span>
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={onCancel}>
+      <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border-2 border-red-500" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6">
+          <h2 className="text-2xl font-bold text-white mb-4">{title}</h2>
+          <p className="text-slate-300 mb-6">{message}</p>
+          
+          <div className="flex gap-3">
+            <button
+              onClick={onCancel}
+              disabled={loading}
+              className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={loading}
+              className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-colors disabled:opacity-50"
+            >
+              {loading ? 'Removing...' : 'Confirm'}
+            </button>
           </div>
-          <div>
-            <h3 className="text-xl font-bold text-white mb-2">Remove Students from Queue?</h3>
-            <p className="text-slate-300">
-              Are you sure you want to remove <span className="font-bold text-red-400">{count}</span> student{count !== 1 ? 's' : ''} from the queue? 
-              This action cannot be undone.
-            </p>
-          </div>
-        </div>
-        
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 px-4 py-3 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-colors"
-          >
-            Yes, Remove
-          </button>
         </div>
       </div>
     </div>

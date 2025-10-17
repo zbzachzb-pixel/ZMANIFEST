@@ -1,3 +1,6 @@
+// PASTE INTO: src/components/CreateGroupModal.tsx
+// Replace the entire file with this:
+
 'use client'
 
 import React, { useState } from 'react'
@@ -21,8 +24,12 @@ export function CreateGroupModal({ selectedStudents, onClose, onSuccess }: Creat
     }
 
     try {
-      const studentIds = selectedStudents.map(s => s.id)
-      await create(groupName, studentIds)
+      // ✅ FIX: Use studentAccountId (permanent) instead of queue ID (temporary)
+      const studentAccountIds = selectedStudents.map(s => s.studentAccountId)
+      
+      console.log('Creating group with studentAccountIds:', studentAccountIds)
+      await create(groupName, studentAccountIds)
+      
       onSuccess()
       onClose()
     } catch (error) {
@@ -50,6 +57,11 @@ export function CreateGroupModal({ selectedStudents, onClose, onSuccess }: Creat
               placeholder="e.g., Smith Family, Bachelor Party..."
               className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
               autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleCreate()
+                }
+              }}
             />
           </div>
 
@@ -68,11 +80,9 @@ export function CreateGroupModal({ selectedStudents, onClose, onSuccess }: Creat
             <div className="mt-3 pt-3 border-t border-blue-500/30">
               <div className="text-sm text-slate-400">
                 Total Capacity: <span className={`font-bold ${totalCapacity > 18 ? 'text-red-400' : 'text-green-400'}`}>
-                  {totalCapacity} slots
+                  {totalCapacity} / 18
                 </span>
-                {totalCapacity > 18 && (
-                  <span className="text-red-400 block mt-1">⚠️ Exceeds load capacity!</span>
-                )}
+                {totalCapacity > 18 && <span className="text-red-400 ml-2">⚠️ Over capacity!</span>}
               </div>
             </div>
           </div>
@@ -80,16 +90,16 @@ export function CreateGroupModal({ selectedStudents, onClose, onSuccess }: Creat
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+              className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={handleCreate}
               disabled={loading || !groupName.trim()}
-              className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Creating...' : '✓ Create Group'}
+              {loading ? 'Creating...' : 'Create Group'}
             </button>
           </div>
         </div>

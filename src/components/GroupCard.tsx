@@ -1,9 +1,9 @@
-// src/components/GroupCard.tsx - FIXED with proper drag end handling
+// src/components/GroupCard.tsx - FIXED to use studentAccountIds
 
 'use client'
 
 import React, { useState } from 'react'
-import { useUpdateGroup, useDeleteGroup } from '@/hooks/useDatabase'
+import { useUpdateGroup, useDeleteGroup, useRemoveStudentFromGroup } from '@/hooks/useDatabase'
 import type { Group, QueueStudent } from '@/types'
 
 interface GroupCardProps {
@@ -14,7 +14,7 @@ interface GroupCardProps {
   onDragStart?: (e: React.DragEvent, groupId: string) => void
   onStudentDrop?: (groupId: string, studentId: string) => Promise<void>
   onStudentDragStart?: (e: React.DragEvent, studentId: string) => void
-  onStudentDragEnd?: () => void  // 🔥 NEW: Callback when student drag ends
+  onStudentDragEnd?: () => void
 }
 
 export function GroupCard({ 
@@ -25,11 +25,12 @@ export function GroupCard({
   onDragStart,
   onStudentDrop,
   onStudentDragStart,
-  onStudentDragEnd  // 🔥 NEW
+  onStudentDragEnd
 }: GroupCardProps) {
 
   const { update } = useUpdateGroup()
   const { deleteGroup, loading } = useDeleteGroup()
+  const { removeStudent } = useRemoveStudentFromGroup()
   const [showEdit, setShowEdit] = useState(false)
   const [editName, setEditName] = useState(group.name)
   const [isDragOver, setIsDragOver] = useState(false)
@@ -62,12 +63,13 @@ export function GroupCard({
     }
   }
 
-  const handleRemoveStudent = async (studentId: string) => {
-    const updatedStudentIds = group.studentIds.filter(id => id !== studentId)
+  // ✅ FIXED: Use studentAccountId instead of student.id
+  const handleRemoveStudent = async (student: QueueStudent) => {
+    // ✅ Check remaining count in studentAccountIds array
+    const remainingCount = group.studentAccountIds.length - 1
     
-    if (updatedStudentIds.length <= 1) {
-      const remainingCount = updatedStudentIds.length
-      const studentName = students.find(s => s.id === studentId)?.name || 'this student'
+    if (remainingCount <= 1) {
+      const studentName = student.name
       const message = remainingCount === 1 
         ? `Removing ${studentName} will leave only 1 student. Groups need at least 2 students.\n\nDo you want to delete the entire group?`
         : `Removing ${studentName} will empty the group.\n\nDo you want to delete the entire group?`
@@ -77,77 +79,57 @@ export function GroupCard({
       }
       return
     }
-    
+
     try {
-      await update(group.id, { studentIds: updatedStudentIds })
+      // ✅ FIX: Pass studentAccountId (permanent) instead of queue ID (temporary)
+      await removeStudent(group.id, student.studentAccountId)
     } catch (error) {
       console.error('Failed to remove student from group:', error)
       alert('Failed to remove student from group')
     }
   }
 
-  const handleDragStart = (e: React.DragEvent) => {
-    if (onDragStart) {
-      e.dataTransfer.effectAllowed = 'move'
-      onDragStart(e, group.id)
-    }
-  }
-
-  const handleDragEnd = (e: React.DragEvent) => {
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.style.opacity = '1'
-    }
-  }
-
   const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragOver(true)
+    if (onStudentDrop) {
+      e.preventDefault()
+      setIsDragOver(true)
+    }
   }
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
+  const handleDragLeave = () => {
     setIsDragOver(false)
   }
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault()
-    e.stopPropagation()
     setIsDragOver(false)
     
-    const studentId = e.dataTransfer.getData('studentId')
-    
-    if (studentId && onStudentDrop) {
-      try {
+    if (onStudentDrop) {
+      const studentId = e.dataTransfer.getData('studentId')
+      if (studentId) {
         await onStudentDrop(group.id, studentId)
-      } catch (error) {
-        console.error('Failed to add student to group:', error)
-        alert('Failed to add student to group')
       }
     }
   }
 
-  // 🔥 Handler for student drag end to reset opacity AND notify parent
-  const handleStudentDragEnd = (e: React.DragEvent) => {
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.style.opacity = '1'
-    }
-    // Notify parent that drag has ended
+  const handleStudentDragEnd = () => {
     if (onStudentDragEnd) {
       onStudentDragEnd()
     }
   }
 
   return (
-    <div 
+    <div
       draggable={draggable}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
+      onDragStart={(e) => {
+        if (onDragStart && draggable) {
+          onDragStart(e, group.id)
+        }
+      }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-xl p-4 transition-all ${
+      className={`bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-lg p-4 transition-all ${
         isDragOver 
           ? 'border-4 border-green-400 scale-105 shadow-2xl bg-green-500/30' 
           : 'border-2 border-purple-500/50'
@@ -231,7 +213,7 @@ export function GroupCard({
                   onStudentDragStart(e, student.id)
                 }
               }}
-              onDragEnd={handleStudentDragEnd}  // 🔥 Reset opacity and notify parent
+              onDragEnd={handleStudentDragEnd}
               className={`bg-slate-800/50 rounded-lg p-3 flex items-center justify-between ${
                 onStudentDragStart ? 'cursor-move hover:bg-slate-700/50' : ''
               } transition-all`}
@@ -245,7 +227,7 @@ export function GroupCard({
                 </div>
               </div>
               <button
-                onClick={() => handleRemoveStudent(student.id)}
+                onClick={() => handleRemoveStudent(student)}
                 className="text-red-400 hover:text-red-300 hover:bg-red-500/20 p-2 rounded transition-colors"
                 title="Remove from group"
               >

@@ -1,4 +1,5 @@
-// src/hooks/useDatabase.ts - COMPLETE WITH STUDENT ACCOUNTS AND SETTINGS
+// src/hooks/useDatabase.ts - COMPLETE WITH MEMORY LEAK FIX
+// ✅ FIXED: Added mounted flag to prevent state updates after unmount
 
 import { useState, useEffect, useCallback } from 'react'
 import { db } from '@/services'
@@ -37,6 +38,7 @@ interface UseSingleDataResult<T> {
   refresh: () => void
 }
 
+// ✅ BUG FIX #5: Memory leak prevention with mounted flag
 function useRealtimeData<T>(
   subscriber: (callback: (data: T[]) => void) => () => void
 ): UseDataResult<T> {
@@ -46,23 +48,30 @@ function useRealtimeData<T>(
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
+    let mounted = true // Track if component is still mounted
     setLoading(true)
     setError(null)
     
     try {
       const unsubscribe = subscriber((data) => {
-        setData(data)
-        setLoading(false)
+        if (mounted) { // Only update state if still mounted
+          setData(data)
+          setLoading(false)
+        }
       })
 
       return () => {
+        mounted = false // Prevent state updates after unmount
         if (typeof unsubscribe === 'function') {
           unsubscribe()
+          console.log('✅ Firebase subscription cleaned up')
         }
       }
     } catch (err) {
-      setError(err as Error)
-      setLoading(false)
+      if (mounted) {
+        setError(err as Error)
+        setLoading(false)
+      }
       console.error('Firebase subscription error:', err)
     }
   }, [subscriber, refreshKey])
@@ -74,6 +83,7 @@ function useRealtimeData<T>(
   return { data, loading, error, refresh }
 }
 
+// ✅ BUG FIX #5: Also fix for single data subscriptions
 function useRealtimeSingleData<T>(
   subscriber: (callback: (data: T) => void) => () => void
 ): UseSingleDataResult<T> {
@@ -83,23 +93,30 @@ function useRealtimeSingleData<T>(
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
+    let mounted = true // Track if component is still mounted
     setLoading(true)
     setError(null)
     
     try {
       const unsubscribe = subscriber((data) => {
-        setData(data)
-        setLoading(false)
+        if (mounted) { // Only update state if still mounted
+          setData(data)
+          setLoading(false)
+        }
       })
 
       return () => {
+        mounted = false // Prevent state updates after unmount
         if (typeof unsubscribe === 'function') {
           unsubscribe()
+          console.log('✅ Firebase single data subscription cleaned up')
         }
       }
     } catch (err) {
-      setError(err as Error)
-      setLoading(false)
+      if (mounted) {
+        setError(err as Error)
+        setLoading(false)
+      }
       console.error('Firebase subscription error:', err)
     }
   }, [subscriber, refreshKey])
@@ -595,6 +612,25 @@ export function useAddStudentToGroup() {
 
   return { addStudent, loading, error }
 }
+export function useRemoveStudentFromGroup() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const removeStudent = useCallback(async (groupId: string, studentAccountId: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.removeStudentFromGroup(groupId, studentAccountId)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { removeStudent, loading, error }
+}
 
 // ==================== PERIODS ====================
 
@@ -649,7 +685,7 @@ export function useUpdatePeriod() {
   return { update, loading, error }
 }
 
-// ==================== SETTINGS (NEW) ====================
+// ==================== SETTINGS ====================
 
 export function useSettings() {
   return useRealtimeSingleData<AppSettings>(db.subscribeToSettings)

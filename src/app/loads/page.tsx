@@ -1,6 +1,7 @@
-// src/app/loads/page.tsx - COMPLETE FIXED FILE
-// ✅ FIXED: Group weight validation added
-// ✅ FIXED: Original queue timestamp preservation added
+// src/app/loads/page.tsx - COMPLETE FIXED VERSION
+// ✅ Fixed syntax errors
+// ✅ Uses studentAccountIds for groups
+// ✅ Prevents duplicate drops
 
 'use client'
 
@@ -58,6 +59,14 @@ export default function LoadBuilderPage() {
       }
     }
   }, [])
+  
+  // 🔍 DEBUG: Log when loads change
+  useEffect(() => {
+    console.log('🔄 Loads updated:', loads.length, 'loads')
+    loads.forEach(load => {
+      console.log(`  Load ${load.name}: ${load.assignments?.length || 0} assignments`)
+    })
+  }, [loads])
   
   // ============================================
   // COMPUTED VALUES
@@ -119,23 +128,27 @@ export default function LoadBuilderPage() {
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
   }, [queue, searchTerm, selectedJumpType])
   
-  // Get queue groups
+  // Get queue groups - ✅ FIXED: Use studentAccountIds
   const queueGroups = useMemo(() => {
-  return groups.map(groupDoc => {
-    const groupId = groupDoc.id
-    const students = filteredQueue.filter(s => s.groupId === groupId)
-    
-    // Only return groups that have students in the current filtered queue
-    if (students.length > 0) {
-      return {
-        ...groupDoc,
-        students,
-        groupId
+    return groups.map(groupDoc => {
+      const groupId = groupDoc.id
+      
+      // ✅ FIX: Match by studentAccountId (permanent) instead of QueueStudent.id
+      const students = filteredQueue.filter(s => 
+        groupDoc.studentAccountIds.includes(s.studentAccountId)
+      )
+      
+      // Only return groups that have students in the current filtered queue
+      if (students.length > 0) {
+        return {
+          ...groupDoc,
+          students,
+          groupId
+        }
       }
-    }
-    return null
-  }).filter((g): g is (Group & { students: QueueStudent[], groupId: string }) => g !== null)
-}, [filteredQueue, groups])
+      return null
+    }).filter((g): g is (Group & { students: QueueStudent[], groupId: string }) => g !== null)
+  }, [filteredQueue, groups])
   
   // Separate individual students
   const individualStudents = useMemo(() => {
@@ -161,7 +174,7 @@ export default function LoadBuilderPage() {
   const buildingLoads = loads.filter(l => l.status === 'building')
   
   // ============================================
-  // ✅ BUG FIX #2: Group weight validation function
+  // Group weight validation function
   // ============================================
   
   const validateGroupAssignments = (
@@ -254,74 +267,6 @@ export default function LoadBuilderPage() {
       })
       
       console.log(`⏰ Delayed ${load.name} by ${minutes} minutes. Total delay: ${newDelay} minutes`)
-      
-      // Auto re-optimize affected loads
-      const buildingLoads = loads.filter(l => l.status === 'building')
-      
-      if (buildingLoads.length > 0) {
-        console.log('🔄 Re-optimizing building loads after delay...')
-        
-        for (const buildingLoad of buildingLoads) {
-          const updatedAssignments = [...(buildingLoad.assignments || [])]
-          let madeChanges = false
-          
-          for (const assignment of updatedAssignments) {
-            if (!assignment.instructorId) {
-              const availableInstructors = instructors
-                .filter(i => {
-                  if (!i.clockedIn) return false
-                  
-                  const canTandem = i.canTandem
-                  const canAFF = i.canAFF
-                  
-                  if (assignment.jumpType === 'tandem' && !canTandem) return false
-                  if (assignment.jumpType === 'aff' && !canAFF) return false
-                  
-                  if (assignment.jumpType === 'tandem' && i.tandemWeightLimit) {
-                    const totalWeight = assignment.studentWeight + (assignment.tandemWeightTax || 0)
-                    if (totalWeight > i.tandemWeightLimit) return false
-                  }
-                  if (assignment.jumpType === 'aff' && i.affWeightLimit) {
-                    if (assignment.studentWeight > i.affWeightLimit) return false
-                  }
-                  
-                  return true
-                })
-                .sort((a, b) => {
-                  const balanceA = instructorBalances.get(a.id) || 0
-                  const balanceB = instructorBalances.get(b.id) || 0
-                  return balanceA - balanceB
-                })
-              
-              if (availableInstructors.length > 0) {
-                const bestInstructor = availableInstructors[0]
-                
-                const assignmentIndex = updatedAssignments.findIndex(a => a.id === assignment.id)
-                if (assignmentIndex >= 0) {
-                  updatedAssignments[assignmentIndex] = {
-                    ...updatedAssignments[assignmentIndex],
-                    instructorId: bestInstructor.id,
-                    instructorName: bestInstructor.name
-                  }
-                  madeChanges = true
-                  console.log(`✅ Re-assigned ${assignment.studentName} to ${bestInstructor.name} on ${buildingLoad.name}`)
-                }
-              }
-            }
-          }
-          
-          if (madeChanges) {
-            await updateLoad(buildingLoad.id, {
-              assignments: updatedAssignments
-            })
-          }
-        }
-        
-        console.log('✅ Re-optimization complete!')
-      } else {
-        console.log('ℹ️ No building loads need re-optimization')
-      }
-      
     } catch (error) {
       console.error('Failed to delay load:', error)
       alert('Failed to delay load')
@@ -329,10 +274,12 @@ export default function LoadBuilderPage() {
   }
   
   const handleDragStart = (type: 'student' | 'assignment' | 'group', id: string, sourceLoadId?: string) => {
+    console.log('🎯 DRAG START:', { type, id, sourceLoadId })
     setDraggedItem({ type, id, sourceLoadId })
   }
   
   const handleDragEnd = () => {
+    console.log('🏁 DRAG END')
     setDraggedItem(null)
     setDropTarget(null)
   }
@@ -350,7 +297,7 @@ export default function LoadBuilderPage() {
       const updatedAssignments = sourceLoad.assignments?.filter(a => a.id !== draggedItem.id) || []
       await updateLoad(sourceLoad.id, { assignments: updatedAssignments })
       
-      // ✅ BUG FIX #3: Preserve original timestamp
+      // Preserve original timestamp
       const timestamp = assignment.originalQueueTimestamp || 
         new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       
@@ -373,17 +320,48 @@ export default function LoadBuilderPage() {
       alert('Failed to move student to queue')
     }
   }
-  
+
   const handleDrop = async (loadId: string) => {
-    if (!draggedItem) return
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('🎯 HANDLE DROP CALLED')
+    console.log('  LoadId:', loadId)
+    console.log('  DraggedItem:', draggedItem)
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    
+    if (!draggedItem) {
+      console.log('❌ No dragged item - aborting')
+      return
+    }
+    
+    // 🔥 FIX: Prevent dropping assignment back onto same load (creates duplicates)
+    if (draggedItem.type === 'assignment' && draggedItem.sourceLoadId === loadId) {
+      console.log('⚠️ Cannot drop assignment back onto same load - aborting')
+      setDraggedItem(null)
+      return
+    }
     
     const load = loads.find(l => l.id === loadId)
-    if (!load) return
+    if (!load) {
+      console.log('❌ Load not found - aborting')
+      return
+    }
+    
+    console.log('📦 Target Load:', {
+      id: load.id,
+      name: load.name,
+      currentAssignments: load.assignments?.length || 0
+    })
     
     try {
       if (draggedItem.type === 'student') {
+        console.log('👤 Processing INDIVIDUAL STUDENT drop')
         const student = queue.find(s => s.id === draggedItem.id)
-        if (!student) return
+        if (!student) {
+          console.log('❌ Student not found in queue')
+          return
+        }
+        
+        console.log('  Student:', student.name, student.weight, 'lbs')
         
         // Check capacity
         const currentPeople = (load.assignments || []).reduce((sum, a) => {
@@ -391,46 +369,86 @@ export default function LoadBuilderPage() {
         }, 0)
         const newPeople = 2 + (student.outsideVideo ? 1 : 0)
         
+        console.log('  Capacity check:', { currentPeople, newPeople, capacity: load.capacity || 18 })
+        
         if (currentPeople + newPeople > (load.capacity || 18)) {
           alert(`❌ Not enough capacity. Need ${newPeople} seats, only ${(load.capacity || 18) - currentPeople} available.`)
           return
         }
         
-        // ✅ BUG FIX #3: Create assignment with original timestamp preserved
         const newAssignment: LoadAssignment = {
-          id: `${Date.now()}-${Math.random()}`,
-          studentId: student.id,
+          id: `single-${load.id}-${student.id}`,
+          studentId: student.studentAccountId,
           instructorId: null,
           studentName: student.name,
           studentWeight: student.weight,
           jumpType: student.jumpType,
           isRequest: student.isRequest,
-          originalQueueTimestamp: student.timestamp, // Preserve original timestamp
+          originalQueueTimestamp: student.timestamp,
           tandemWeightTax: student.tandemWeightTax,
           tandemHandcam: student.tandemHandcam,
           hasOutsideVideo: student.outsideVideo,
           affLevel: student.affLevel
         }
         
+        console.log('  New assignment created:', newAssignment)
+        
+        const updatedAssignments = [...(load.assignments || []), newAssignment]
+        console.log('  Updating load with', updatedAssignments.length, 'assignments')
+        
         await updateLoad(loadId, {
-          assignments: [...(load.assignments || []), newAssignment]
+          assignments: updatedAssignments
         })
         
+        console.log('✅ Load updated, removing from queue')
         await db.removeFromQueue(student.id)
+        console.log('✅ Student removed from queue')
         
       } else if (draggedItem.type === 'group') {
-        // ✅ BUG FIX #2: Validate group weight limits
-        const group = groups.find(g => g.id === draggedItem.id)
-        if (!group) return
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.log('👥 Processing GROUP drop')
+        console.log('  Group ID:', draggedItem.id)
         
-        const groupStudents = queue.filter(s => group.studentIds.includes(s.id))
+        const group = groups.find(g => g.id === draggedItem.id)
+        console.log('  Group found:', group ? `YES - ${group.name}` : 'NO')
+        
+        if (!group) {
+          console.log('❌ Group not found - aborting')
+          alert('Group not found')
+          return
+        }
+        
+        console.log('  Group details:', {
+          name: group.name,
+          studentAccountIds: group.studentAccountIds,
+          studentCount: group.studentAccountIds.length
+        })
+        
+        // ✅ FIX: Match by studentAccountId (permanent)
+        const groupStudents = queue.filter(s => 
+          group.studentAccountIds.includes(s.studentAccountId)
+        )
+        
+        console.log('  Students in queue:', groupStudents.length)
+        groupStudents.forEach(s => {
+          console.log(`    - ${s.name} (${s.weight}lbs) - Account ID: ${s.studentAccountId}`)
+        })
+        
+        if (groupStudents.length === 0) {
+          console.log('❌ No students in group found in queue')
+          alert('⚠️ No students found in this group. They may have already been assigned.')
+          return
+        }
         
         // VALIDATE WEIGHT LIMITS
+        console.log('  Validating weight limits...')
         const validation = validateGroupAssignments(groupStudents, load)
         if (!validation.valid) {
+          console.log('❌ Validation failed:', validation.errors)
           alert(`❌ Cannot assign group to ${load.name}:\n\n${validation.errors.join('\n')}`)
           return
         }
+        console.log('✅ Weight validation passed')
         
         // Check capacity
         const currentPeople = (load.assignments || []).reduce((sum, a) => {
@@ -441,43 +459,91 @@ export default function LoadBuilderPage() {
           return sum + 2 + (s.outsideVideo ? 1 : 0)
         }, 0)
         
+        console.log('  Capacity check:', { 
+          currentPeople, 
+          newPeople, 
+          total: currentPeople + newPeople,
+          capacity: load.capacity || 18 
+        })
+        
         if (currentPeople + newPeople > (load.capacity || 18)) {
+          console.log('❌ Not enough capacity')
           alert(`❌ Not enough capacity. Need ${newPeople} seats, only ${(load.capacity || 18) - currentPeople} available.`)
           return
         }
+        console.log('✅ Capacity check passed')
         
-        // ✅ BUG FIX #3: Create assignments with original timestamps preserved
-        const newAssignments: LoadAssignment[] = groupStudents.map(student => ({
-          id: `${Date.now()}-${Math.random()}`,
-          studentId: student.id,
-          instructorId: null,
-          studentName: student.name,
-          studentWeight: student.weight,
-          jumpType: student.jumpType,
-          isRequest: student.isRequest,
-          groupId: group.id,
-          originalQueueTimestamp: student.timestamp, // Preserve original timestamp
-          tandemWeightTax: student.tandemWeightTax,
-          tandemHandcam: student.tandemHandcam,
-          hasOutsideVideo: student.outsideVideo,
-          affLevel: student.affLevel
-        }))
-        
-        await updateLoad(loadId, {
-          assignments: [...(load.assignments || []), ...newAssignments]
+        // Create assignments
+        console.log('  Creating assignments...')
+        const newAssignments: LoadAssignment[] = groupStudents.map((student, index) => {
+          const assignment = {
+            id: `grp-${group.id}-${index}-${student.id}`,
+            studentId: student.studentAccountId,
+            instructorId: null,
+            studentName: student.name,
+            studentWeight: student.weight,
+            jumpType: student.jumpType,
+            isRequest: student.isRequest,
+            groupId: group.id,
+            originalQueueTimestamp: student.timestamp,
+            tandemWeightTax: student.tandemWeightTax,
+            tandemHandcam: student.tandemHandcam,
+            hasOutsideVideo: student.outsideVideo,
+            affLevel: student.affLevel
+          }
+          console.log(`    Assignment ${index + 1}:`, assignment)
+          return assignment
         })
         
-        await db.removeMultipleFromQueue(groupStudents.map(s => s.id))
+        const currentAssignments = load.assignments || []
+        const allAssignments = [...currentAssignments, ...newAssignments]
+        
+        console.log('  Current load assignments:', currentAssignments.length)
+        console.log('  New group assignments:', newAssignments.length)
+        console.log('  Total assignments after merge:', allAssignments.length)
+        
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.log('🔥 CALLING updateLoad')
+        console.log('  Load ID:', loadId)
+        console.log('  Assignments to save:', allAssignments.length)
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        
+        try {
+          await updateLoad(loadId, {
+            assignments: allAssignments
+          })
+          console.log('✅ updateLoad completed successfully')
+          
+          console.log('🗑️ Removing students from queue...')
+          const studentIdsToRemove = groupStudents.map(s => s.id)
+          console.log('  IDs to remove:', studentIdsToRemove)
+          
+          await db.removeMultipleFromQueue(studentIdsToRemove)
+          console.log('✅ Students removed from queue')
+          
+        } catch (error) {
+          console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+          console.error('❌ ERROR in updateLoad or removeMultipleFromQueue')
+          console.error('Error:', error)
+          console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+          alert('Failed to add group to load: ' + error)
+          return
+        }
         
       } else if (draggedItem.type === 'assignment' && draggedItem.sourceLoadId) {
-        // Moving between loads
+        console.log('📋 Processing ASSIGNMENT move')
         const sourceLoad = loads.find(l => l.id === draggedItem.sourceLoadId)
-        if (!sourceLoad) return
+        if (!sourceLoad) {
+          console.log('❌ Source load not found')
+          return
+        }
         
         const assignment = sourceLoad.assignments?.find(a => a.id === draggedItem.id)
-        if (!assignment) return
+        if (!assignment) {
+          console.log('❌ Assignment not found in source load')
+          return
+        }
         
-        // Check capacity in target load
         const currentPeople = (load.assignments || []).reduce((sum, a) => {
           return sum + 2 + (a.hasOutsideVideo ? 1 : 0)
         }, 0)
@@ -488,26 +554,29 @@ export default function LoadBuilderPage() {
           return
         }
         
-        // Remove from source
         const updatedSourceAssignments = sourceLoad.assignments?.filter(a => a.id !== draggedItem.id) || []
         await updateLoad(sourceLoad.id, { assignments: updatedSourceAssignments })
         
-        // Add to target
         await updateLoad(loadId, {
           assignments: [...(load.assignments || []), assignment]
         })
+        
+        console.log('✅ Assignment moved successfully')
       }
+      
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('✅ handleDrop completed successfully')
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
       
       setDraggedItem(null)
     } catch (error) {
-      console.error('Failed to drop item:', error)
-      alert('Failed to assign to load')
+      console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.error('❌ CRITICAL ERROR in handleDrop')
+      console.error('Error:', error)
+      console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      alert('Failed to assign to load: ' + error)
     }
   }
-  
-  // ============================================
-  // RENDER
-  // ============================================
   
   if (loadsLoading || queueLoading) {
     return (

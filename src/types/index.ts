@@ -1,6 +1,5 @@
-// src/types/index.ts - COMPLETE VERSION WITH STUDENT ACCOUNTS
-// ✅ Added StudentAccount system
-// ✅ Updated QueueStudent to reference accounts
+// src/types/index.ts - COMPLETE VERSION WITH BUG FIX
+// ✅ FIXED: Added originalQueueTimestamp to LoadAssignment
 
 // ==================== BASIC TYPES ====================
 
@@ -78,11 +77,11 @@ export interface Period {
 export type CreatePeriod = Omit<Period, 'id' | 'isActive' | 'archivedAt' | 'finalBalances'>
 export type UpdatePeriod = Partial<Omit<Period, 'id'>>
 
-// ==================== STUDENT ACCOUNTS (NEW) ====================
+// ==================== STUDENT ACCOUNTS ====================
 
 export interface StudentAccount {
   id: string                    // Firebase generated ID
-  studentId: string             // ✅ EDITABLE ID (member number, manifest ID, etc.)
+  studentId: string             // Editable ID (member number, manifest ID, etc.)
   name: string
   email?: string
   phone?: string
@@ -108,11 +107,11 @@ export interface StudentAccount {
 export type CreateStudentAccount = Omit<StudentAccount, 'id' | 'createdAt' | 'totalJumps' | 'totalTandemJumps' | 'totalAFFJumps' | 'lastJumpDate' | 'isActive'>
 export type UpdateStudentAccount = Partial<Omit<StudentAccount, 'id' | 'createdAt'>>
 
-// ==================== QUEUE (UPDATED) ====================
+// ==================== QUEUE ====================
 
 export interface QueueStudent {
   id: string
-  studentAccountId: string      // ✅ NEW: References StudentAccount
+  studentAccountId: string      // References StudentAccount
   name: string                  // Cached from account
   weight: number
   jumpType: 'tandem' | 'aff'
@@ -132,9 +131,10 @@ export type CreateQueueStudent = Omit<QueueStudent, 'id' | 'timestamp'>
 export interface Group {
   id: string
   name: string
-  studentIds: string[]
+  studentAccountIds: string[]  // ✅ CHANGED: Now stores permanent StudentAccount IDs
   createdAt: string
 }
+
 
 // ==================== CLOCK EVENTS ====================
 
@@ -149,6 +149,7 @@ export interface ClockEvent {
 
 // ==================== LOADS ====================
 
+// ✅ BUG FIX #3: Added originalQueueTimestamp field
 export interface LoadAssignment {
   id: string
   studentId: string
@@ -165,7 +166,7 @@ export interface LoadAssignment {
   videoInstructorId?: string | null
   videoInstructorName?: string
   affLevel?: 'upper' | 'lower'
-  originalQueueTimestamp?: string
+  originalQueueTimestamp?: string  // ✅ ADDED: Preserves original queue position
 }
 
 export interface Load {
@@ -179,7 +180,7 @@ export interface Load {
   departedAt?: string
   completedAt?: string
   delayMinutes?: number
-  countdownStartTime?: string  // ✅ ADDED: Timer start time for countdown
+  countdownStartTime?: string  // Timer start time for countdown
 }
 
 export type CreateLoad = Omit<Load, 'id' | 'createdAt'>
@@ -214,7 +215,7 @@ export interface SystemStats {
 }
 
 // ==================== SETTINGS ====================
-// Settings Types
+
 export interface AutoAssignSettings {
   enabled: boolean
   delay: number
@@ -259,7 +260,7 @@ export interface DatabaseState {
   assignments: Assignment[]
   loads: Load[]
   studentQueue: QueueStudent[]
-  studentAccounts: StudentAccount[]  // ✅ NEW
+  studentAccounts: StudentAccount[]
   groups: Group[]
   clockEvents: ClockEvent[]
   periods: Period[]

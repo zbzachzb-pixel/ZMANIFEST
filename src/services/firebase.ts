@@ -448,69 +448,163 @@ export class FirebaseService implements DatabaseService {
     return unsubscribe
   }
   
-  // ==================== GROUPS ====================
+ // ==================== GROUPS ====================
+
+async createGroup(name: string, studentAccountIds: string[]): Promise<Group> {
+  console.log('🔥 Creating group with studentAccountIds:', studentAccountIds)
   
-  async createGroup(name: string, studentIds: string[]): Promise<Group> {
-    const newGroup: Group = {
-      id: this.generateId(),
-      name,
-      studentIds,
-      createdAt: new Date().toISOString()
-    }
-    
-    const cleanedGroup = this.cleanData(newGroup)
-    const groupRef = ref(this.db, `groups/${newGroup.id}`)
-    await set(groupRef, cleanedGroup)
-    
-    return newGroup
+  const newGroup: Group = {
+    id: this.generateId(),
+    name,
+    studentAccountIds,  // ✅ Store permanent StudentAccount IDs
+    createdAt: new Date().toISOString()
   }
   
-  async getGroups(): Promise<Group[]> {
-    return this.getData<Group>('groups')
-  }
+  const cleanedGroup = this.cleanData(newGroup)
+  const groupRef = ref(this.db, `groups/${newGroup.id}`)
+  await set(groupRef, cleanedGroup)
   
-  async updateGroup(id: string, updates: Partial<Group>): Promise<void> {
-    const groupRef = ref(this.db, `groups/${id}`)
-    const cleanedUpdates = this.cleanData(updates)
-    await update(groupRef, cleanedUpdates)
-  }
+  // ✅ Set groupId on queue students by matching studentAccountId
+  const queue = await this.getQueue()
+  const updates: any = {}
   
-  async deleteGroup(id: string): Promise<void> {
-    const groupRef = ref(this.db, `groups/${id}`)
-    await remove(groupRef)
-  }
-  
-  async addStudentToGroup(groupId: string, studentId: string): Promise<void> {
-    const groupRef = ref(this.db, `groups/${groupId}`)
-    const snapshot = await get(groupRef)
-    
-    if (snapshot.exists()) {
-      const group = snapshot.val()
-      const updatedStudentIds = [...(group.studentIds || []), studentId]
-      await update(groupRef, { studentIds: updatedStudentIds })
+  for (const student of queue) {
+    if (studentAccountIds.includes(student.studentAccountId)) {
+      updates[`queue/${student.id}/groupId`] = newGroup.id
+      console.log(`  ✅ Setting groupId for student account ${student.studentAccountId} (queue id: ${student.id})`)
     }
   }
   
-  // ✅ ADDED: Missing method from interface
-  async removeStudentFromGroup(groupId: string, studentId: string): Promise<void> {
-    const groupRef = ref(this.db, `groups/${groupId}`)
-    const snapshot = await get(groupRef)
+  if (Object.keys(updates).length > 0) {
+    const rootRef = ref(this.db)
+    await update(rootRef, updates)
+    console.log('✅ All students updated with groupId')
+  }
+  
+  return newGroup
+}
+
+async getGroups(): Promise<Group[]> {
+  return this.getData<Group>('groups')
+}
+
+async updateGroup(id: string, updates: Partial<Group>): Promise<void> {
+  const groupRef = ref(this.db, `groups/${id}`)
+  const cleanedUpdates = this.cleanData(updates)
+  await update(groupRef, cleanedUpdates)
+}
+
+async deleteGroup(id: string): Promise<void> {
+  console.log('🗑️ Deleting group:', id)
+  
+  const groupRef = ref(this.db, `groups/${id}`)
+  const snapshot = await get(groupRef)
+  
+  if (snapshot.exists()) {
+    const group = snapshot.val()
+    const queue = await this.getQueue()
     
-    if (snapshot.exists()) {
-      const group = snapshot.val()
-      const updatedStudentIds = (group.studentIds || []).filter((id: string) => id !== studentId)
-      await update(groupRef, { studentIds: updatedStudentIds })
+    console.log('  Group studentAccountIds:', group.studentAccountIds)
+    
+    // Clear groupId from all queue students that match this group's studentAccountIds
+    const updates: any = {}
+    for (const student of queue) {
+      if (group.studentAccountIds.includes(student.studentAccountId)) {
+        updates[`queue/${student.id}/groupId`] = null
+        console.log(`  ✅ Clearing groupId from student account ${student.studentAccountId}`)
+      }
+    }
+    
+    if (Object.keys(updates).length > 0) {
+      const rootRef = ref(this.db)
+      await update(rootRef, updates)
+      console.log('  ✅ All students ungrouped')
     }
   }
   
-  subscribeToGroups(callback: (groups: Group[]) => void): () => void {
-    const groupsRef = ref(this.db, 'groups')
-    const unsubscribe = onValue(groupsRef, (snapshot) => {
-      const data = snapshot.val()
-      callback(data ? Object.values(data) : [])
-    })
-    return unsubscribe
+  await remove(groupRef)
+  console.log('✅ Group deleted')
+}
+
+async addStudentToGroup(groupId: string, studentAccountId: string): Promise<void> {
+  console.log('➕ Adding student to group:', { groupId, studentAccountId })
+  
+  const groupRef = ref(this.db, `groups/${groupId}`)
+  const snapshot = await get(groupRef)
+  
+  if (snapshot.exists()) {
+    const group = snapshot.val()
+    const updatedStudentAccountIds = [...(group.studentAccountIds || []), studentAccountId]
+    
+    // Update the group with new studentAccountId
+    await update(groupRef, { studentAccountIds: updatedStudentAccountIds })
+    
+    // Find queue student with this studentAccountId and set their groupId
+    const queue = await this.getQueue()
+    const student = queue.find(s => s.studentAccountId === studentAccountId)
+    
+    if (student) {
+      const studentRef = ref(this.db, `queue/${student.id}`)
+      await update(studentRef, { groupId })
+      console.log('✅ Student added to group and groupId set')
+    } else {
+      console.log('⚠️ Student not found in queue, but added to group')
+    }
   }
+}
+
+async removeStudentFromGroup(groupId: string, studentAccountId: string): Promise<void> {
+  console.log('➖ Removing student from group:', { groupId, studentAccountId })
+  
+  const groupRef = ref(this.db, `groups/${groupId}`)
+  const snapshot = await get(groupRef)
+  
+  if (snapshot.exists()) {
+    const group = snapshot.val()
+    const updatedStudentAccountIds = (group.studentAccountIds || [])
+      .filter((id: string) => id !== studentAccountId)
+    
+    // Update the group
+    await update(groupRef, { studentAccountIds: updatedStudentAccountIds })
+    
+    // Find queue student and clear their groupId
+    const queue = await this.getQueue()
+    const student = queue.find(s => s.studentAccountId === studentAccountId)
+    
+    if (student) {
+      const studentRef = ref(this.db, `queue/${student.id}`)
+      await update(studentRef, { groupId: null })
+      console.log('✅ Student removed from group and groupId cleared')
+    }
+    
+    // If group now has 0 or 1 students, delete it
+    if (updatedStudentAccountIds.length <= 1) {
+      console.log('⚠️ Group has ≤1 student, deleting group')
+      
+      // Clear groupId from remaining student if any
+      if (updatedStudentAccountIds.length === 1) {
+        const remaining = queue.find(s => s.studentAccountId === updatedStudentAccountIds[0])
+        if (remaining) {
+          const remainingRef = ref(this.db, `queue/${remaining.id}`)
+          await update(remainingRef, { groupId: null })
+          console.log(`  ✅ Cleared groupId from remaining student ${remaining.studentAccountId}`)
+        }
+      }
+      
+      await remove(groupRef)
+      console.log('  ✅ Group deleted')
+    }
+  }
+}
+
+subscribeToGroups(callback: (groups: Group[]) => void): () => void {
+  const groupsRef = ref(this.db, 'groups')
+  const unsubscribe = onValue(groupsRef, (snapshot) => {
+    const data = snapshot.val()
+    callback(data ? Object.values(data) : [])
+  })
+  return unsubscribe
+}
   
   // ==================== PERIODS ====================
   
