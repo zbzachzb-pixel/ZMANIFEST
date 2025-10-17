@@ -32,7 +32,7 @@ export function StudentAccountModal({
     name: '',
     email: '',
     phone: '',
-    weight: 170,
+    weight: undefined,
     preferredJumpType: 'tandem'
   })
   
@@ -61,7 +61,7 @@ export function StudentAccountModal({
       name: '',
       email: '',
       phone: '',
-      weight: 170,
+      weight: undefined,
       preferredJumpType: 'tandem'
     })
   }
@@ -77,7 +77,7 @@ export function StudentAccountModal({
       name: '',
       email: '',
       phone: '',
-      weight: 170,
+      weight: undefined,
       preferredJumpType: 'tandem'
     })
   }
@@ -334,7 +334,7 @@ export function StudentAccountModal({
                       name: '',
                       email: '',
                       phone: '',
-                      weight: 170,
+                      weight: undefined,
                       preferredJumpType: 'tandem'
                     })
                   }}
