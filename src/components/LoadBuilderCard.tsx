@@ -52,7 +52,11 @@ export function LoadBuilderCard({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
-  const [assignmentSelections, setAssignmentSelections] = useState<Record<string, {instructorId: string, videoInstructorId?: string}>>({})
+  const [assignmentSelections, setAssignmentSelections] = useState<Record<string, {
+  instructorId: string
+  videoInstructorId?: string
+  isRequest: boolean
+}>>({})
   const [assignLoading, setAssignLoading] = useState(false)
   const [lastMilestone, setLastMilestone] = useState<number | null>(null)
   const [showBreathing, setShowBreathing] = useState(false)
@@ -187,80 +191,82 @@ export function LoadBuilderCard({
   
   // ==================== EFFECTS ====================
   useEffect(() => {
-    if (!showAssignModal) {
-      setAssignmentSelections({})
-      hasAutoSelected.current = false
-      return
-    }
-    
-    if (hasAutoSelected.current) return
-    hasAutoSelected.current = true
-    
-    const selections: Record<string, {instructorId: string, videoInstructorId?: string}> = {}
-    const usedInstructors = new Set<string>()
-    const usedVideoInstructors = new Set<string>()
-    
-    const currentAssignments = load.assignments || []
-    
-    currentAssignments.forEach(assignment => {
-      if (assignment.instructorId) {
-        const selection: {instructorId: string, videoInstructorId?: string} = {
-          instructorId: assignment.instructorId
+  if (!showAssignModal) {
+    setAssignmentSelections({})
+    hasAutoSelected.current = false
+    return
+  }
+  
+  if (hasAutoSelected.current) return
+  hasAutoSelected.current = true
+  
+  const selections: Record<string, {instructorId: string, videoInstructorId?: string, isRequest: boolean}> = {}
+  const usedInstructors = new Set<string>()
+  const usedVideoInstructors = new Set<string>()
+  
+  const currentAssignments = load.assignments || []
+  
+  currentAssignments.forEach(assignment => {
+    if (assignment.instructorId) {
+      const selection: {instructorId: string, videoInstructorId?: string, isRequest: boolean} = {
+        instructorId: assignment.instructorId,
+        isRequest: assignment.isRequest || false  // ✅ ADD THIS
+      }
+      
+      usedInstructors.add(assignment.instructorId)
+      
+      if (assignment.videoInstructorId) {
+        selection.videoInstructorId = assignment.videoInstructorId
+        usedVideoInstructors.add(assignment.videoInstructorId)
+      }
+      
+      selections[assignment.id] = selection
+    } else {
+      const qualified = getQualifiedInstructors(assignment)
+      const availableInstructor = qualified.find(i => !usedInstructors.has(i.id))
+      
+      if (availableInstructor) {
+        const selection: {instructorId: string, videoInstructorId?: string, isRequest: boolean} = {
+          instructorId: availableInstructor.id,
+          isRequest: false  // ✅ ADD THIS
         }
         
-        usedInstructors.add(assignment.instructorId)
+        usedInstructors.add(availableInstructor.id)
         
-        if (assignment.videoInstructorId) {
-          selection.videoInstructorId = assignment.videoInstructorId
-          usedVideoInstructors.add(assignment.videoInstructorId)
+        if (assignment.hasOutsideVideo) {
+          const videoInstructors = getVideoInstructors()
+          const availableVideoInstructor = videoInstructors.find(
+            i => !usedVideoInstructors.has(i.id) && i.id !== availableInstructor.id
+          )
+          
+          if (availableVideoInstructor) {
+            selection.videoInstructorId = availableVideoInstructor.id
+            usedVideoInstructors.add(availableVideoInstructor.id)
+          }
         }
         
         selections[assignment.id] = selection
-      } else {
-        const qualified = getQualifiedInstructors(assignment)
-        
-        const availableInstructor = qualified.find(i => !usedInstructors.has(i.id))
-        
-        if (availableInstructor) {
-          const selection: {instructorId: string, videoInstructorId?: string} = {
-            instructorId: availableInstructor.id
-          }
-          
-          usedInstructors.add(availableInstructor.id)
-          
-          if (assignment.hasOutsideVideo) {
-            const videoInstructors = getVideoInstructors()
-            
-            const availableVideoInstructor = videoInstructors.find(
-              i => !usedVideoInstructors.has(i.id) && i.id !== availableInstructor.id
-            )
-            
-            if (availableVideoInstructor) {
-              selection.videoInstructorId = availableVideoInstructor.id
-              usedVideoInstructors.add(availableVideoInstructor.id)
-            }
-          }
-          
-          selections[assignment.id] = selection
-        } else if (qualified.length > 0) {
-          const selection: {instructorId: string, videoInstructorId?: string} = {
-            instructorId: qualified[0].id
-          }
-          
-          if (assignment.hasOutsideVideo) {
-            const videoInstructors = getVideoInstructors()
-            if (videoInstructors.length > 0) {
-              selection.videoInstructorId = videoInstructors[0].id
-            }
-          }
-          
-          selections[assignment.id] = selection
+      } else if (qualified.length > 0) {
+        const selection: {instructorId: string, videoInstructorId?: string, isRequest: boolean} = {
+          instructorId: qualified[0].id,
+          isRequest: false  // ✅ ADD THIS
         }
+        
+        if (assignment.hasOutsideVideo) {
+          const videoInstructors = getVideoInstructors()
+          if (videoInstructors.length > 0) {
+            selection.videoInstructorId = videoInstructors[0].id
+          }
+        }
+        
+        selections[assignment.id] = selection
       }
-    })
-    
-    setAssignmentSelections(selections)
-  }, [showAssignModal, load.assignments, getQualifiedInstructors, getVideoInstructors])
+    }
+  })
+  
+  setAssignmentSelections(selections)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [showAssignModal])
   
   useEffect(() => {
     if (!isActive || countdown === null) {
@@ -588,44 +594,37 @@ export function LoadBuilderCard({
   
   // ==================== BULK ASSIGN ====================
   const handleBulkAssign = async () => {
-    if (Object.keys(assignmentSelections).length === 0) {
-      alert('No instructors selected to assign')
-      return
-    }
-    
-    setAssignLoading(true)
-    
-    try {
-      const updatedAssignments = loadAssignments.map(assignment => {
-        const selection = assignmentSelections[assignment.id]
-        
-        if (selection) {
-          if (showEditModal || !assignment.instructorId) {
-            return {
-              ...assignment,
-              instructorId: selection.instructorId,
-              instructorName: instructors.find(i => i.id === selection.instructorId)?.name || assignment.instructorName,
-              videoInstructorId: selection.videoInstructorId || assignment.videoInstructorId,
-              videoInstructorName: selection.videoInstructorId 
-                ? instructors.find(i => i.id === selection.videoInstructorId)?.name 
-                : assignment.videoInstructorName
-            }
-          }
-        }
-        return assignment
-      })
-      
-      await update(load.id, { assignments: updatedAssignments })
-      setShowAssignModal(false)
-      setShowEditModal(false)
-      setAssignmentSelections({})
-    } catch (error) {
-      console.error('Failed to assign instructors:', error)
-      alert('Failed to assign instructors')
-    } finally {
-      setAssignLoading(false)
-    }
+  if (Object.keys(assignmentSelections).length === 0) {
+    alert('No instructors selected to assign')
+    return
   }
+  
+  setAssignLoading(true)
+  
+  try {
+    const updatedAssignments = loadAssignments.map(assignment => {
+      const selection = assignmentSelections[assignment.id]
+      if (selection && !assignment.instructorId) {
+        return {
+          ...assignment,
+          instructorId: selection.instructorId,
+          videoInstructorId: selection.videoInstructorId || assignment.videoInstructorId,
+          isRequest: selection.isRequest  // ✅ ADD THIS LINE
+        }
+      }
+      return assignment
+    })
+    
+    await update(load.id, { assignments: updatedAssignments })
+    setShowAssignModal(false)
+    setAssignmentSelections({})
+  } catch (error) {
+    console.error('Failed to assign instructors:', error)
+    alert('Failed to assign instructors')
+  } finally {
+    setAssignLoading(false)
+  }
+}
   
   // ==================== RENDER ====================
   return (

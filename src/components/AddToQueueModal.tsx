@@ -1,5 +1,5 @@
 // src/components/AddToQueueModal.tsx
-// Updated to use Student Accounts System
+// ✅ UPDATED: Removed request checkbox - requests now marked at assignment time
 
 'use client'
 
@@ -29,7 +29,6 @@ export function AddToQueueModal({ isOpen, onClose, onSuccess }: AddToQueueModalP
   const [queueData, setQueueData] = useState({
     weight: 0,  // Will be set from account
     jumpType: 'tandem' as 'tandem' | 'aff',
-    isRequest: false,
     tandemWeightTax: 0,
     tandemHandcam: false,
     outsideVideo: false,
@@ -58,67 +57,43 @@ export function AddToQueueModal({ isOpen, onClose, onSuccess }: AddToQueueModalP
       name: selectedAccount.name,
       weight: queueData.weight,
       jumpType: queueData.jumpType,
-      isRequest: queueData.isRequest,
+      isRequest: false, // ✅ Always false - requests are marked at assignment time
       tandemWeightTax: queueData.jumpType === 'tandem' ? queueData.tandemWeightTax : undefined,
       tandemHandcam: queueData.jumpType === 'tandem' ? queueData.tandemHandcam : undefined,
       outsideVideo: queueData.jumpType === 'tandem' ? queueData.outsideVideo : undefined,
       affLevel: queueData.jumpType === 'aff' ? queueData.affLevel : undefined
     }
     
-    try {
-      await addToQueue(queueStudent)
-      onSuccess()
-      onClose()
-      
-      // Reset
-      setSelectedAccount(null)
-      setQueueData({
-        weight: 0,
-        jumpType: 'tandem',
-        isRequest: false,
-        tandemWeightTax: 0,
-        tandemHandcam: false,
-        outsideVideo: false,
-        affLevel: 'lower'
-      })
-    } catch (error) {
-      console.error('Failed to add to queue:', error)
-      alert('Failed to add student to queue')
-    }
+    await addToQueue(queueStudent)
+    onSuccess()
   }
   
   if (!isOpen) return null
   
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="bg-slate-800 rounded-xl border border-slate-700 max-w-lg w-full">
-          
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-slate-700 flex flex-col max-h-[90vh]">
           {/* Header */}
-          <div className="p-6 border-b border-slate-700 flex items-center justify-between">
-            <div>
+          <div className="p-6 border-b border-slate-700">
+            <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">Add Student to Queue</h2>
-              <p className="text-sm text-slate-400 mt-1">
-                Select a student account and configure jump details
-              </p>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5 text-slate-400" />
-            </button>
           </div>
           
           {/* Content */}
-          <div className="p-6 space-y-6">
-            
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
             {/* Student Account Selection */}
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Student Account *
+                Student Account
               </label>
-              
               {selectedAccount ? (
                 <div className="bg-slate-900 border-2 border-blue-500 rounded-lg p-4">
                   <div className="flex items-start justify-between mb-2">
@@ -180,10 +155,10 @@ export function AddToQueueModal({ isOpen, onClose, onSuccess }: AddToQueueModalP
                   </div>
                 </div>
                 
-                {/* Weight Override */}
+                {/* Weight */}
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Weight (lbs) <span className="text-slate-500 text-xs">- Override if needed</span>
+                    Weight (lbs)
                   </label>
                   <input
                     type="number"
@@ -262,23 +237,6 @@ export function AddToQueueModal({ isOpen, onClose, onSuccess }: AddToQueueModalP
                     </div>
                   </div>
                 )}
-                
-                {/* Request Toggle */}
-                <div className="flex items-center justify-between p-4 bg-slate-900 rounded-lg">
-                  <div>
-                    <div className="text-sm font-medium text-slate-300">Request Jump</div>
-                    <div className="text-xs text-slate-500">Won't count toward rotation balance</div>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={queueData.isRequest}
-                      onChange={(e) => setQueueData({ ...queueData, isRequest: e.target.checked })}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
               </>
             )}
           </div>
