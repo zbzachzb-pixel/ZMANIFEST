@@ -1,4 +1,5 @@
-// src/components/StudentCard.tsx - Updated to show Student ID
+// src/components/StudentCard.tsx
+// ✅ UPDATED: Shows notes in top right corner with tooltip
 
 'use client'
 
@@ -28,8 +29,9 @@ export function StudentCard({
   onDragStart
 }: StudentCardProps) {
   const [studentAccount, setStudentAccount] = useState<StudentAccount | null>(null)
+  const [showNotesTooltip, setShowNotesTooltip] = useState(false)
 
-  // Fetch the student account to get the student ID
+  // Fetch the student account to get the student ID and notes
   useEffect(() => {
     const fetchAccount = async () => {
       if (student.studentAccountId) {
@@ -61,6 +63,8 @@ export function StudentCard({
     }
   }
 
+  const hasNotes = studentAccount?.notes && studentAccount.notes.trim().length > 0
+
   return (
     <div
       onClick={onToggle}
@@ -73,8 +77,33 @@ export function StudentCard({
         selected 
           ? 'border-blue-500 bg-blue-500/10' 
           : 'border-white/20'
-      }`}
+      } relative`}
     >
+      {/* Notes Indicator - Top Right Corner */}
+      {hasNotes && (
+        <div 
+          className="absolute top-2 right-2 z-10"
+          onMouseEnter={() => setShowNotesTooltip(true)}
+          onMouseLeave={() => setShowNotesTooltip(false)}
+        >
+          <div className="bg-amber-500/20 text-amber-300 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold border border-amber-500/30 cursor-help">
+            📝
+          </div>
+          
+          {/* Tooltip */}
+          {showNotesTooltip && (
+            <div className="absolute top-8 right-0 bg-slate-900 border border-slate-600 rounded-lg p-3 shadow-xl min-w-[200px] max-w-[300px] z-50">
+              <div className="text-xs font-semibold text-amber-300 mb-1">Notes:</div>
+              <div className="text-xs text-slate-300 whitespace-pre-wrap break-words">
+                {studentAccount.notes}
+              </div>
+              {/* Arrow pointer */}
+              <div className="absolute -top-2 right-2 w-4 h-4 bg-slate-900 border-l border-t border-slate-600 transform rotate-45"></div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Group Indicator */}
       {groupName && (
         <div className="mb-2 flex items-center gap-1">
@@ -91,7 +120,7 @@ export function StudentCard({
       )}
 
       <div className="flex justify-between items-start mb-2">
-        <div className="flex-1">
+        <div className="flex-1 pr-8"> {/* Added pr-8 to make room for notes icon */}
           <div className="flex items-center gap-2 mb-1">
             <h3 className="text-lg font-bold text-white">{student.name}</h3>
             {studentAccount?.studentId && (

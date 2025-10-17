@@ -1059,6 +1059,31 @@ export function LoadBuilderCard({
                           </select>
                         </div>
                       )}
+                      
+                      {/* ✅ REQUEST CHECKBOX - NEWLY ADDED */}
+                      <div>
+                        <label className="flex items-center text-sm text-slate-300 cursor-pointer hover:text-white transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={selection?.isRequest || false}
+                            onChange={(e) => {
+                              setAssignmentSelections(prev => ({
+                                ...prev,
+                                [assignment.id]: {
+                                  ...prev[assignment.id],
+                                  instructorId: prev[assignment.id]?.instructorId || '',
+                                  isRequest: e.target.checked
+                                }
+                              }))
+                            }}
+                            className="w-4 h-4 mr-2 rounded border-slate-500 text-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-slate-700"
+                          />
+                          <span className="select-none">
+                            Mark as Request 
+                            <span className="text-slate-400 ml-1">(won't count toward balance)</span>
+                          </span>
+                        </label>
+                      </div>
                     </div>
                   </div>
                 )
