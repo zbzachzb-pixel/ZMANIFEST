@@ -1,8 +1,13 @@
 // src/components/LoadBuilderCard.tsx
-// ✅ COMPLETE WORKING VERSION
-// ✅ Fixed: Edit Instructors button added
-// ✅ Fixed: Only unassigned students show in Assign mode
-// ✅ Fixed: All syntax errors resolved
+// ✅ BUGS 1-6 FIXED VERSION + CASCADING TIMER FIX + BIDIRECTIONAL CALL CHANGES
+// ✅ Bug #1: Assign/Edit buttons for ready state
+// ✅ Bug #2: Can swap instructors in edit mode
+// ✅ Bug #3: Save changes actually update
+// ✅ Bug #4: Videographers checked for back-to-back loads
+// ✅ Bug #5: Slots counting total people, not just students
+// ✅ Bug #6: Video instructor dropdown excludes primary instructor
+// ✅ FIXED: Cascading timer system for ready loads
+// ✅ FIXED: Change Call allows adding or removing time with cascading
 
 'use client'
 
@@ -53,10 +58,10 @@ export function LoadBuilderCard({
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [assignmentSelections, setAssignmentSelections] = useState<Record<string, {
-  instructorId: string
-  videoInstructorId?: string
-  isRequest: boolean
-}>>({})
+    instructorId: string
+    videoInstructorId?: string
+    isRequest: boolean
+  }>>({})
   const [assignLoading, setAssignLoading] = useState(false)
   const [lastMilestone, setLastMilestone] = useState<number | null>(null)
   const [showBreathing, setShowBreathing] = useState(false)
@@ -114,8 +119,14 @@ export function LoadBuilderCard({
   const totalStudents = loadAssignments.length
   const unassignedCount = loadAssignments.filter(a => !a.instructorId).length
   const loadCapacity = load.capacity || 18
-  const availableSlots = loadCapacity - totalStudents
-  const isOverCapacity = totalStudents > loadCapacity
+  
+  const totalPeople = loadAssignments.reduce((sum, assignment) => {
+    let count = 2 // Student + Instructor
+    if (assignment.hasOutsideVideo) count += 1 // + Video Instructor
+    return sum + count
+  }, 0)
+  const availableSlots = loadCapacity - totalPeople
+  const isOverCapacity = totalPeople > loadCapacity
   
   // Calculate total pay
   const totalPay = useMemo(() => {
@@ -183,91 +194,27 @@ export function LoadBuilderCard({
   
   const getVideoInstructors = useCallback(() => {
     return instructors
-      .filter(i => i.clockedIn && i.canVideo)
+      .filter(i => {
+        if (!i.clockedIn || !i.canVideo) return false
+        
+        const isAvailable = isInstructorAvailableForLoad(
+          i.id,
+          load.position || 0,
+          allLoads,
+          loadSchedulingSettings.instructorCycleTime,
+          loadSchedulingSettings.minutesBetweenLoads
+        )
+        
+        return isAvailable
+      })
       .sort((a, b) => 
         (instructorBalances.get(a.id) || 0) - (instructorBalances.get(b.id) || 0)
       )
-  }, [instructors, instructorBalances])
+  }, [instructors, load.position, allLoads, loadSchedulingSettings, instructorBalances])
   
   // ==================== EFFECTS ====================
-  useEffect(() => {
-  if (!showAssignModal) {
-    setAssignmentSelections({})
-    hasAutoSelected.current = false
-    return
-  }
   
-  if (hasAutoSelected.current) return
-  hasAutoSelected.current = true
-  
-  const selections: Record<string, {instructorId: string, videoInstructorId?: string, isRequest: boolean}> = {}
-  const usedInstructors = new Set<string>()
-  const usedVideoInstructors = new Set<string>()
-  
-  const currentAssignments = load.assignments || []
-  
-  currentAssignments.forEach(assignment => {
-    if (assignment.instructorId) {
-      const selection: {instructorId: string, videoInstructorId?: string, isRequest: boolean} = {
-        instructorId: assignment.instructorId,
-        isRequest: assignment.isRequest || false  // ✅ ADD THIS
-      }
-      
-      usedInstructors.add(assignment.instructorId)
-      
-      if (assignment.videoInstructorId) {
-        selection.videoInstructorId = assignment.videoInstructorId
-        usedVideoInstructors.add(assignment.videoInstructorId)
-      }
-      
-      selections[assignment.id] = selection
-    } else {
-      const qualified = getQualifiedInstructors(assignment)
-      const availableInstructor = qualified.find(i => !usedInstructors.has(i.id))
-      
-      if (availableInstructor) {
-        const selection: {instructorId: string, videoInstructorId?: string, isRequest: boolean} = {
-          instructorId: availableInstructor.id,
-          isRequest: false  // ✅ ADD THIS
-        }
-        
-        usedInstructors.add(availableInstructor.id)
-        
-        if (assignment.hasOutsideVideo) {
-          const videoInstructors = getVideoInstructors()
-          const availableVideoInstructor = videoInstructors.find(
-            i => !usedVideoInstructors.has(i.id) && i.id !== availableInstructor.id
-          )
-          
-          if (availableVideoInstructor) {
-            selection.videoInstructorId = availableVideoInstructor.id
-            usedVideoInstructors.add(availableVideoInstructor.id)
-          }
-        }
-        
-        selections[assignment.id] = selection
-      } else if (qualified.length > 0) {
-        const selection: {instructorId: string, videoInstructorId?: string, isRequest: boolean} = {
-          instructorId: qualified[0].id,
-          isRequest: false  // ✅ ADD THIS
-        }
-        
-        if (assignment.hasOutsideVideo) {
-          const videoInstructors = getVideoInstructors()
-          if (videoInstructors.length > 0) {
-            selection.videoInstructorId = videoInstructors[0].id
-          }
-        }
-        
-        selections[assignment.id] = selection
-      }
-    }
-  })
-  
-  setAssignmentSelections(selections)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [showAssignModal])
-  
+  // Breathing animation for countdown milestones
   useEffect(() => {
     if (!isActive || countdown === null) {
       setLastMilestone(null)
@@ -289,11 +236,36 @@ export function LoadBuilderCard({
     }
   }, [countdown, isActive, lastMilestone])
   
+  // Get dynamic load colors based on status and countdown
   const getLoadColors = useCallback(() => {
+    if (load.status === 'building') {
+      return {
+        bg: 'bg-slate-700',
+        border: 'border-slate-500/50',
+        glow: ''
+      }
+    }
+    
+    if (load.status === 'completed') {
+      return {
+        bg: 'bg-purple-600',
+        border: 'border-purple-500/50',
+        glow: ''
+      }
+    }
+    
+    if (load.status === 'departed') {
+      return {
+        bg: 'bg-green-900/30',
+        border: 'border-green-500/60',
+        glow: ''
+      }
+    }
+    
     if (!isActive || countdown === null) {
       return {
-        bg: currentStatus.color,
-        border: currentStatus.borderClass,
+        bg: 'bg-blue-600',
+        border: 'border-blue-500/50',
         glow: ''
       }
     }
@@ -319,9 +291,142 @@ export function LoadBuilderCard({
         glow: 'shadow-[0_0_35px_rgba(239,68,68,0.6)] animate-pulse'
       }
     }
-  }, [isActive, countdown, currentStatus, showBreathing])
+  }, [load.status, isActive, countdown, showBreathing])
 
   const colors = getLoadColors()
+  
+  useEffect(() => {
+  if (!showAssignModal) {
+    setAssignmentSelections({})
+    hasAutoSelected.current = false
+    return
+  }
+  
+  if (hasAutoSelected.current) return
+  hasAutoSelected.current = true
+  
+  console.log('🎯 AUTO-SELECTION STARTING', {
+    totalAssignments: (load.assignments || []).length,
+    showEditModal
+  })
+  
+  const selections: Record<string, {instructorId: string, videoInstructorId?: string, isRequest: boolean}> = {}
+  const usedInstructors = new Set<string>()
+  const usedVideoInstructors = new Set<string>()
+  
+  const shouldTrackAsUsed = !showEditModal
+  
+  const currentAssignments = load.assignments || []
+  
+  // ✅ STEP 1: Validate and keep existing PRIMARY instructors if available
+  currentAssignments.forEach(assignment => {
+    if (assignment.instructorId) {
+      const isInstructorAvailable = isInstructorAvailableForLoad(
+        assignment.instructorId,
+        load.position || 0,
+        allLoads,
+        loadSchedulingSettings.instructorCycleTime,
+        loadSchedulingSettings.minutesBetweenLoads
+      )
+      
+      console.log(`📋 Step 1 - ${assignment.studentName}: existing instructor ${assignment.instructorId}`, {
+        isAvailable: isInstructorAvailable
+      })
+      
+      if (isInstructorAvailable) {
+        selections[assignment.id] = {
+          instructorId: assignment.instructorId,
+          isRequest: assignment.isRequest
+        }
+        
+        if (shouldTrackAsUsed) {
+          usedInstructors.add(assignment.instructorId)
+        }
+      }
+    }
+  })
+  
+  // ✅ STEP 2: Auto-select PRIMARY instructors for assignments without valid ones
+  currentAssignments.forEach(assignment => {
+    if (selections[assignment.id]?.instructorId) {
+      console.log(`⭐️ Step 2 - ${assignment.studentName}: already has instructor, skipping`)
+      return
+    }
+    
+    const qualified = getQualifiedInstructors(assignment).filter(i => 
+      shouldTrackAsUsed ? !usedInstructors.has(i.id) : true
+    )
+    
+    console.log(`🔍 Step 2 - ${assignment.studentName}: qualified instructors`, {
+      total: getQualifiedInstructors(assignment).length,
+      afterFiltering: qualified.length,
+      usedInstructors: Array.from(usedInstructors),
+      selectedInstructor: qualified.length > 0 ? qualified[0].name : 'NONE'
+    })
+    
+    if (qualified.length > 0) {
+      selections[assignment.id] = {
+        instructorId: qualified[0].id,
+        isRequest: assignment.isRequest
+      }
+      if (shouldTrackAsUsed) usedInstructors.add(qualified[0].id)
+    }
+  })
+  
+  // ✅ STEP 3: Validate and keep existing VIDEO instructors (if assignment needs video)
+  currentAssignments.forEach(assignment => {
+    if (!assignment.hasOutsideVideo) return
+    if (!selections[assignment.id]) return
+    
+    if (assignment.videoInstructorId) {
+      const isVideoAvailable = isInstructorAvailableForLoad(
+        assignment.videoInstructorId,
+        load.position || 0,
+        allLoads,
+        loadSchedulingSettings.instructorCycleTime,
+        loadSchedulingSettings.minutesBetweenLoads
+      )
+      
+      const isDifferentFromPrimary = assignment.videoInstructorId !== selections[assignment.id].instructorId
+      
+      if (isVideoAvailable && isDifferentFromPrimary) {
+        selections[assignment.id].videoInstructorId = assignment.videoInstructorId
+        if (shouldTrackAsUsed) {
+          usedVideoInstructors.add(assignment.videoInstructorId)
+        }
+      }
+    }
+  })
+  
+  // ✅ STEP 4: Auto-select VIDEO instructors for assignments that need them but don't have valid ones
+  currentAssignments.forEach(assignment => {
+    if (!assignment.hasOutsideVideo) return
+    if (!selections[assignment.id]) return
+    if (selections[assignment.id].videoInstructorId) return
+    
+    const videoInstructors = getVideoInstructors().filter(i => 
+      i.id !== selections[assignment.id].instructorId && 
+      (shouldTrackAsUsed ? !usedVideoInstructors.has(i.id) && !usedInstructors.has(i.id) : true)
+    )
+    
+    if (videoInstructors.length > 0) {
+      selections[assignment.id].videoInstructorId = videoInstructors[0].id
+      if (shouldTrackAsUsed) usedVideoInstructors.add(videoInstructors[0].id)
+    }
+  })
+  
+  console.log('✅ AUTO-SELECTION COMPLETE', {
+  totalSelections: Object.keys(selections).length,
+  assignmentIds: currentAssignments.map(a => ({ id: a.id, name: a.studentName })),
+  selections: Object.entries(selections).map(([id, sel]) => ({
+    assignmentId: id,
+    instructorId: sel.instructorId,
+    hasMatch: currentAssignments.some(a => a.id === id)
+  }))
+})
+  
+  setAssignmentSelections(selections)
+}, [showAssignModal, showEditModal, load.assignments, getQualifiedInstructors, getVideoInstructors])
   
   // ==================== DRAG & DROP ====================
   const handleDragOver = (e: React.DragEvent) => {
@@ -331,33 +436,36 @@ export function LoadBuilderCard({
     setDropTarget(load.id)
   }
   
-  const handleDragLeave = () => {
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
     setDragOver(false)
-    setDropTarget(null)
+    if (dropTarget === load.id) {
+      setDropTarget(null)
+    }
   }
   
-  const handleDrop = (e: React.DragEvent) => {
-    if (isCompleted) return
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
     setDropTarget(null)
+    
+    if (isCompleted) return
+    
     onDrop(load.id)
   }
   
-  // ==================== REMOVE FROM LOAD ====================
-  const removeFromLoad = async (assignmentId: string) => {
+  // ==================== REMOVE FUNCTIONS ====================
+  const removeFromLoad = async (assignment: LoadAssignment) => {
     if (isCompleted) return
+    
     try {
-      const assignment = loadAssignments.find(a => a.id === assignmentId)
-      if (!assignment) return
+      const updatedAssignments = loadAssignments.filter(a => a.id !== assignment.id)
+      await update(load.id, { assignments: updatedAssignments })
       
       const currentQueue = await db.getQueue()
       const existingInQueue = currentQueue.find(
         s => s.studentAccountId === assignment.studentId
       )
-      
-      const updatedAssignments = loadAssignments.filter(a => a.id !== assignmentId)
-      await update(load.id, { assignments: updatedAssignments })
       
       if (existingInQueue) {
         if (assignment.groupId && existingInQueue.groupId !== assignment.groupId) {
@@ -464,58 +572,148 @@ export function LoadBuilderCard({
     if (!statusChangeConfirm) return
     
     try {
-      await update(load.id, { status: statusChangeConfirm })
+      const updates: any = { status: statusChangeConfirm }
       
+      // ==================== TRANSITIONING TO READY ====================
       if (statusChangeConfirm === 'ready' && load.status === 'building') {
-        const readyLoads = allLoads
-          .filter(l => l.status === 'ready')
-          .sort((a, b) => (a.position || 0) - (b.position || 0))
+        // Find the first non-completed load by position
+        const firstNonCompletedLoad = allLoads
+          .filter(l => l.status !== 'completed')
+          .sort((a, b) => (a.position || 0) - (b.position || 0))[0]
         
-        if (readyLoads.length === 0) {
-          await update(load.id, {
-            countdownStartTime: new Date().toISOString()
-          } as any)
+        // Is THIS load the first non-completed load?
+        const isFirstNonCompleted = firstNonCompletedLoad?.id === load.id
+        
+        if (isFirstNonCompleted) {
+          // This is the first non-completed load becoming ready
+          // Start its countdown NOW
+          const now = new Date().toISOString()
+          updates.countdownStartTime = now
+          
+          // Cascade countdowns to all OTHER ready loads with higher positions
+          const otherReadyLoads = allLoads
+            .filter(l => 
+              l.id !== load.id && 
+              l.status === 'ready' && 
+              (l.position || 0) > (load.position || 0)
+            )
+            .sort((a, b) => (a.position || 0) - (b.position || 0))
+          
+          // Update each subsequent ready load's countdown
+          for (const readyLoad of otherReadyLoads) {
+            const positionDiff = (readyLoad.position || 0) - (load.position || 0)
+            const offsetMs = positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
+            const cascadeTime = new Date(Date.now() + offsetMs).toISOString()
+            
+            await update(readyLoad.id, {
+              countdownStartTime: cascadeTime
+            } as any)
+          }
+        } else {
+          // This is NOT the first non-completed load
+          // Check if the first non-completed load is already ready
+          if (firstNonCompletedLoad && firstNonCompletedLoad.status === 'ready' && (firstNonCompletedLoad as any).countdownStartTime) {
+            // Calculate this load's countdown based on the first load's time
+            const firstLoadStartTime = new Date((firstNonCompletedLoad as any).countdownStartTime).getTime()
+            const positionDiff = (load.position || 0) - (firstNonCompletedLoad.position || 0)
+            const offsetMs = positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
+            updates.countdownStartTime = new Date(firstLoadStartTime + offsetMs).toISOString()
+          }
+          // If first load is NOT ready yet, don't give this load a countdown
+          // (it will get one when the first load becomes ready)
         }
-      } else if (statusChangeConfirm === 'building' && load.status === 'ready') {
-        await update(load.id, {
-          countdownStartTime: null
-        } as any)
       }
       
+      // ==================== TRANSITIONING FROM READY TO BUILDING ====================
+      else if (statusChangeConfirm === 'building' && load.status === 'ready') {
+        // Clear this load's countdown
+        updates.countdownStartTime = null
+        
+        // If this was the first non-completed load, we need to check if there's a new "first"
+        const firstNonCompletedLoad = allLoads
+          .filter(l => l.status !== 'completed')
+          .sort((a, b) => (a.position || 0) - (b.position || 0))[0]
+        
+        if (firstNonCompletedLoad?.id === load.id) {
+          // This WAS the first load - clear all subsequent ready loads' countdowns
+          const subsequentReadyLoads = allLoads
+            .filter(l => 
+              l.id !== load.id && 
+              l.status === 'ready' && 
+              (l.position || 0) > (load.position || 0)
+            )
+          
+          for (const readyLoad of subsequentReadyLoads) {
+            await update(readyLoad.id, {
+              countdownStartTime: null
+            } as any)
+          }
+        }
+      }
+      
+      // ==================== TRANSITIONING TO DEPARTED ====================
+      else if (statusChangeConfirm === 'departed') {
+        // Keep the countdown (for history/tracking purposes)
+        // No cascade needed - subsequent loads already have their offsets
+      }
+      
+      // ==================== TRANSITIONING TO COMPLETED ====================
+      else if (statusChangeConfirm === 'completed') {
+        // Keep the countdown (for history/tracking purposes)
+        // No cascade needed
+      }
+      
+      await update(load.id, updates)
       setStatusChangeConfirm(null)
     } catch (error) {
-      console.error('Failed to change status:', error)
-      alert('Failed to change load status')
+      console.error('Failed to update status:', error)
+      alert('Failed to update load status')
     }
   }
   
-  // ==================== DELAY ====================
-  const handleDelay = async () => {
-    if (!delayMinutes || delayMinutes < 1) {
-      alert('Please enter a valid delay time')
+  // ==================== CHANGE CALL TIME ====================
+  const handleChangeCall = async () => {
+    if (delayMinutes === 0) {
+      alert('Please enter a time change (positive to delay, negative to move up)')
       return
     }
     
-    try {
-      const delayMs = delayMinutes * 60 * 1000
+    // Check if removing time would make the countdown negative
+    if (load.countdownStartTime && delayMinutes < 0) {
+      const countdownStartTime = new Date(load.countdownStartTime).getTime()
+      const departureTime = countdownStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+      const now = Date.now()
+      const remainingMs = departureTime - now
+      const changeMs = Math.abs(delayMinutes) * 60 * 1000
       
-      if ((load as any).countdownStartTime) {
-        const currentStartTime = new Date((load as any).countdownStartTime).getTime()
-        const newStartTime = new Date(currentStartTime + delayMs).toISOString()
+      if (changeMs > remainingMs) {
+        const remainingMinutes = Math.floor(remainingMs / 60000)
+        alert(`⚠️ Cannot move the call that far forward - only ${remainingMinutes} minutes remaining. The plane can't depart in the past!`)
+        return
+      }
+    }
+    
+    try {
+      if (load.countdownStartTime) {
+        const changeMs = delayMinutes * 60 * 1000
+        const currentStartTime = new Date(load.countdownStartTime).getTime()
+        const newStartTime = new Date(currentStartTime + changeMs).toISOString()
         
         await update(load.id, {
-          countdownStartTime: newStartTime,
-          delayMinutes: (load.delayMinutes || 0) + delayMinutes
+          countdownStartTime: newStartTime
         } as any)
         
-        const subsequentReadyLoads = allLoads
-          .filter(l => l.status === 'ready' && (l.position || 0) > (load.position || 0))
-          .sort((a, b) => (a.position || 0) - (b.position || 0))
+        // Cascade the change to all subsequent loads with countdowns
+        const subsequentLoads = allLoads.filter(l => 
+          l.status !== 'completed' && 
+          (l.position || 0) > (load.position || 0) &&
+          l.countdownStartTime
+        )
         
-        for (const subsequentLoad of subsequentReadyLoads) {
-          if ((subsequentLoad as any).countdownStartTime) {
-            const subCurrentStartTime = new Date((subsequentLoad as any).countdownStartTime).getTime()
-            const subNewStartTime = new Date(subCurrentStartTime + delayMs).toISOString()
+        for (const subsequentLoad of subsequentLoads) {
+          if (subsequentLoad.countdownStartTime) {
+            const subCurrentStartTime = new Date(subsequentLoad.countdownStartTime).getTime()
+            const subNewStartTime = new Date(subCurrentStartTime + changeMs).toISOString()
             
             await update(subsequentLoad.id, {
               countdownStartTime: subNewStartTime
@@ -530,9 +728,10 @@ export function LoadBuilderCard({
       
       await onDelay(load.id, delayMinutes)
       setShowDelayModal(false)
+      setDelayMinutes(0)
     } catch (error) {
-      console.error('Failed to delay load:', error)
-      alert('Failed to delay load')
+      console.error('Failed to change call time:', error)
+      alert('Failed to change call time')
     }
   }
   
@@ -594,37 +793,38 @@ export function LoadBuilderCard({
   
   // ==================== BULK ASSIGN ====================
   const handleBulkAssign = async () => {
-  if (Object.keys(assignmentSelections).length === 0) {
-    alert('No instructors selected to assign')
-    return
-  }
-  
-  setAssignLoading(true)
-  
-  try {
-    const updatedAssignments = loadAssignments.map(assignment => {
-      const selection = assignmentSelections[assignment.id]
-      if (selection && !assignment.instructorId) {
-        return {
-          ...assignment,
-          instructorId: selection.instructorId,
-          videoInstructorId: selection.videoInstructorId || assignment.videoInstructorId,
-          isRequest: selection.isRequest  // ✅ ADD THIS LINE
-        }
-      }
-      return assignment
-    })
+    if (Object.keys(assignmentSelections).length === 0) {
+      alert('No instructors selected to assign')
+      return
+    }
     
-    await update(load.id, { assignments: updatedAssignments })
-    setShowAssignModal(false)
-    setAssignmentSelections({})
-  } catch (error) {
-    console.error('Failed to assign instructors:', error)
-    alert('Failed to assign instructors')
-  } finally {
-    setAssignLoading(false)
+    setAssignLoading(true)
+    
+    try {
+      const updatedAssignments = loadAssignments.map(assignment => {
+        const selection = assignmentSelections[assignment.id]
+        if (selection && (showEditModal || !assignment.instructorId)) {
+          return {
+            ...assignment,
+            instructorId: selection.instructorId,
+            videoInstructorId: selection.videoInstructorId || assignment.videoInstructorId,
+            isRequest: selection.isRequest
+          }
+        }
+        return assignment
+      })
+      
+      await update(load.id, { assignments: updatedAssignments })
+      setShowAssignModal(false)
+      setShowEditModal(false)
+      setAssignmentSelections({})
+    } catch (error) {
+      console.error('Failed to assign instructors:', error)
+      alert('Failed to assign instructors')
+    } finally {
+      setAssignLoading(false)
+    }
   }
-}
   
   // ==================== RENDER ====================
   return (
@@ -643,7 +843,7 @@ export function LoadBuilderCard({
         <div className="p-4 border-b border-white/10">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <h3 className="text-xl font-bold text-white">{load.name}</h3>
+              <h3 className="text-xl font-bold text-white">Load #{load.position || '?'}</h3>
               <span className={`px-3 py-1 rounded-full text-xs font-bold ${currentStatus.color} text-white`}>
                 {currentStatus.emoji} {currentStatus.label}
               </span>
@@ -683,132 +883,135 @@ export function LoadBuilderCard({
             </div>
           )}
         </div>
-        
-        {/* Students */}
-        <div className="space-y-2 mb-3 max-h-96 overflow-y-auto p-4">
+
+        {/* Students List */}
+        <div className="p-4 space-y-2 min-h-[200px] max-h-[500px] overflow-y-auto">
           {loadAssignments.length === 0 ? (
-            <div className="text-center text-slate-400 py-4">
-              Drop students here
+            <div className="text-center text-white/60 py-8">
+              Drop students here to build the load
             </div>
           ) : (
-            (() => {
-              const groupedData: { [key: string]: typeof loadAssignments } = {}
+            loadAssignments.map((assignment) => {
+              const groupAssignments = assignment.groupId 
+                ? loadAssignments.filter(a => a.groupId === assignment.groupId)
+                : [assignment]
+              const isFirstInGroup = groupAssignments[0].id === assignment.id
               
-              loadAssignments.forEach(assignment => {
-                const groupKey = assignment.groupId || `individual-${assignment.id}`
-                if (!groupedData[groupKey]) {
-                  groupedData[groupKey] = []
-                }
-                groupedData[groupKey].push(assignment)
-              })
+              if (assignment.groupId && !isFirstInGroup) return null
+              
+              const group = assignment.groupId ? groups?.find(g => g.id === assignment.groupId) : null
+              const instructor = assignment.instructorId ? instructors.find(i => i.id === assignment.instructorId) : null
+              const videoInstructor = assignment.videoInstructorId ? instructors.find(i => i.id === assignment.videoInstructorId) : null
               
               return (
-                <>
-                  {Object.entries(groupedData).map(([groupKey, assignments]) => {
-                    const isGroup = assignments.length > 1 && assignments[0].groupId
-                    const groupName = isGroup ? groups.find(g => g.id === assignments[0].groupId)?.name : null
-                    
-                    return (
-                      <div key={groupKey} className="space-y-1">
-                        {isGroup && (
-                          <div className="bg-gradient-to-r from-purple-500/30 to-blue-500/30 border-2 border-purple-500/50 rounded-lg p-2">
-                            <div className="flex items-center justify-between">
-                              <div className="text-sm font-bold text-purple-300">
-                                👥 {groupName || 'Group'} ({assignments.length} students)
-                              </div>
-                              {!isCompleted && load.status === 'building' && (
-                                <button
-                                  onClick={() => removeGroupFromLoad(assignments)}
-                                  className="text-red-400 hover:text-red-300 transition-colors text-xs px-2 py-1 bg-red-500/20 rounded"
-                                >
-                                  ✕ Remove Group
-                                </button>
+                <div
+                  key={assignment.id}
+                  draggable={!isCompleted}
+                  onDragStart={(e) => {
+                    if (isCompleted) {
+                      e.preventDefault()
+                      return
+                    }
+                    if (assignment.groupId) {
+                      onDragStart('group', assignment.groupId, load.id)
+                    } else {
+                      onDragStart('assignment', assignment.id, load.id)
+                    }
+                  }}
+                  onDragEnd={onDragEnd}
+                  className="bg-white/10 rounded-lg p-3 cursor-move hover:bg-white/15 transition-colors"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      {group && (
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-lg">👥</span>
+                          <span className="text-sm font-semibold text-blue-300">
+                            {group.name} ({groupAssignments.length} students)
+                          </span>
+                        </div>
+                      )}
+                      
+                      {groupAssignments.map((ga, idx) => {
+                        const gaInstructor = ga.instructorId ? instructors.find(i => i.id === ga.instructorId) : null
+                        const gaVideoInstructor = ga.videoInstructorId ? instructors.find(i => i.id === ga.videoInstructorId) : null
+                        
+                        return (
+                          <div key={ga.id} className={idx > 0 ? 'mt-2 pt-2 border-t border-white/10' : ''}>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-white">
+                                {ga.studentName}
+                              </span>
+                              <span className="text-xs bg-white/20 px-2 py-0.5 rounded text-white">
+                                {ga.jumpType.toUpperCase()}
+                              </span>
+                              {ga.isRequest && (
+                                <span className="text-xs bg-yellow-500/30 px-2 py-0.5 rounded text-yellow-200">
+                                  REQUEST
+                                </span>
                               )}
                             </div>
-                          </div>
-                        )}
-                        
-                        {assignments.map(assignment => (
-                          <div
-                            key={assignment.id}
-                            draggable={!isCompleted && load.status === 'building'}
-                            onDragStart={() => onDragStart('assignment', assignment.id, load.id)}
-                            onDragEnd={onDragEnd}
-                            className={`${
-                              isGroup 
-                                ? 'bg-purple-500/10 border-l-4 border-purple-500/50 ml-2' 
-                                : 'bg-white/5 border border-white/10'
-                            } rounded-lg p-3 ${
-                              !isCompleted && load.status === 'building' ? 'cursor-move hover:bg-white/10' : ''
-                            } transition-colors`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-white font-semibold">{assignment.studentName}</span>
-                                  <span className={`text-xs px-2 py-0.5 rounded ${
-                                    assignment.jumpType === 'tandem' ? 'bg-blue-500/30 text-blue-300' : 'bg-green-500/30 text-green-300'
-                                  }`}>
-                                    {assignment.jumpType.toUpperCase()}
+                            
+                            {gaInstructor && (
+                              <div className="text-sm text-white/80 mt-1">
+                                👤 {gaInstructor.name}
+                                {gaVideoInstructor && (
+                                  <span className="ml-2">
+                                    📹 {gaVideoInstructor.name}
                                   </span>
-                                </div>
-                                <div className="text-sm text-slate-400">
-                                  {assignment.studentWeight} lbs
-                                  {assignment.tandemWeightTax ? ` • Tax: ${assignment.tandemWeightTax}` : ''}
-                                  {assignment.tandemHandcam ? ' • 📹 Handcam' : ''}
-                                  {assignment.hasOutsideVideo ? ' • 🎥 Outside' : ''}
-                                  {assignment.affLevel ? ` • ${assignment.affLevel}` : ''}
-                                </div>
-                                
-                                {assignment.instructorId ? (
-                                  <div className="text-xs text-green-400 mt-1">
-                                    ✓ {instructors.find(i => i.id === assignment.instructorId)?.name || 'Unknown'}
-                                    {assignment.videoInstructorId && (
-                                      <span className="ml-2">
-                                        🎥 {instructors.find(i => i.id === assignment.videoInstructorId)?.name || 'Unknown'}
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="text-xs text-orange-400 mt-1">⚠️ No instructor</div>
                                 )}
                               </div>
-                              
-                              {!isCompleted && load.status === 'building' && !isGroup && (
-                                <button
-                                  onClick={() => removeFromLoad(assignment.id)}
-                                  className="ml-2 text-red-400 hover:text-red-300 transition-colors"
-                                >
-                                  ✕
-                                </button>
-                              )}
-                            </div>
+                            )}
+                            
+                            {!gaInstructor && (
+                              <div className="text-sm text-yellow-300 mt-1">
+                                ⚠️ No instructor assigned
+                              </div>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    )
-                  })}
-                </>
+                        )
+                      })}
+                    </div>
+                    
+                    {!isCompleted && (
+                      <button
+                        onClick={() => {
+                          if (assignment.groupId) {
+                            removeGroupFromLoad(groupAssignments)
+                          } else {
+                            removeFromLoad(assignment)
+                          }
+                        }}
+                        className="ml-2 text-red-400 hover:text-red-300 transition-colors"
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
               )
-            })()
+            })
           )}
         </div>
-        
-        {/* Metrics */}
+
+        {/* Stats */}
         {totalStudents > 0 && (
-          <div className="px-4 pb-3 grid grid-cols-3 gap-2 text-center border-t border-white/10 pt-3">
-            <div>
-              <div className="text-xs text-slate-400">Students</div>
-              <div className="font-bold text-white">{totalStudents}</div>
+          <div className="grid grid-cols-3 gap-2 p-4 border-t border-white/10 bg-black/20">
+            <div className="text-center">
+              <div className="text-xs text-white/60">Students</div>
+              <div className="font-bold text-lg text-white">{totalStudents}</div>
             </div>
-            <div>
-              <div className="text-xs text-slate-400">Total Pay</div>
-              <div className="font-bold text-green-400">${totalPay}</div>
+            <div className="text-center">
+              <div className="text-xs text-white/60">Total Pay</div>
+              <div className="font-bold text-lg text-green-400">${totalPay}</div>
             </div>
-            <div>
-              <div className={`text-xs ${isOverCapacity ? 'text-red-400' : 'text-blue-400'}`}>Slots Left</div>
+            <div className="text-center">
+              <div className={`text-xs ${isOverCapacity ? 'text-red-400' : 'text-blue-400'}`}>
+                {totalPeople}/{loadCapacity} people
+              </div>
               <div className={`font-bold text-lg ${isOverCapacity ? 'text-red-400' : 'text-blue-400'}`}>
-                {Math.max(0, availableSlots)}
+                {Math.max(0, availableSlots)} slots
               </div>
             </div>
           </div>
@@ -816,7 +1019,7 @@ export function LoadBuilderCard({
 
         {/* Action Buttons */}
         <div className="space-y-2 p-4 border-t border-white/10">
-          {load.status === 'building' && unassignedCount > 0 && (
+          {(load.status === 'building' || load.status === 'ready') && unassignedCount > 0 && (
             <button
               onClick={() => {
                 setShowEditModal(false)
@@ -828,7 +1031,7 @@ export function LoadBuilderCard({
             </button>
           )}
           
-          {load.status === 'building' && loadAssignments.some(a => a.instructorId) && (
+          {(load.status === 'building' || load.status === 'ready') && loadAssignments.some(a => a.instructorId) && (
             <button
               onClick={() => {
                 setShowEditModal(true)
@@ -857,7 +1060,11 @@ export function LoadBuilderCard({
                     'bg-slate-600 hover:bg-slate-700 text-white'
                 }`}
               >
-                {transitionConfig.emoji} {transition === 'building' ? 'Back to Building' : `Mark ${transitionConfig.label}`}
+                {transitionConfig.emoji} {transition === 'building' ? 
+                  'Back to Building' : 
+                  transition === 'departed' ?
+                  'Mark Departed' :
+                  `Mark as ${transitionConfig.label}`}
               </button>
             )
           })}
@@ -867,27 +1074,29 @@ export function LoadBuilderCard({
               onClick={() => setShowDelayModal(true)}
               className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm"
             >
-              ⏰ Delay Departure
+              ⏱️ Change Call
             </button>
           )}
           
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            disabled={loading}
-            className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm disabled:opacity-50"
-          >
-            🗑️ Delete Load
-          </button>
+          {!isCompleted && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={loading}
+              className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm disabled:opacity-50"
+            >
+              🗑️ Delete Load
+            </button>
+          )}
         </div>
       </div>
 
       {/* Modals */}
       {statusChangeConfirm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-slate-700 p-6">
+          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-700">
             <h3 className="text-xl font-bold text-white mb-4">Confirm Status Change</h3>
             <p className="text-slate-300 mb-6">
-              Change load status to <span className="font-bold text-blue-400">{statusConfig[statusChangeConfirm].label}</span>?
+              Change load status to <strong>{statusConfig[statusChangeConfirm].label}</strong>?
             </p>
             <div className="flex gap-3">
               <button
@@ -910,30 +1119,65 @@ export function LoadBuilderCard({
 
       {showDelayModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-slate-700 p-6">
-            <h3 className="text-xl font-bold text-white mb-4">Delay Departure</h3>
-            <p className="text-slate-300 mb-4">How many minutes should this load be delayed?</p>
+          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-700">
+            <h3 className="text-xl font-bold text-white mb-4">⏱️ Change Call Time</h3>
+            <p className="text-slate-300 mb-2">Adjust the departure call for this load and all subsequent loads.</p>
+            <p className="text-sm text-slate-400 mb-4">
+              • <span className="text-green-400">Positive</span> values delay departure (add time)<br/>
+              • <span className="text-orange-400">Negative</span> values move it up (remove time)
+            </p>
+            
+            {/* Quick Preset Buttons */}
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              <button
+                onClick={() => setDelayMinutes(-5)}
+                className="bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-3 rounded-lg transition-colors text-sm"
+              >
+                -5 min
+              </button>
+              <button
+                onClick={() => setDelayMinutes(-2)}
+                className="bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-3 rounded-lg transition-colors text-sm"
+              >
+                -2 min
+              </button>
+              <button
+                onClick={() => setDelayMinutes(2)}
+                className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-3 rounded-lg transition-colors text-sm"
+              >
+                +2 min
+              </button>
+              <button
+                onClick={() => setDelayMinutes(5)}
+                className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-3 rounded-lg transition-colors text-sm"
+              >
+                +5 min
+              </button>
+            </div>
+            
             <input
               type="number"
-              min="1"
               value={delayMinutes || ''}
               onChange={(e) => setDelayMinutes(parseInt(e.target.value) || 0)}
               className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white mb-6"
-              placeholder="Enter minutes"
+              placeholder="e.g., 5 or -5"
             />
             <div className="flex gap-3">
               <button
-                onClick={() => setShowDelayModal(false)}
+                onClick={() => {
+                  setShowDelayModal(false)
+                  setDelayMinutes(0)
+                }}
                 className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={handleDelay}
+                onClick={handleChangeCall}
                 disabled={loading}
                 className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
               >
-                Delay
+                Apply Change
               </button>
             </div>
           </div>
@@ -942,11 +1186,11 @@ export function LoadBuilderCard({
 
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-slate-700 p-6">
-            <h3 className="text-xl font-bold text-white mb-4">⚠️ Confirm Delete</h3>
+          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-700">
+            <h3 className="text-xl font-bold text-red-400 mb-4">⚠️ Delete Load</h3>
             <p className="text-slate-300 mb-6">
-              {isCompleted 
-                ? '⚠️ This is a COMPLETED load. Are you absolutely sure you want to delete it?'
+              {isCompleted ? 
+                '⚠️ This is a COMPLETED load. Are you absolutely sure you want to delete it?'
                 : 'Are you sure you want to delete this load? All students will be returned to the queue.'}
             </p>
             <div className="flex gap-3">
@@ -990,6 +1234,50 @@ export function LoadBuilderCard({
                 const qualified = getQualifiedInstructors(assignment)
                 const videoInstructors = getVideoInstructors()
                 const selection = assignmentSelections[assignment.id]
+  
+                console.log(`🎨 RENDER ${assignment.studentName}:`, {
+                  assignmentId: assignment.id,
+                  hasSelection: !!selection,
+                  instructorId: selection?.instructorId,
+                  totalSelectionsInState: Object.keys(assignmentSelections).length
+                })
+                
+                // ✅ BUG #6 FIX: Collect all instructors already used across the load
+                const usedInstructorIds = new Set<string>()
+                const usedVideoInstructorIds = new Set<string>()
+                
+                Object.entries(assignmentSelections).forEach(([assignId, sel]) => {
+                  // Don't count this assignment's own selections as "used"
+                  if (assignId !== assignment.id) {
+                    if (sel.instructorId) {
+                      usedInstructorIds.add(sel.instructorId)
+                      // Instructors doing primary can't also do video for someone else
+                      usedVideoInstructorIds.add(sel.instructorId)
+                    }
+                    if (sel.videoInstructorId) {
+                      usedVideoInstructorIds.add(sel.videoInstructorId)
+                      // Video instructors can't also do primary for someone else
+                      usedInstructorIds.add(sel.videoInstructorId)
+                    }
+                  }
+                })
+                
+                // Filter qualified instructors to exclude those already used
+                const availableQualified = qualified.filter(
+                  instructor => 
+                    !usedInstructorIds.has(instructor.id) || 
+                    instructor.id === selection?.instructorId
+                )
+                
+                // Filter video instructors to exclude:
+                // 1. This student's primary instructor
+                // 2. Anyone already used on this load
+                const availableVideo = videoInstructors.filter(
+                  instructor => 
+                    instructor.id !== selection?.instructorId && 
+                    (!usedVideoInstructorIds.has(instructor.id) || 
+                    instructor.id === selection?.videoInstructorId)
+                )
                 
                 return (
                   <div key={assignment.id} className="bg-slate-700 rounded-lg p-4">
@@ -1012,14 +1300,15 @@ export function LoadBuilderCard({
                               ...prev,
                               [assignment.id]: {
                                 ...prev[assignment.id],
-                                instructorId: e.target.value
+                                instructorId: e.target.value,
+                                isRequest: assignment.isRequest
                               }
                             }))
                           }}
                           className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white"
                         >
                           <option value="">Select instructor...</option>
-                          {qualified.map(instructor => (
+                          {availableQualified.map(instructor => (
                             <option key={instructor.id} value={instructor.id}>
                               {instructor.name} (${instructorBalances.get(instructor.id) || 0})
                             </option>
@@ -1044,14 +1333,15 @@ export function LoadBuilderCard({
                                 ...prev,
                                 [assignment.id]: {
                                   ...prev[assignment.id],
-                                  videoInstructorId: e.target.value
+                                  videoInstructorId: e.target.value,
+                                  isRequest: assignment.isRequest
                                 }
                               }))
                             }}
                             className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white"
                           >
                             <option value="">Select video instructor...</option>
-                            {videoInstructors.map(instructor => (
+                            {availableVideo.map(instructor => (
                               <option key={instructor.id} value={instructor.id}>
                                 {instructor.name} (${instructorBalances.get(instructor.id) || 0})
                               </option>
@@ -1059,31 +1349,6 @@ export function LoadBuilderCard({
                           </select>
                         </div>
                       )}
-                      
-                      {/* ✅ REQUEST CHECKBOX - NEWLY ADDED */}
-                      <div>
-                        <label className="flex items-center text-sm text-slate-300 cursor-pointer hover:text-white transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={selection?.isRequest || false}
-                            onChange={(e) => {
-                              setAssignmentSelections(prev => ({
-                                ...prev,
-                                [assignment.id]: {
-                                  ...prev[assignment.id],
-                                  instructorId: prev[assignment.id]?.instructorId || '',
-                                  isRequest: e.target.checked
-                                }
-                              }))
-                            }}
-                            className="w-4 h-4 mr-2 rounded border-slate-500 text-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 focus:ring-offset-slate-700"
-                          />
-                          <span className="select-none">
-                            Mark as Request 
-                            <span className="text-slate-400 ml-1">(won't count toward balance)</span>
-                          </span>
-                        </label>
-                      </div>
                     </div>
                   </div>
                 )

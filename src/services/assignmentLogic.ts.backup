@@ -3,7 +3,7 @@
 // Updated version with instructor availability checks based on load timer
 
 import { isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
-import { getCurrentPeriod, calculateInstructorBalance, isWorkingOffDay } from '@/lib/utils'
+import { getCurrentPeriod, calculateInstructorBalance } from '@/lib/utils'
 import type { QueueStudent, Instructor, Assignment, Load, LoadSchedulingSettings } from '@/types'
 
 export interface SuggestedInstructors {
@@ -84,21 +84,10 @@ export function getSuggestedInstructors(
 
   // Sort by balance (lowest first)
   qualified.sort((a, b) => {
-  // Priority 1: Not working on off day
-  const aIsOff = isWorkingOffDay(a, new Date())
-  const bIsOff = isWorkingOffDay(b, new Date())
-  if (aIsOff !== bIsOff) return aIsOff ? 1 : -1
-  
-  // Priority 2: Balance (lowest first)
-  const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period)
-  const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period)
-  if (balanceA !== balanceB) return balanceA - balanceB
-  
-  // Priority 3: Clock-in time (earliest first)
-  const timeA = a.clockInTime ? new Date(a.clockInTime).getTime() : 0
-  const timeB = b.clockInTime ? new Date(b.clockInTime).getTime() : 0
-  return timeA - timeB
-})
+    const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period)
+    const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period)
+    return balanceA - balanceB
+  })
 
   const mainInstructor = qualified[0]
 
@@ -242,4 +231,35 @@ export function getSuggestedInstructorsSimple(
     needsVideo,
     isMainClockedOut: false
   }
+}
+
+function calculateBalance(instructor: Instructor, assignments: Assignment[], period: any): number {
+  let balance = 0
+  
+  for (const assignment of assignments) {
+    const assignmentDate = new Date(assignment.timestamp)
+    if (assignmentDate < period.start || assignmentDate > period.end) continue
+    if (assignment.isRequest) continue
+    
+    let pay = 0
+    if (!assignment.isMissedJump) {
+      if (assignment.jumpType === 'tandem') {
+        pay = 40 + (assignment.tandemWeightTax || 0) * 20
+        if (assignment.tandemHandcam) pay += 30
+      } else if (assignment.jumpType === 'aff') {
+        pay = assignment.affLevel === 'lower' ? 55 : 45
+      } else if (assignment.jumpType === 'video') {
+        pay = 45
+      }
+    }
+    
+    if (assignment.instructorId === instructor.id) {
+      balance += pay
+    }
+    if (assignment.videoInstructorId === instructor.id && !assignment.isMissedJump) {
+      balance += 45
+    }
+  }
+  
+  return balance
 }

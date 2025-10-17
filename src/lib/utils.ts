@@ -2,6 +2,7 @@
 // ✅ Issue #7 Fixed: Added missing isWorkingOffDay function
 // ✅ Issue #8 Fixed: Completed getCurrentWeekRotation implementation
 // ✅ Issue #26 Fixed: Added deprecation warnings and clear documentation
+// ✅ NEW FIX: Video instructor payment logic now consistent
 
 import type { Assignment, Instructor, Period, Team } from '@/types'
 import { PAY_RATES } from './constants'
@@ -100,13 +101,13 @@ export function calculateInstructorBalance(
       total += pay
     }
     
-    // Video instructor assignment (only if not outside video)
-    if (assignment.videoInstructorId === instructorId && 
-        !assignment.isMissedJump && 
-        !assignment.hasOutsideVideo) {
-      let videoPay: number = PAY_RATES.VIDEO_INSTRUCTOR
+    // ✅ FIXED: Video instructor assignment - treated exactly like main instructor
+    // Video instructors get balance credit when assigned (unless missed jump)
+    // No hasOutsideVideo check - if they're assigned as videoInstructorId, they get credit
+    if (assignment.videoInstructorId === instructorId && !assignment.isMissedJump) {
+      let videoPay: number = PAY_RATES.VIDEO_INSTRUCTOR  // $45
       
-      // Apply off-day multiplier for balance fairness
+      // Apply off-day multiplier if working on scheduled off day
       if (isWorkingOffDay(instructor, assignmentDate)) {
         videoPay = Math.round(videoPay * PAY_RATES.OFF_DAY_MULTIPLIER)
       }
@@ -167,10 +168,10 @@ export function calculateInstructorTotalEarnings(
       total += calculateAssignmentPay(assignment)
     }
     
-    // Video instructor - includes requests, excludes missed
-    if (assignment.videoInstructorId === instructorId && 
-        !assignment.isMissedJump && 
-        !assignment.hasOutsideVideo) {
+    // ✅ FIXED: Video instructor earnings - removed incorrect hasOutsideVideo check
+    // Video instructors get paid when assigned (unless missed jump)
+    // They get paid regardless of hasOutsideVideo flag - if videoInstructorId is set, they worked
+    if (assignment.videoInstructorId === instructorId && !assignment.isMissedJump) {
       total += PAY_RATES.VIDEO_INSTRUCTOR
     }
   }
