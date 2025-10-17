@@ -16,6 +16,7 @@ import { useUpdateLoad, useDeleteLoad, useGroups } from '@/hooks/useDatabase'
 import { useLoadCountdown, isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
 import { db } from '@/services'
 import type { Load, Instructor, LoadSchedulingSettings, CreateQueueStudent, LoadAssignment } from '@/types'
+import type { CreateAssignment } from '@/types'
 
 interface LoadBuilderCardProps {
   load: Load
@@ -238,60 +239,65 @@ export function LoadBuilderCard({
   
   // Get dynamic load colors based on status and countdown
   const getLoadColors = useCallback(() => {
-    if (load.status === 'building') {
-      return {
-        bg: 'bg-slate-700',
-        border: 'border-slate-500/50',
-        glow: ''
-      }
+  // Building status - subtle gray
+  if (load.status === 'building') {
+    return {
+      bg: 'bg-slate-900/30',
+      border: 'border-slate-500/50',
+      glow: ''
     }
-    
-    if (load.status === 'completed') {
-      return {
-        bg: 'bg-purple-600',
-        border: 'border-purple-500/50',
-        glow: ''
-      }
+  }
+  
+  // Completed status - subtle purple with transparency (matching other statuses)
+  if (load.status === 'completed') {
+    return {
+      bg: 'bg-purple-900/20',  // Changed from bg-purple-600 to match pattern
+      border: 'border-purple-500/40',  // Reduced opacity for softer look
+      glow: ''
     }
-    
-    if (load.status === 'departed') {
-      return {
-        bg: 'bg-green-900/30',
-        border: 'border-green-500/60',
-        glow: ''
-      }
+  }
+  
+  // Departed status - subtle green (already good)
+  if (load.status === 'departed') {
+    return {
+      bg: 'bg-green-900/20',  // Reduced opacity from /30 to /20 for consistency
+      border: 'border-green-500/40',  // Reduced opacity from /60 to /40
+      glow: ''
     }
-    
-    if (!isActive || countdown === null) {
-      return {
-        bg: 'bg-blue-600',
-        border: 'border-blue-500/50',
-        glow: ''
-      }
+  }
+  
+  // Ready status without countdown
+  if (!isActive || countdown === null) {
+    return {
+      bg: 'bg-blue-900/30',  // Changed from bg-blue-600 for consistency
+      border: 'border-blue-500/50',
+      glow: ''
     }
-    
-    const minutes = Math.floor(countdown / 60)
-    
-    if (minutes >= 10) {
-      return {
-        bg: 'bg-blue-900/30',
-        border: 'border-blue-500',
-        glow: showBreathing ? 'shadow-[0_0_30px_rgba(59,130,246,0.6)]' : ''
-      }
-    } else if (minutes >= 5) {
-      return {
-        bg: 'bg-orange-900/20',
-        border: 'border-orange-500/60',
-        glow: showBreathing ? 'shadow-[0_0_30px_rgba(251,146,60,0.6)]' : 'shadow-[0_0_20px_rgba(251,146,60,0.4)]'
-      }
-    } else {
-      return {
-        bg: 'bg-red-900/30',
-        border: 'border-red-500',
-        glow: 'shadow-[0_0_35px_rgba(239,68,68,0.6)] animate-pulse'
-      }
+  }
+  
+  // Ready status with countdown - dynamic colors based on time remaining
+  const minutes = Math.floor(countdown / 60)
+  
+  if (minutes >= 10) {
+    return {
+      bg: 'bg-blue-900/30',
+      border: 'border-blue-500',
+      glow: showBreathing ? 'shadow-[0_0_30px_rgba(59,130,246,0.6)]' : ''
     }
-  }, [load.status, isActive, countdown, showBreathing])
+  } else if (minutes >= 5) {
+    return {
+      bg: 'bg-orange-900/20',
+      border: 'border-orange-500/60',
+      glow: showBreathing ? 'shadow-[0_0_30px_rgba(251,146,60,0.6)]' : ''
+    }
+  } else {
+    return {
+      bg: 'bg-red-900/20',
+      border: 'border-red-500',
+      glow: 'shadow-[0_0_40px_rgba(239,68,68,0.7)]'
+    }
+  }
+}, [load.status, isActive, countdown, showBreathing])
 
   const colors = getLoadColors()
   
@@ -568,116 +574,148 @@ export function LoadBuilderCard({
     setStatusChangeConfirm(newStatus)
   }
   
-  const confirmStatusChange = async () => {
-    if (!statusChangeConfirm) return
+  // Add this import at the top of your LoadBuilderCard.tsx file (if not already present):
+// import type { CreateAssignment } from '@/types'
+
+// Then replace the existing confirmStatusChange function with this updated version:
+
+ const confirmStatusChange = async () => {
+  if (!statusChangeConfirm) return
+  
+  try {
+    const updates: any = { status: statusChangeConfirm }
     
-    try {
-      const updates: any = { status: statusChangeConfirm }
+    // ==================== TRANSITIONING TO READY ====================
+    if (statusChangeConfirm === 'ready' && load.status === 'building') {
+      // Find the first non-completed load by position
+      const firstNonCompletedLoad = allLoads
+        .filter(l => l.status !== 'completed')
+        .sort((a, b) => (a.position || 0) - (b.position || 0))[0]
       
-      // ==================== TRANSITIONING TO READY ====================
-      if (statusChangeConfirm === 'ready' && load.status === 'building') {
-        // Find the first non-completed load by position
-        const firstNonCompletedLoad = allLoads
-          .filter(l => l.status !== 'completed')
-          .sort((a, b) => (a.position || 0) - (b.position || 0))[0]
+      // Is THIS load the first non-completed load?
+      if (firstNonCompletedLoad?.id === load.id) {
+        // This is the first ready load - start its timer immediately
+        updates.countdownStartTime = new Date().toISOString()
+      } else {
+        // Not the first ready load - cascade timer
+        const readyLoads = allLoads.filter(l => l.status === 'ready' && l.countdownStartTime)
         
-        // Is THIS load the first non-completed load?
-        const isFirstNonCompleted = firstNonCompletedLoad?.id === load.id
-        
-        if (isFirstNonCompleted) {
-          // This is the first non-completed load becoming ready
-          // Start its countdown NOW
-          const now = new Date().toISOString()
-          updates.countdownStartTime = now
-          
-          // Cascade countdowns to all OTHER ready loads with higher positions
-          const otherReadyLoads = allLoads
-            .filter(l => 
-              l.id !== load.id && 
-              l.status === 'ready' && 
-              (l.position || 0) > (load.position || 0)
-            )
-            .sort((a, b) => (a.position || 0) - (b.position || 0))
-          
-          // Update each subsequent ready load's countdown
-          for (const readyLoad of otherReadyLoads) {
-            const positionDiff = (readyLoad.position || 0) - (load.position || 0)
-            const offsetMs = positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
-            const cascadeTime = new Date(Date.now() + offsetMs).toISOString()
-            
-            await update(readyLoad.id, {
-              countdownStartTime: cascadeTime
-            } as any)
+        if (readyLoads.length > 0) {
+          const lastReadyLoad = readyLoads.sort((a, b) => (b.position || 0) - (a.position || 0))[0]
+          if (lastReadyLoad.countdownStartTime) {
+            const lastStartTime = new Date(lastReadyLoad.countdownStartTime).getTime()
+            const cascadedStartTime = new Date(lastStartTime + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000))
+            updates.countdownStartTime = cascadedStartTime.toISOString()
           }
         } else {
-          // This is NOT the first non-completed load
-          // Check if the first non-completed load is already ready
-          if (firstNonCompletedLoad && firstNonCompletedLoad.status === 'ready' && (firstNonCompletedLoad as any).countdownStartTime) {
-            // Calculate this load's countdown based on the first load's time
-            const firstLoadStartTime = new Date((firstNonCompletedLoad as any).countdownStartTime).getTime()
-            const positionDiff = (load.position || 0) - (firstNonCompletedLoad.position || 0)
-            const offsetMs = positionDiff * loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
-            updates.countdownStartTime = new Date(firstLoadStartTime + offsetMs).toISOString()
-          }
-          // If first load is NOT ready yet, don't give this load a countdown
-          // (it will get one when the first load becomes ready)
+          updates.countdownStartTime = new Date().toISOString()
         }
       }
-      
-      // ==================== TRANSITIONING FROM READY TO BUILDING ====================
-      else if (statusChangeConfirm === 'building' && load.status === 'ready') {
-        // Clear this load's countdown
-        updates.countdownStartTime = null
-        
-        // If this was the first non-completed load, we need to check if there's a new "first"
-        const firstNonCompletedLoad = allLoads
-          .filter(l => l.status !== 'completed')
-          .sort((a, b) => (a.position || 0) - (b.position || 0))[0]
-        
-        if (firstNonCompletedLoad?.id === load.id) {
-          // This WAS the first load - clear all subsequent ready loads' countdowns
-          const subsequentReadyLoads = allLoads
-            .filter(l => 
-              l.id !== load.id && 
-              l.status === 'ready' && 
-              (l.position || 0) > (load.position || 0)
-            )
-          
-          for (const readyLoad of subsequentReadyLoads) {
-            await update(readyLoad.id, {
-              countdownStartTime: null
-            } as any)
-          }
-        }
-      }
-      
-      // ==================== TRANSITIONING TO DEPARTED ====================
-      else if (statusChangeConfirm === 'departed') {
-        // Keep the countdown (for history/tracking purposes)
-        // No cascade needed - subsequent loads already have their offsets
-      }
-      
-      // ==================== TRANSITIONING TO COMPLETED ====================
-      else if (statusChangeConfirm === 'completed') {
-        // Keep the countdown (for history/tracking purposes)
-        // No cascade needed
-      }
-      
-      await update(load.id, updates)
-      setStatusChangeConfirm(null)
-    } catch (error) {
-      console.error('Failed to update status:', error)
-      alert('Failed to update load status')
-    }
-  }
-  
-  // ==================== CHANGE CALL TIME ====================
-  const handleChangeCall = async () => {
-    if (delayMinutes === 0) {
-      alert('Please enter a time change (positive to delay, negative to move up)')
-      return
     }
     
+    // ==================== TRANSITIONING FROM READY TO BUILDING ====================
+    else if (statusChangeConfirm === 'building' && load.status === 'ready') {
+      // Clear the countdown
+      updates.countdownStartTime = null
+      
+      // Cascade subsequent loads
+      const subsequentLoads = allLoads
+        .filter(l => 
+          l.status === 'ready' && 
+          (l.position || 0) > (load.position || 0) &&
+          l.countdownStartTime
+        )
+        .sort((a, b) => (a.position || 0) - (b.position || 0))
+      
+      for (let i = 0; i < subsequentLoads.length; i++) {
+        const subsequentLoad = subsequentLoads[i]
+        if (subsequentLoad.countdownStartTime) {
+          const currentStartTime = new Date(subsequentLoad.countdownStartTime).getTime()
+          const adjustedStartTime = new Date(currentStartTime - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000))
+          
+          await update(subsequentLoad.id, {
+            countdownStartTime: adjustedStartTime.toISOString()
+          } as any)
+        }
+      }
+    }
+    
+    // ==================== TRANSITIONING TO DEPARTED ====================
+    else if (statusChangeConfirm === 'departed') {
+      // Keep the countdown (for history/tracking purposes)
+      // No cascade needed - subsequent loads already have their offsets
+    }
+    
+    // ==================== TRANSITIONING TO COMPLETED ====================
+    else if (statusChangeConfirm === 'completed' && load.status === 'departed') {
+      console.log('📋 Creating assignment records for completed load...')
+      
+      // Create assignment records for each student on the load
+      for (const loadAssignment of loadAssignments) {
+        try {
+          // Skip if no instructor assigned (shouldn't happen for departed loads, but check anyway)
+          if (!loadAssignment.instructorId) {
+            console.warn(`⚠️ Skipping assignment for ${loadAssignment.studentName} - no instructor assigned`)
+            continue
+          }
+          
+          const assignmentRecord: CreateAssignment = {
+            instructorId: loadAssignment.instructorId,
+            instructorName: loadAssignment.instructorName || 'Unknown',
+            studentName: loadAssignment.studentName,
+            studentWeight: loadAssignment.studentWeight,
+            jumpType: loadAssignment.jumpType,
+            isRequest: loadAssignment.isRequest || false,
+            isMissedJump: false,
+            // Only include optional fields if they have values
+            ...(loadAssignment.tandemWeightTax && { tandemWeightTax: loadAssignment.tandemWeightTax }),
+            ...(loadAssignment.tandemHandcam && { tandemHandcam: loadAssignment.tandemHandcam }),
+            ...(loadAssignment.hasOutsideVideo && { hasOutsideVideo: loadAssignment.hasOutsideVideo }),
+            ...(loadAssignment.videoInstructorId && { videoInstructorId: loadAssignment.videoInstructorId }),
+            ...(loadAssignment.videoInstructorName && { videoInstructorName: loadAssignment.videoInstructorName }),
+            ...(loadAssignment.affLevel && { affLevel: loadAssignment.affLevel }),
+          }
+          
+          await db.createAssignment(assignmentRecord)
+          console.log(`✅ Created assignment record for ${loadAssignment.studentName}`)
+          
+          // Update student account jump count if they have an account
+          if (loadAssignment.studentId) {
+            try {
+              await db.incrementStudentJumpCount(loadAssignment.studentId, loadAssignment.jumpType)
+              console.log(`✅ Updated jump count for student ${loadAssignment.studentId}`)
+            } catch (err) {
+              console.error(`Failed to update jump count for ${loadAssignment.studentId}:`, err)
+            }
+          }
+          
+        } catch (error) {
+          console.error(`Failed to create assignment for ${loadAssignment.studentName}:`, error)
+        }
+      }
+      
+      console.log('✅ All assignment records created for completed load')
+    }
+    
+    // Apply the status update
+    await update(load.id, updates)
+    setStatusChangeConfirm(null)
+    
+  } catch (error) {
+    console.error('Failed to update status:', error)
+    alert('Failed to update load status')
+  }
+}
+// Add this function to your LoadBuilderCard component (before the return statement)
+// This handles the "Change Call" functionality for adjusting load departure times
+
+const handleChangeCall = async () => {
+  if (delayMinutes === 0) {
+    alert('Please enter a time change (positive to delay, negative to move up)')
+    return
+  }
+  
+  try {
     // Check if removing time would make the countdown negative
     if (load.countdownStartTime && delayMinutes < 0) {
       const countdownStartTime = new Date(load.countdownStartTime).getTime()
@@ -688,22 +726,23 @@ export function LoadBuilderCard({
       
       if (changeMs > remainingMs) {
         const remainingMinutes = Math.floor(remainingMs / 60000)
-        alert(`⚠️ Cannot move the call that far forward - only ${remainingMinutes} minutes remaining. The plane can't depart in the past!`)
+        alert(`⚠️ Cannot move the call that far forward - only ${remainingMinutes} minutes remaining.`)
         return
       }
     }
     
-    try {
-      if (load.countdownStartTime) {
-        const changeMs = delayMinutes * 60 * 1000
-        const currentStartTime = new Date(load.countdownStartTime).getTime()
-        const newStartTime = new Date(currentStartTime + changeMs).toISOString()
-        
-        await update(load.id, {
-          countdownStartTime: newStartTime
-        } as any)
-        
-        // Cascade the change to all subsequent loads with countdowns
+    if (load.countdownStartTime) {
+      const changeMs = delayMinutes * 60 * 1000
+      const currentStartTime = new Date(load.countdownStartTime).getTime()
+      const newStartTime = new Date(currentStartTime + changeMs).toISOString()
+      
+      // Update this load's countdown
+      await update(load.id, {
+        countdownStartTime: newStartTime
+      } as any)
+      
+      // If delaying (positive minutes), cascade to subsequent loads
+      if (delayMinutes > 0) {
         const subsequentLoads = allLoads.filter(l => 
           l.status !== 'completed' && 
           (l.position || 0) > (load.position || 0) &&
@@ -720,20 +759,33 @@ export function LoadBuilderCard({
             } as any)
           }
         }
-      } else {
-        await update(load.id, {
-          delayMinutes: (load.delayMinutes || 0) + delayMinutes
-        } as any)
       }
-      
-      await onDelay(load.id, delayMinutes)
-      setShowDelayModal(false)
-      setDelayMinutes(0)
-    } catch (error) {
-      console.error('Failed to change call time:', error)
-      alert('Failed to change call time')
+      // If moving up (negative minutes), don't cascade - let subsequent loads keep their timing
+    } else {
+      // If no countdown started yet, store the delay amount
+      await update(load.id, {
+        delayMinutes: (load.delayMinutes || 0) + delayMinutes
+      } as any)
     }
+    
+    // Call the onDelay prop if provided
+    if (onDelay) {
+      await onDelay(load.id, delayMinutes)
+    }
+    
+    setShowDelayModal(false)
+    setDelayMinutes(0) // Reset the input
+    
+    // Show success message
+    const action = delayMinutes > 0 ? 'delayed' : 'moved up'
+    const absMinutes = Math.abs(delayMinutes)
+    alert(`✅ Load ${action} by ${absMinutes} minute${absMinutes !== 1 ? 's' : ''}`)
+    
+  } catch (error) {
+    console.error('Failed to change call time:', error)
+    alert('Failed to change load call time')
   }
+}
   
   // ==================== DELETE ====================
   const handleDelete = async () => {

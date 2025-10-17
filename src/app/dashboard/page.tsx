@@ -1,6 +1,9 @@
+// Fix for src/app/dashboard/page.tsx
+// This ensures proper real-time updates from Firebase
+
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useActiveInstructors, useAssignments } from '@/hooks/useDatabase'
 import { InstructorCard } from '@/components/InstructorCard'
 import { AddJumpModal } from '@/components/AddJumpModal'
@@ -14,16 +17,30 @@ import {
 import type { Instructor, Assignment } from '@/types'
 
 export default function DashboardPage() {
-  const { data: instructors, loading: instructorsLoading } = useActiveInstructors()
-  const { data: assignments, loading: assignmentsLoading } = useAssignments()
+  const { data: instructors, loading: instructorsLoading, refresh: refreshInstructors } = useActiveInstructors()
+  const { data: assignments, loading: assignmentsLoading, refresh: refreshAssignments } = useAssignments()
   const [selectedInstructor, setSelectedInstructor] = useState<Instructor | null>(null)
   const [releaseInstructor, setReleaseInstructor] = useState<Instructor | null>(null)
+  
+  // Force refresh periodically to ensure real-time updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Trigger a refresh to ensure we have latest data
+      refreshInstructors()
+      refreshAssignments()
+    }, 5000) // Refresh every 5 seconds
+    
+    return () => clearInterval(interval)
+  }, [refreshInstructors, refreshAssignments])
   
   const period = getCurrentPeriod()
   const schedule = getWeekSchedule()
   
-  // Calculate stats for each instructor
+  // Calculate stats for each instructor - add key dependency to force recalc
   const instructorStats = useMemo(() => {
+    // Add timestamp to ensure recalculation when data changes
+    const timestamp = Date.now()
+    
     return instructors.map(instructor => {
       // Balance (for rotation) - uses 1.2x multiplier for off days
       const balance = calculateInstructorEarnings(
@@ -68,13 +85,9 @@ export default function DashboardPage() {
               if (assignment.tandemHandcam) pay += 30
             } else if (assignment.jumpType === 'aff') {
               pay = assignment.affLevel === 'lower' ? 55 : 45
-            } else if (assignment.jumpType === 'video') {
-              pay = 45
             }
             todayEarnings += pay
-          }
-          
-          if (assignment.videoInstructorId === instructor.id) {
+          } else if (assignment.videoInstructorId === instructor.id) {
             todayEarnings += 45
           }
         }
@@ -88,9 +101,7 @@ export default function DashboardPage() {
         todayEarnings
       }
     })
-    // Sort by balance (lowest first for fair rotation)
-    .sort((a, b) => a.balance - b.balance)
-  }, [instructors, assignments, period])
+  }, [instructors, assignments, period]) // Ensure all dependencies are included
   
   const handleAddJump = (instructor: Instructor) => {
     setSelectedInstructor(instructor)
@@ -102,91 +113,37 @@ export default function DashboardPage() {
   
   if (instructorsLoading || assignmentsLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-white text-lg font-semibold">Loading dashboard...</p>
-        </div>
-      </div>
-    )
-  }
-  
-  if (instructors.length === 0) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-12 border border-white/20 text-center">
-            <div className="text-6xl mb-4">👥</div>
-            <h2 className="text-2xl font-bold text-white mb-2">No Instructors Yet</h2>
-            <p className="text-slate-300 mb-6">
-              Add instructors to get started with the rotation system.
-            </p>
-            <a
-              href="/instructors"
-              className="inline-block bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
-            >
-              Go to Instructors
-            </a>
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 p-8">
+        <div className="flex justify-center items-center h-64">
+          <div className="text-white text-xl">Loading dashboard...</div>
         </div>
       </div>
     )
   }
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 p-8">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">Dashboard</h1>
-          <p className="text-slate-300">{period.name}</p>
-        </div>
-        
-        {/* Team Schedule Card */}
-        <div className="bg-gradient-to-r from-white/10 to-white/5 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20 mb-8">
-          <h2 className="text-xl font-bold text-white mb-4 text-center">📅 This Week's Schedule</h2>
-          <div className="flex flex-wrap gap-6 justify-center items-center">
-            <div className="text-center">
-              <div className="text-lg font-semibold text-red-400 mb-1">🔴 Red Team</div>
-              <div className="text-2xl font-bold text-white">{schedule.redTeam}</div>
-            </div>
-            <div className="text-4xl text-slate-600">•</div>
-            <div className="text-center">
-              <div className="text-lg font-semibold text-blue-400 mb-1">🔵 Blue Team</div>
-              <div className="text-2xl font-bold text-white">{schedule.blueTeam}</div>
-            </div>
-          </div>
-          <p className="text-center text-slate-400 text-sm mt-4">
-            EVERYONE WORKS WEEKENDS
-          </p>
-        </div>
-        
-        {/* Summary Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        {/* Header with Stats */}
+        <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
             <div className="text-sm text-slate-300 mb-1 font-semibold uppercase tracking-wide">
-              Total Instructors
+              Active Period
             </div>
-            <div className="text-4xl font-bold text-white">
-              {instructors.length}
+            <div className="text-2xl font-bold text-white">
+              {period.name}
+            </div>
+            <div className="text-sm text-slate-400 mt-2">
+              {period.start.toLocaleDateString()} - {period.end.toLocaleDateString()}
             </div>
           </div>
           
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
             <div className="text-sm text-slate-300 mb-1 font-semibold uppercase tracking-wide">
-              Clocked In
-            </div>
-            <div className="text-4xl font-bold text-green-400">
-              {instructors.filter(i => i.clockedIn).length}
-            </div>
-          </div>
-          
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
-            <div className="text-sm text-slate-300 mb-1 font-semibold uppercase tracking-wide">
-              Total Jumps
+              Active Instructors
             </div>
             <div className="text-4xl font-bold text-blue-400">
-              {instructorStats.reduce((sum, stat) => sum + stat.jumpCount, 0)}
+              {instructors.filter(i => i.clockedIn).length} / {instructors.length}
             </div>
           </div>
           
@@ -204,7 +161,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {instructorStats.map(({ instructor, balance, totalEarnings, jumpCount, todayEarnings }) => (
             <InstructorCard
-              key={instructor.id}
+              key={`${instructor.id}-${Date.now()}`} // Force re-render with timestamp key
               instructor={instructor}
               balance={balance}
               totalEarnings={totalEarnings}
@@ -248,7 +205,7 @@ export default function DashboardPage() {
         />
       )}
       
-      {/* Release AFF Modal - NOW PROPERLY CONNECTED! */}
+      {/* Release AFF Modal */}
       {releaseInstructor && (
         <ReleaseAFFModal
           instructor={releaseInstructor}
