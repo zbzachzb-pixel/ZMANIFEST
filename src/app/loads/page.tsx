@@ -284,22 +284,23 @@ export default function LoadBuilderPage() {
     setDropTarget(null)
   }
   
-  const handleDropToQueue = async () => {
-    if (!draggedItem || !draggedItem.sourceLoadId) return
-    
-    try {
-      const sourceLoad = loads.find(l => l.id === draggedItem.sourceLoadId)
-      if (!sourceLoad) return
+
+    const handleDropToQueue = async () => {
+      if (!draggedItem || !draggedItem.sourceLoadId) return
       
-      const assignment = sourceLoad.assignments?.find(a => a.id === draggedItem.id)
-      if (!assignment) return
-      
-      const updatedAssignments = sourceLoad.assignments?.filter(a => a.id !== draggedItem.id) || []
-      await updateLoad(sourceLoad.id, { assignments: updatedAssignments })
-      
-      // Preserve original timestamp
-      const timestamp = assignment.originalQueueTimestamp || 
-        new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      try {
+        const sourceLoad = loads.find(l => l.id === draggedItem.sourceLoadId)
+        if (!sourceLoad) return
+        
+        const assignment = sourceLoad.assignments?.find(a => a.id === draggedItem.id)
+        if (!assignment) return
+        
+        const updatedAssignments = sourceLoad.assignments?.filter(a => a.id !== draggedItem.id) || []
+        await updateLoad(sourceLoad.id, { assignments: updatedAssignments })
+        
+        // Preserve original timestamp
+        const timestamp = assignment.originalQueueTimestamp || 
+          new Date(Date.now() - 24 * 60 * 60 * 1000);
       
       await db.addToQueue({
         studentAccountId: assignment.studentId,
@@ -312,7 +313,8 @@ export default function LoadBuilderPage() {
         outsideVideo: assignment.hasOutsideVideo,
         affLevel: assignment.affLevel,
         groupId: assignment.groupId
-      }, timestamp)
+      }, timestamp instanceof Date ? timestamp.toISOString() : timestamp)
+
       
       setDraggedItem(null)
     } catch (error) {

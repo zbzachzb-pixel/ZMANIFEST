@@ -1,9 +1,8 @@
 // src/components/LoadBuilderCard.tsx
-// ✅ COMPLETE FIXED VERSION
-// ✅ Functions properly ordered before usage
-// ✅ Group visual display fixed
-// ✅ Timer cascade system
-// ✅ 40-minute instructor cycle time enforcement
+// ✅ COMPLETE FIXED VERSION with proper group removal
+// ✅ Fixed race condition in group removal
+// ✅ Atomic operations for load updates
+// ✅ Proper duplicate checking
 
 'use client'
 
@@ -11,7 +10,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useUpdateLoad, useDeleteLoad, useGroups } from '@/hooks/useDatabase'
 import { useLoadCountdown, isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
 import { db } from '@/services'
-import type { Load, Instructor, LoadSchedulingSettings, CreateQueueStudent } from '@/types'
+import type { Load, Instructor, LoadSchedulingSettings, CreateQueueStudent, LoadAssignment } from '@/types'
 
 interface LoadBuilderCardProps {
   load: Load
@@ -150,7 +149,7 @@ export function LoadBuilderCard({
     return transitions
   }, [load.status])
   
-  // ==================== HELPER FUNCTIONS (DEFINED BEFORE USE) ====================
+  // ==================== HELPER FUNCTIONS ====================
   
   const getQualifiedInstructors = useCallback((assignment: any) => {
     const qualified = instructors.filter(instructor => {
@@ -193,82 +192,109 @@ export function LoadBuilderCard({
       return
     }
     
-    // Only auto-select once when modal opens
     if (hasAutoSelected.current) return
     hasAutoSelected.current = true
     
-    // Compute selections inline to avoid dependency issues
     const selections: Record<string, {instructorId: string, videoInstructorId?: string}> = {}
-    const usedMainInstructors = new Set<string>()
+    const usedInstructors = new Set<string>()
     const usedVideoInstructors = new Set<string>()
     
-    loadAssignments.forEach(assignment => {
-      if (!assignment.instructorId) {
-        const qualifiedInstructors = getQualifiedInstructors(assignment)
-        const availableForMain = qualifiedInstructors.filter(i => !usedMainInstructors.has(i.id))
-        
-        if (availableForMain.length > 0) {
-          const selected = availableForMain[0]
-          selections[assignment.id] = { instructorId: selected.id }
-          usedMainInstructors.add(selected.id)
+    const currentAssignments = load.assignments || []
+    
+    currentAssignments.forEach(assignment => {
+      if (assignment.instructorId) {
+        const selection: {instructorId: string, videoInstructorId?: string} = {
+          instructorId: assignment.instructorId
         }
-      } else {
-        usedMainInstructors.add(assignment.instructorId)
+        
+        // Track already assigned instructors
+        usedInstructors.add(assignment.instructorId)
+        
+        // Only add videoInstructorId if it's a truthy string
         if (assignment.videoInstructorId) {
+          selection.videoInstructorId = assignment.videoInstructorId
           usedVideoInstructors.add(assignment.videoInstructorId)
         }
-      }
-    })
-    
-    loadAssignments.forEach(assignment => {
-      if (assignment.hasOutsideVideo && !assignment.videoInstructorId) {
-        const selection = selections[assignment.id]
-        if (selection) {
-          const videoInstructors = getVideoInstructors()
-          const availableForVideo = videoInstructors.filter(i => 
-            !usedVideoInstructors.has(i.id) && 
-            i.id !== selection.instructorId &&
-            !usedMainInstructors.has(i.id)
-          )
-          
-          if (availableForVideo.length > 0) {
-            selection.videoInstructorId = availableForVideo[0].id
-            usedVideoInstructors.add(availableForVideo[0].id)
+        
+        selections[assignment.id] = selection
+      } else {
+        const qualified = getQualifiedInstructors(assignment)
+        
+        // Find the first qualified instructor NOT already used in this load
+        const availableInstructor = qualified.find(i => !usedInstructors.has(i.id))
+        
+        if (availableInstructor) {
+          const selection: {instructorId: string, videoInstructorId?: string} = {
+            instructorId: availableInstructor.id
           }
+          
+          // Mark this instructor as used
+          usedInstructors.add(availableInstructor.id)
+          
+          if (assignment.hasOutsideVideo) {
+            const videoInstructors = getVideoInstructors()
+            
+            // Find first video instructor NOT already used
+            const availableVideoInstructor = videoInstructors.find(
+              i => !usedVideoInstructors.has(i.id) && i.id !== availableInstructor.id
+            )
+            
+            if (availableVideoInstructor) {
+              selection.videoInstructorId = availableVideoInstructor.id
+              usedVideoInstructors.add(availableVideoInstructor.id)
+            }
+          }
+          
+          selections[assignment.id] = selection
+        } else if (qualified.length > 0) {
+          // Fallback: if all qualified instructors are used, still assign one
+          // This handles cases where there aren't enough instructors
+          const selection: {instructorId: string, videoInstructorId?: string} = {
+            instructorId: qualified[0].id
+          }
+          
+          if (assignment.hasOutsideVideo) {
+            const videoInstructors = getVideoInstructors()
+            if (videoInstructors.length > 0) {
+              selection.videoInstructorId = videoInstructors[0].id
+            }
+          }
+          
+          selections[assignment.id] = selection
         }
       }
     })
     
     setAssignmentSelections(selections)
-  }, [showAssignModal]) // Only depend on modal visibility
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAssignModal])
   
   useEffect(() => {
-    if (countdown === null) return
+    if (!isActive || countdown === null) {
+      setLastMilestone(null)
+      setShowBreathing(false)
+      return
+    }
     
     const minutes = Math.floor(countdown / 60)
     
-    if (minutes === 15 && lastMilestone !== 15) {
-      setLastMilestone(15)
-      setShowBreathing(true)
-      setTimeout(() => setShowBreathing(false), 2000)
-    } else if (minutes === 10 && lastMilestone !== 10) {
-      setLastMilestone(10)
-      setShowBreathing(true)
-      setTimeout(() => setShowBreathing(false), 2000)
-    } else if (minutes === 5 && lastMilestone !== 5) {
+    if (minutes < 5 && lastMilestone !== 5) {
       setLastMilestone(5)
       setShowBreathing(true)
-      setTimeout(() => setShowBreathing(false), 2000)
+    } else if (minutes < 10 && minutes >= 5 && lastMilestone !== 10) {
+      setLastMilestone(10)
+      setShowBreathing(false)
+    } else if (minutes >= 10 && lastMilestone !== 15) {
+      setLastMilestone(15)
+      setShowBreathing(false)
     }
-  }, [countdown, lastMilestone])
+  }, [countdown, isActive, lastMilestone])
   
-  // ==================== EVENT HANDLERS ====================
-  
-  const getLoadColors = () => {
+  const getLoadColors = useCallback(() => {
     if (!isActive || countdown === null) {
       return {
-        bg: 'bg-slate-800/50',
-        border: 'border-slate-600',
+        bg: currentStatus.color,
+        border: currentStatus.borderClass,
         glow: ''
       }
     }
@@ -277,8 +303,8 @@ export function LoadBuilderCard({
     
     if (minutes >= 10) {
       return {
-        bg: 'bg-blue-900/20',
-        border: 'border-blue-500/50',
+        bg: 'bg-blue-900/30',
+        border: 'border-blue-500',
         glow: showBreathing ? 'shadow-[0_0_30px_rgba(59,130,246,0.6)]' : ''
       }
     } else if (minutes >= 5) {
@@ -294,10 +320,11 @@ export function LoadBuilderCard({
         glow: 'shadow-[0_0_35px_rgba(239,68,68,0.6)] animate-pulse'
       }
     }
-  }
+  }, [isActive, countdown, currentStatus, showBreathing])
 
   const colors = getLoadColors()
   
+  // ==================== DRAG & DROP ====================
   const handleDragOver = (e: React.DragEvent) => {
     if (isCompleted) return
     e.preventDefault()
@@ -318,38 +345,121 @@ export function LoadBuilderCard({
     onDrop(load.id)
   }
   
+  // ==================== REMOVE FROM LOAD (SINGLE STUDENT) ====================
   const removeFromLoad = async (assignmentId: string) => {
     if (isCompleted) return
     try {
       const assignment = loadAssignments.find(a => a.id === assignmentId)
       if (!assignment) return
       
+      // Get current queue to check for duplicates
+      const currentQueue = await db.getQueue()
+      const existingInQueue = currentQueue.find(
+        s => s.studentAccountId === assignment.studentId
+      )
+      
+      // Remove from load first
       const updatedAssignments = loadAssignments.filter(a => a.id !== assignmentId)
       await update(load.id, { assignments: updatedAssignments })
       
-      const timestamp = assignment.originalQueueTimestamp || 
-        new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-      
-      const queueStudent: CreateQueueStudent = {
-        studentAccountId: assignment.studentId,
-        name: assignment.studentName,
-        weight: assignment.studentWeight,
-        jumpType: assignment.jumpType,
-        isRequest: assignment.isRequest,
-        tandemWeightTax: assignment.tandemWeightTax,
-        tandemHandcam: assignment.tandemHandcam,
-        outsideVideo: assignment.hasOutsideVideo,
-        affLevel: assignment.affLevel,
-        groupId: assignment.groupId
+      // Add back to queue if not already there
+      if (existingInQueue) {
+        console.log('⚠️ Student already in queue, updating groupId only')
+        if (assignment.groupId && existingInQueue.groupId !== assignment.groupId) {
+          await db.updateQueueStudent(existingInQueue.id, {
+            groupId: assignment.groupId
+          })
+        }
+      } else {
+        const timestamp = assignment.originalQueueTimestamp || 
+          new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+        
+        const queueStudent: CreateQueueStudent = {
+          studentAccountId: assignment.studentId,
+          name: assignment.studentName,
+          weight: assignment.studentWeight,
+          jumpType: assignment.jumpType,
+          isRequest: assignment.isRequest,
+          tandemWeightTax: assignment.tandemWeightTax,
+          tandemHandcam: assignment.tandemHandcam,
+          outsideVideo: assignment.hasOutsideVideo,
+          affLevel: assignment.affLevel,
+          groupId: assignment.groupId
+        }
+        
+        await db.addToQueue(queueStudent, timestamp)
       }
-      
-      await db.addToQueue(queueStudent, timestamp)
     } catch (error) {
       console.error('Failed to remove from load:', error)
       alert('Failed to remove student from load')
     }
   }
   
+  // ==================== REMOVE GROUP FROM LOAD (ATOMIC) ====================
+  const removeGroupFromLoad = async (groupAssignments: LoadAssignment[]) => {
+    if (isCompleted) return
+    
+    try {
+      console.log('🗑️ Removing group from load:', {
+        groupSize: groupAssignments.length,
+        students: groupAssignments.map(a => a.studentName)
+      })
+      
+      // Get current queue to check for duplicates
+      const currentQueue = await db.getQueue()
+      
+      // Remove all group assignments from load in ONE atomic operation
+      const assignmentIds = groupAssignments.map(a => a.id)
+      const updatedAssignments = loadAssignments.filter(
+        a => !assignmentIds.includes(a.id)
+      )
+      
+      await update(load.id, { assignments: updatedAssignments })
+      console.log('✅ Load updated, all group members removed')
+      
+      // Now add each student back to queue (checking for duplicates)
+      for (const assignment of groupAssignments) {
+        const existingInQueue = currentQueue.find(
+          s => s.studentAccountId === assignment.studentId
+        )
+        
+        if (existingInQueue) {
+          console.log(`⚠️ ${assignment.studentName} already in queue, updating groupId only`)
+          if (assignment.groupId && existingInQueue.groupId !== assignment.groupId) {
+            await db.updateQueueStudent(existingInQueue.id, {
+              groupId: assignment.groupId
+            })
+          }
+        } else {
+          const timestamp = assignment.originalQueueTimestamp || 
+            new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+          
+          const queueStudent: CreateQueueStudent = {
+            studentAccountId: assignment.studentId,
+            name: assignment.studentName,
+            weight: assignment.studentWeight,
+            jumpType: assignment.jumpType,
+            isRequest: assignment.isRequest,
+            tandemWeightTax: assignment.tandemWeightTax,
+            tandemHandcam: assignment.tandemHandcam,
+            outsideVideo: assignment.hasOutsideVideo,
+            affLevel: assignment.affLevel,
+            groupId: assignment.groupId
+          }
+          
+          await db.addToQueue(queueStudent, timestamp)
+          console.log(`✅ ${assignment.studentName} added back to queue`)
+        }
+      }
+      
+      console.log('✅ Group removal complete')
+    } catch (error) {
+      console.error('Failed to remove group from load:', error)
+      alert('Failed to remove group from load')
+    }
+  }
+  
+  // ==================== STATUS CHANGES ====================
   const handleStatusChangeRequest = (newStatus: Load['status']) => {
     if (newStatus === 'departed' && load.status === 'ready' && unassignedCount > 0) {
       alert('❌ Cannot mark as departed: All students must have instructors assigned!')
@@ -398,6 +508,7 @@ export function LoadBuilderCard({
     }
   }
   
+  // ==================== DELAY ====================
   const handleDelay = async () => {
     if (!delayMinutes || delayMinutes < 1) {
       alert('Please enter a valid delay time')
@@ -444,6 +555,7 @@ export function LoadBuilderCard({
     }
   }
   
+  // ==================== DELETE (WITH DUPLICATE FIX) ====================
   const handleDelete = async () => {
     if (!showDeleteConfirm) {
       setShowDeleteConfirm(true)
@@ -452,29 +564,45 @@ export function LoadBuilderCard({
     
     try {
       if (isCompleted) {
-        if (!confirm('⚠️ This load is COMPLETED. Are you absolutely sure you want to delete it?')) {
+        if (!confirm('⚠️ WARNING: This load is COMPLETED.\n\nDeleting it will:\n• Remove all completion records\n• Affect instructor stats and earnings\n• Cannot be undone\n\nAre you absolutely sure you want to delete it?')) {
           setShowDeleteConfirm(false)
           return
         }
       }
       
+      // Get current queue to check for duplicates
+      const currentQueue = await db.getQueue()
+      
       for (const assignment of loadAssignments) {
-        await db.addToQueue({
-          studentAccountId: assignment.studentId,
-          name: assignment.studentName,
-          weight: assignment.studentWeight,
-          jumpType: assignment.jumpType,
-          isRequest: assignment.isRequest,
-          groupId: assignment.groupId,
-          ...(assignment.jumpType === 'tandem' && {
-            tandemWeightTax: assignment.tandemWeightTax,
-            tandemHandcam: assignment.tandemHandcam,
-            outsideVideo: assignment.hasOutsideVideo,
-          }),
-          ...(assignment.jumpType === 'aff' && {
-            affLevel: assignment.affLevel,
-          }),
-        })
+        const existingInQueue = currentQueue.find(
+          s => s.studentAccountId === assignment.studentId
+        )
+        
+        if (existingInQueue) {
+          console.log('⚠️ Student already in queue during delete, updating groupId only')
+          if (assignment.groupId && existingInQueue.groupId !== assignment.groupId) {
+            await db.updateQueueStudent(existingInQueue.id, {
+              groupId: assignment.groupId
+            })
+          }
+        } else {
+          await db.addToQueue({
+            studentAccountId: assignment.studentId,
+            name: assignment.studentName,
+            weight: assignment.studentWeight,
+            jumpType: assignment.jumpType,
+            isRequest: assignment.isRequest,
+            groupId: assignment.groupId,
+            ...(assignment.jumpType === 'tandem' && {
+              tandemWeightTax: assignment.tandemWeightTax,
+              tandemHandcam: assignment.tandemHandcam,
+              outsideVideo: assignment.hasOutsideVideo,
+            }),
+            ...(assignment.jumpType === 'aff' && {
+              affLevel: assignment.affLevel,
+            }),
+          })
+        }
       }
       
       await deleteLoad(load.id)
@@ -485,6 +613,7 @@ export function LoadBuilderCard({
     }
   }
   
+  // ==================== BULK ASSIGN ====================
   const handleBulkAssign = async () => {
     if (Object.keys(assignmentSelections).length === 0) {
       alert('No instructors selected to assign')
@@ -576,18 +705,17 @@ export function LoadBuilderCard({
         </div>
         
         {/* Students */}
-        <div className="space-y-2 mb-3 max-h-96 overflow-y-auto">
+        <div className="space-y-2 mb-3 max-h-96 overflow-y-auto p-4">
           {loadAssignments.length === 0 ? (
             <div className="text-center text-slate-400 py-4">
               Drop students here
             </div>
           ) : (
             (() => {
-              // 🔥 FIX: Group by groupId (not originalGroupId)
+              // Group by groupId
               const groupedData: { [key: string]: typeof loadAssignments } = {}
               
               loadAssignments.forEach(assignment => {
-                // Use groupId if it exists, otherwise use assignment id (individual)
                 const groupKey = assignment.groupId || `individual-${assignment.id}`
                 if (!groupedData[groupKey]) {
                   groupedData[groupKey] = []
@@ -612,10 +740,7 @@ export function LoadBuilderCard({
                               </div>
                               {!isCompleted && load.status === 'building' && (
                                 <button
-                                  onClick={() => {
-                                    // Remove all students in this group
-                                    assignments.forEach(a => removeFromLoad(a.id))
-                                  }}
+                                  onClick={() => removeGroupFromLoad(assignments)}
                                   className="text-red-400 hover:text-red-300 transition-colors text-xs px-2 py-1 bg-red-500/20 rounded"
                                 >
                                   ✕ Remove Group
@@ -638,28 +763,24 @@ export function LoadBuilderCard({
                                 : 'bg-white/5 border border-white/10'
                             } rounded-lg p-3 ${
                               !isCompleted && load.status === 'building' ? 'cursor-move hover:bg-white/10' : ''
-                            }`}
+                            } transition-colors`}
                           >
-                            <div className="flex items-start justify-between">
+                            <div className="flex items-center justify-between">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-semibold text-white">
-                                    {assignment.studentName}
+                                  <span className="text-white font-semibold">{assignment.studentName}</span>
+                                  <span className={`text-xs px-2 py-0.5 rounded ${
+                                    assignment.jumpType === 'tandem' ? 'bg-blue-500/30 text-blue-300' : 'bg-green-500/30 text-green-300'
+                                  }`}>
+                                    {assignment.jumpType.toUpperCase()}
                                   </span>
-                                  <span className="text-xs text-slate-400">
-                                    {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
-                                  </span>
-                                  {assignment.tandemWeightTax && (
-                                    <span className="text-xs text-orange-400">
-                                      +{assignment.tandemWeightTax} tax
-                                    </span>
-                                  )}
-                                  {assignment.isRequest && (
-                                    <span className="text-xs text-yellow-400">⭐</span>
-                                  )}
-                                  {assignment.hasOutsideVideo && (
-                                    <span className="text-xs text-blue-400">🎥</span>
-                                  )}
+                                </div>
+                                <div className="text-sm text-slate-400">
+                                  {assignment.studentWeight} lbs
+                                  {assignment.tandemWeightTax ? ` • Tax: ${assignment.tandemWeightTax}` : ''}
+                                  {assignment.tandemHandcam ? ' • 📹 Handcam' : ''}
+                                  {assignment.hasOutsideVideo ? ' • 🎥 Outside' : ''}
+                                  {assignment.affLevel ? ` • ${assignment.affLevel}` : ''}
                                 </div>
                                 
                                 {assignment.instructorId ? (
@@ -676,7 +797,6 @@ export function LoadBuilderCard({
                                 )}
                               </div>
                               
-                              {/* Only show individual remove button if not in a group */}
                               {!isCompleted && load.status === 'building' && !isGroup && (
                                 <button
                                   onClick={() => removeFromLoad(assignment.id)}
@@ -769,7 +889,7 @@ export function LoadBuilderCard({
         </div>
       </div>
 
-      {/* Status Change Confirmation Modal */}
+      {/* Modals */}
       {statusChangeConfirm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-slate-700 p-6">
@@ -796,22 +916,19 @@ export function LoadBuilderCard({
         </div>
       )}
 
-      {/* Delay Modal */}
       {showDelayModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-slate-700 p-6">
-            <h3 className="text-xl font-bold text-white mb-4">⏰ Delay Departure</h3>
-            <div className="mb-6">
-              <label className="block text-sm text-slate-300 mb-2">Delay by (minutes):</label>
-              <input
-                type="number"
-                value={delayMinutes}
-                onChange={(e) => setDelayMinutes(parseInt(e.target.value) || 0)}
-                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white"
-                min="1"
-                autoFocus
-              />
-            </div>
+            <h3 className="text-xl font-bold text-white mb-4">Delay Departure</h3>
+            <p className="text-slate-300 mb-4">How many minutes should this load be delayed?</p>
+            <input
+              type="number"
+              min="1"
+              value={delayMinutes || ''}
+              onChange={(e) => setDelayMinutes(parseInt(e.target.value) || 0)}
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white mb-6"
+              placeholder="Enter minutes"
+            />
             <div className="flex gap-3">
               <button
                 onClick={() => setShowDelayModal(false)}
@@ -824,18 +941,17 @@ export function LoadBuilderCard({
                 disabled={loading}
                 className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
               >
-                Apply Delay
+                Delay
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-red-500 p-6">
-            <h3 className="text-xl font-bold text-red-400 mb-4">⚠️ Delete Load</h3>
+          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full border border-slate-700 p-6">
+            <h3 className="text-xl font-bold text-white mb-4">⚠️ Confirm Delete</h3>
             <p className="text-slate-300 mb-6">
               {isCompleted 
                 ? '⚠️ This is a COMPLETED load. Are you absolutely sure you want to delete it?'
@@ -859,8 +975,7 @@ export function LoadBuilderCard({
           </div>
         </div>
       )}
-      
-      {/* Assign Instructors Modal */}
+
       {showAssignModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[80vh] border border-slate-700 flex flex-col">
@@ -872,25 +987,20 @@ export function LoadBuilderCard({
             </div>
             
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {loadAssignments.filter(a => !a.instructorId).map(assignment => {
-                const selection = assignmentSelections[assignment.id]
-                const qualifiedInstructors = getQualifiedInstructors(assignment)
+              {loadAssignments.map(assignment => {
+                const qualified = getQualifiedInstructors(assignment)
                 const videoInstructors = getVideoInstructors()
+                const selection = assignmentSelections[assignment.id]
                 
                 return (
-                  <div key={assignment.id} className="border border-slate-600 rounded-lg p-4">
-                    <div className="mb-3">
-                      <div className="font-semibold text-white">{assignment.studentName}</div>
-                      <div className="text-sm text-slate-400">
-                        {assignment.jumpType.toUpperCase()} • {assignment.studentWeight} lbs
-                        {assignment.tandemWeightTax && ` • Tax: ${assignment.tandemWeightTax}`}
-                        {assignment.hasOutsideVideo && ' • 🎥 Needs Video'}
-                      </div>
+                  <div key={assignment.id} className="bg-slate-700 rounded-lg p-4">
+                    <div className="font-semibold text-white mb-2">
+                      {assignment.studentName} • {assignment.jumpType.toUpperCase()}
                     </div>
                     
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Main Instructor</label>
+                        <label className="text-sm text-slate-300 block mb-1">Primary Instructor</label>
                         <select
                           value={selection?.instructorId || ''}
                           onChange={(e) => {
@@ -902,12 +1012,12 @@ export function LoadBuilderCard({
                               }
                             }))
                           }}
-                          className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                          className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white"
                         >
                           <option value="">Select instructor...</option>
-                          {qualifiedInstructors.map(instructor => (
+                          {qualified.map(instructor => (
                             <option key={instructor.id} value={instructor.id}>
-                              {instructor.name} (Balance: ${instructorBalances.get(instructor.id) || 0})
+                              {instructor.name} (${instructorBalances.get(instructor.id) || 0})
                             </option>
                           ))}
                         </select>
@@ -915,7 +1025,7 @@ export function LoadBuilderCard({
                       
                       {assignment.hasOutsideVideo && (
                         <div>
-                          <label className="block text-xs text-slate-400 mb-1">Video Instructor</label>
+                          <label className="text-sm text-slate-300 block mb-1">Video Instructor</label>
                           <select
                             value={selection?.videoInstructorId || ''}
                             onChange={(e) => {
@@ -927,12 +1037,12 @@ export function LoadBuilderCard({
                                 }
                               }))
                             }}
-                            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                            className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white"
                           >
                             <option value="">Select video instructor...</option>
                             {videoInstructors.map(instructor => (
                               <option key={instructor.id} value={instructor.id}>
-                                {instructor.name} (Balance: ${instructorBalances.get(instructor.id) || 0})
+                                {instructor.name} (${instructorBalances.get(instructor.id) || 0})
                               </option>
                             ))}
                           </select>
@@ -944,19 +1054,22 @@ export function LoadBuilderCard({
               })}
             </div>
             
-            <div className="border-t border-slate-700 p-6 flex gap-3">
+            <div className="p-6 border-t border-slate-700 flex gap-3">
               <button
-                onClick={() => setShowAssignModal(false)}
-                className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                onClick={() => {
+                  setShowAssignModal(false)
+                  setAssignmentSelections({})
+                }}
+                className="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleBulkAssign}
-                disabled={assignLoading || Object.keys(assignmentSelections).length === 0}
-                className="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={assignLoading}
+                className="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg transition-colors disabled:opacity-50"
               >
-                {assignLoading ? '⏳ Assigning...' : '✓ Assign All'}
+                {assignLoading ? 'Assigning...' : 'Assign Selected'}
               </button>
             </div>
           </div>

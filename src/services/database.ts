@@ -74,6 +74,7 @@ export interface DatabaseService {
   getQueue(): Promise<QueueStudent[]>
   removeFromQueue(id: string): Promise<void>
   removeMultipleFromQueue(ids: string[]): Promise<void>
+  updateQueueStudent(id: string, updates: Partial<QueueStudent>): Promise<void>
   subscribeToQueue(callback: (queue: QueueStudent[]) => void): () => void
   
   // ==================== GROUPS ====================
