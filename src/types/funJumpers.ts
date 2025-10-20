@@ -42,6 +42,7 @@ export interface UserProfile {
   email: string
   displayName: string
   role: UserRole
+  uspaNumber?: string
   jumprunId?: string
   phoneNumber?: string
   fcmToken?: string

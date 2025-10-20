@@ -29,6 +29,7 @@ export function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [uspaNumber, setUspaNumber] = useState('')
   const [role, setRole] = useState<UserRole>('fun_jumper')
   const [jumprunId, setJumprunId] = useState('')
 
@@ -80,6 +81,11 @@ export function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
       return
     }
 
+    if (!uspaNumber || uspaNumber.trim().length === 0) {
+      toast.error('USPA Number required', 'Please enter a USPA Number')
+      return
+    }
+
     if (!password || password.length < 6) {
       toast.error('Invalid password', 'Password must be at least 6 characters')
       return
@@ -98,7 +104,7 @@ export function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
     setLoading(true)
 
     try {
-      await signUp(email, password, displayName, role)
+      await signUp(email, password, displayName, role, uspaNumber.trim())
 
       // If jumprunId was provided, update the profile
       if (jumprunId.trim()) {
@@ -161,6 +167,22 @@ export function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
               placeholder="John Doe"
               required
             />
+          </div>
+
+          {/* USPA Number */}
+          <div>
+            <label className="block text-sm font-semibold text-white mb-2">
+              USPA Number *
+            </label>
+            <input
+              type="text"
+              value={uspaNumber}
+              onChange={(e) => setUspaNumber(e.target.value)}
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="A-12345"
+              required
+            />
+            <p className="text-xs text-slate-400 mt-1">United States Parachute Association member number</p>
           </div>
 
           {/* Password */}

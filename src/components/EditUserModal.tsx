@@ -28,6 +28,7 @@ export function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) 
   const [loading, setLoading] = useState(false)
 
   const [displayName, setDisplayName] = useState(user.displayName)
+  const [uspaNumber, setUspaNumber] = useState(user.uspaNumber || '')
   const [role, setRole] = useState<UserRole>(user.role)
   const [jumprunId, setJumprunId] = useState(user.jumprunId || '')
   const [phoneNumber, setPhoneNumber] = useState(user.phoneNumber || '')
@@ -99,6 +100,9 @@ export function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) 
       }
 
       // Add optional fields if provided
+      if (uspaNumber.trim()) {
+        updates.uspaNumber = uspaNumber.trim()
+      }
       if (jumprunId.trim()) {
         updates.jumprunId = jumprunId.trim()
       }
@@ -160,6 +164,21 @@ export function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) 
               required
               autoFocus
             />
+          </div>
+
+          {/* USPA Number */}
+          <div>
+            <label className="block text-sm font-semibold text-white mb-2">
+              USPA Number <span className="text-slate-400 font-normal">(Optional)</span>
+            </label>
+            <input
+              type="text"
+              value={uspaNumber}
+              onChange={(e) => setUspaNumber(e.target.value)}
+              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="A-12345"
+            />
+            <p className="text-xs text-slate-400 mt-1">United States Parachute Association member number</p>
           </div>
 
           {/* Role */}

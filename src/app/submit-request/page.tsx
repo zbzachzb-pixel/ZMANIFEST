@@ -78,8 +78,8 @@ function SubmitRequestPageContent() {
       setSkyDiveType('')
       setNotes('')
 
-      // Redirect to a "my requests" page (we'll create this later) or home
-      router.push('/')
+      // Redirect to My Requests page
+      router.push('/my-requests')
     } catch (error: any) {
       toast.error('Submission Failed', error.message)
     } finally {

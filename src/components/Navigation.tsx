@@ -33,6 +33,7 @@ export function Navigation() {
       links: [
         { href: '/loads', label: 'Load Builder', icon: '✈️' },
         { href: '/queue', label: 'Queue', icon: '👥' },
+        { href: '/my-requests', label: 'My Requests', icon: '📝' },
         { href: '/requests', label: 'Fun Jumper Requests', icon: '🪂', roles: ['admin', 'manifest'] },
       ]
     },

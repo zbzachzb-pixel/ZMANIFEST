@@ -1,7 +1,7 @@
 // src/lib/funJumperRequests.ts
 // Service for managing fun jumper requests
 
-import { ref, get, set, update, push, query, orderByChild, equalTo, remove } from 'firebase/database'
+import { ref, get, set, update, push, query, orderByChild, equalTo, remove, onValue } from 'firebase/database'
 import { database } from './firebase'
 import { NotificationService, getUserNotificationSettings } from './notifications'
 import type {
@@ -649,6 +649,34 @@ export class FunJumperRequestService {
       console.error('Failed to deny cancellation:', error)
       throw error
     }
+  }
+
+  /**
+   * Subscribe to user's requests with real-time updates
+   */
+  static subscribeToUserRequests(
+    userId: string,
+    callback: (requests: FunJumperRequest[]) => void
+  ): () => void {
+    const requestsRef = ref(database, 'funJumperRequests')
+    const userQuery = query(requestsRef, orderByChild('userId'), equalTo(userId))
+
+    const unsubscribe = onValue(userQuery, (snapshot) => {
+      if (!snapshot.exists()) {
+        callback([])
+        return
+      }
+
+      const requests: FunJumperRequest[] = []
+      snapshot.forEach(child => {
+        requests.push(child.val() as FunJumperRequest)
+      })
+
+      // Sort by most recent first
+      callback(requests.sort((a, b) => b.createdAt - a.createdAt))
+    })
+
+    return unsubscribe
   }
 
   /**
