@@ -901,61 +901,62 @@ const handleChangeCall = async () => {
         } ${colors.bg} ${colors.glow} border-2 ${colors.border}`}
       >
         {/* Header */}
-        <div className="p-4 border-b border-white/10">
-          <div className="flex items-center justify-between gap-3">
+        <div className="p-6 border-b border-white/10">
+          <div className="flex items-center justify-between gap-4">
             {/* Left: Load number and status */}
-            <div className="flex items-center gap-2 min-w-0">
-              <h3 className="text-2xl font-bold text-white shrink-0">#{load.position || '?'}</h3>
-              <span className={`px-3 py-1 rounded-full text-xs font-bold ${currentStatus.color} text-white whitespace-nowrap`}>
+            <div className="flex items-center gap-3 min-w-0">
+              <h3 className="text-3xl font-extrabold text-white shrink-0 tracking-tight">#{load.position || '?'}</h3>
+              <span className={`px-4 py-1.5 rounded-full text-sm font-bold ${currentStatus.color} text-white whitespace-nowrap shadow-lg`}>
                 {currentStatus.emoji} {currentStatus.label}
               </span>
             </div>
 
             {/* Right: Health indicator */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/10 shrink-0">
-              <div className={`w-2 h-2 rounded-full ${conflictSummary.color} animate-pulse`} />
-              <span className="text-xs text-white/80 font-medium">{conflictSummary.label}</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/30 border border-white/10 shrink-0 shadow-md">
+              <div className={`w-2.5 h-2.5 rounded-full ${conflictSummary.color} animate-pulse shadow-sm`} />
+              <span className="text-sm text-white/90 font-semibold">{conflictSummary.label}</span>
             </div>
           </div>
           
           {/* Countdown Timer */}
           {isActive && countdown !== null && (
-            <div className="mt-4 p-3 rounded-lg bg-black/30 border border-white/10">
-              <div className="flex items-center justify-between mb-2">
+            <div className="mt-5 p-4 rounded-xl bg-black/40 border border-white/20 shadow-lg">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">⏱️</span>
-                  <span className="text-xs font-medium text-white/70 uppercase tracking-wide">Departure In</span>
+                  <span className="text-xl">⏱️</span>
+                  <span className="text-sm font-bold text-white/80 uppercase tracking-wider">Departure In</span>
                 </div>
-                <div className={`px-3 py-1 rounded-lg font-mono text-2xl font-bold ${
-                  Math.floor(countdown / 60) < 5 ? 'text-red-400 bg-red-500/10' :
-                  Math.floor(countdown / 60) < 10 ? 'text-orange-400 bg-orange-500/10' :
-                  'text-blue-400 bg-blue-500/10'
+                <div className={`px-4 py-2 rounded-xl font-mono text-3xl font-extrabold shadow-md ${
+                  Math.floor(countdown / 60) < 5 ? 'text-red-300 bg-red-500/20 border border-red-500/30' :
+                  Math.floor(countdown / 60) < 10 ? 'text-orange-300 bg-orange-500/20 border border-orange-500/30' :
+                  'text-blue-300 bg-blue-500/20 border border-blue-500/30'
                 }`}>
                   {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
                 </div>
               </div>
 
               {/* Enhanced progress bar */}
-              <div className="relative w-full h-3 bg-slate-700/50 rounded-full overflow-hidden">
+              <div className="relative w-full h-4 bg-slate-700/50 rounded-full overflow-hidden shadow-inner">
                 <div
                   className={`absolute inset-0 transition-all duration-1000 ${
-                    Math.floor(countdown / 60) < 5 ? 'bg-gradient-to-r from-red-500 to-red-400' :
-                    Math.floor(countdown / 60) < 10 ? 'bg-gradient-to-r from-orange-500 to-orange-400' :
-                    'bg-gradient-to-r from-blue-500 to-blue-400'
+                    Math.floor(countdown / 60) < 5 ? 'bg-gradient-to-r from-red-600 via-red-500 to-red-400' :
+                    Math.floor(countdown / 60) < 10 ? 'bg-gradient-to-r from-orange-600 via-orange-500 to-orange-400' :
+                    'bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400'
                   }`}
                   style={{
                     width: `${Math.max(0, Math.min(100, (countdown / (loadSchedulingSettings.minutesBetweenLoads * 60)) * 100))}%`
                   }}
                 >
                   <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white/10" />
                 </div>
               </div>
 
               {/* Status message */}
-              <div className={`mt-2 text-center text-xs font-bold uppercase tracking-wider ${
-                Math.floor(countdown / 60) < 5 ? 'text-red-400' :
-                Math.floor(countdown / 60) < 10 ? 'text-orange-400' :
-                'text-blue-400'
+              <div className={`mt-3 text-center text-sm font-extrabold uppercase tracking-widest ${
+                Math.floor(countdown / 60) < 5 ? 'text-red-300 drop-shadow-lg' :
+                Math.floor(countdown / 60) < 10 ? 'text-orange-300 drop-shadow-lg' :
+                'text-blue-300'
               }`}>
                 {Math.floor(countdown / 60) < 5 ? '⚠️ PREPARE FOR DEPARTURE' :
                  Math.floor(countdown / 60) < 10 ? '📋 FINAL CHECKS' :
@@ -996,20 +997,20 @@ const handleChangeCall = async () => {
         )}
 
         {/* Action Buttons */}
-        <div className="p-4 border-t border-white/10 space-y-3">
+        <div className="p-5 border-t border-white/10 space-y-3">
           {/* Instructor Actions */}
           {(load.status === 'building' || load.status === 'ready') && (
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               {unassignedCount > 0 && (
                 <button
                   onClick={() => {
                     setShowEditModal(false)
                     setShowAssignModal(true)
                   }}
-                  className="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2.5 px-4 rounded-lg transition-all hover:scale-105 text-sm shadow-lg"
+                  className="flex-1 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 text-white font-bold py-3 px-5 rounded-xl transition-all hover:scale-105 hover:shadow-xl text-sm shadow-lg"
                 >
-                  <span className="block">👤 Assign</span>
-                  <span className="text-xs opacity-80">({unassignedCount} unassigned)</span>
+                  <span className="block text-base">👤 Assign</span>
+                  <span className="text-xs opacity-90 font-semibold">({unassignedCount} unassigned)</span>
                 </button>
               )}
 
@@ -1019,9 +1020,9 @@ const handleChangeCall = async () => {
                     setShowEditModal(true)
                     setShowAssignModal(true)
                   }}
-                  className="flex-1 bg-blue-500/80 hover:bg-blue-500 text-white font-semibold py-2.5 px-4 rounded-lg transition-all hover:scale-105 text-sm"
+                  className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold py-3 px-5 rounded-xl transition-all hover:scale-105 hover:shadow-xl text-sm shadow-lg"
                 >
-                  ✏️ Edit
+                  <span className="text-base">✏️ Edit</span>
                 </button>
               )}
             </div>
@@ -1029,25 +1030,30 @@ const handleChangeCall = async () => {
 
           {/* Status Transitions */}
           {availableTransitions.length > 0 && (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-3">
               {availableTransitions.map(transition => {
                 const transitionConfig = statusConfig[transition as Load['status']]
+                // Full width for primary actions or when only one button
+                const isFullWidth = availableTransitions.length === 1 ||
+                  transition === 'ready' ||
+                  transition === 'completed'
+
                 return (
                   <button
                     key={transition}
                     onClick={() => handleStatusChangeRequest(transition as Load['status'])}
                     disabled={loading}
-                    className={`font-semibold py-2.5 px-4 rounded-lg transition-all hover:scale-105 text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-lg ${
+                    className={`font-bold py-3 px-5 rounded-xl transition-all hover:scale-105 text-base disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl ${
                       transition === 'ready' ?
-                        'bg-blue-500 hover:bg-blue-600 text-white col-span-2' :
+                        'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white' :
                       transition === 'departed' ?
-                        'bg-green-500 hover:bg-green-600 text-white col-span-2' :
+                        'bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white' :
                       transition === 'completed' ?
-                        'bg-purple-500 hover:bg-purple-600 text-white col-span-2' :
-                        'bg-slate-600 hover:bg-slate-700 text-white'
-                    }`}
+                        'bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 text-white' :
+                        'bg-gradient-to-r from-slate-700 to-slate-600 hover:from-slate-800 hover:to-slate-700 text-white'
+                    } ${isFullWidth ? 'col-span-2' : ''}`}
                   >
-                    {transitionConfig.emoji} {transition === 'building' ?
+                    <span className="text-lg">{transitionConfig.emoji}</span> {transition === 'building' ?
                       'Back to Building' :
                       transition === 'departed' ?
                       'Mark Departed' :
@@ -1059,13 +1065,13 @@ const handleChangeCall = async () => {
           )}
 
           {/* Utility Actions */}
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             {load.status === 'ready' && (
               <button
                 onClick={() => setShowDelayModal(true)}
-                className="flex-1 bg-orange-500/80 hover:bg-orange-500 text-white font-semibold py-2 px-4 rounded-lg transition-all hover:scale-105 text-sm"
+                className="flex-1 bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-700 hover:to-orange-600 text-white font-bold py-3 px-5 rounded-xl transition-all hover:scale-105 hover:shadow-xl text-base shadow-lg"
               >
-                ⏱️ Change Call
+                <span className="text-lg">⏱️</span> Change Call
               </button>
             )}
 
@@ -1073,9 +1079,9 @@ const handleChangeCall = async () => {
               <button
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={loading}
-                className="bg-red-500/20 hover:bg-red-500/40 border border-red-500/50 text-red-300 hover:text-red-200 font-semibold py-2 px-4 rounded-lg transition-all text-sm disabled:opacity-50"
+                className="bg-red-500/20 hover:bg-red-500/40 border-2 border-red-500/50 hover:border-red-400 text-red-300 hover:text-red-200 font-bold py-3 px-5 rounded-xl transition-all hover:scale-105 text-base disabled:opacity-50 shadow-md hover:shadow-lg"
               >
-                🗑️
+                <span className="text-lg">🗑️</span>
               </button>
             )}
           </div>
