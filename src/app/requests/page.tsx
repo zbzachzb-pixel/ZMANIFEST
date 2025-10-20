@@ -11,7 +11,7 @@ import type { FunJumperRequest } from '@/types'
 import { RequireRole } from '@/components/auth'
 
 function RequestsPageContent() {
-  const { user, userProfile } = useAuth()
+  const { userProfile } = useAuth()
   const toast = useToast()
 
   // Use combined hook for better performance

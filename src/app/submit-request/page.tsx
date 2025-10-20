@@ -2,7 +2,7 @@
 // Test Request Submission Page (simulates mobile app)
 'use client'
 
-import { useState, useEffect, FormEvent } from 'react'
+import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
