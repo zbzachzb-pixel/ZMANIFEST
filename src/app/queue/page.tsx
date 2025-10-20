@@ -517,7 +517,7 @@ function QueuePageContent() {
 
 export default function QueuePage() {
   return (
-    <RequireRole roles={['admin', 'manifest']}>
+    <RequireRole roles={['admin', 'manifest', 'instructor']}>
       <PageErrorBoundary>
         <QueuePageContent />
       </PageErrorBoundary>

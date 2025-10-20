@@ -402,7 +402,7 @@ function AnalyticsPageContent() {
 
 export default function AnalyticsPage() {
   return (
-    <RequireRole roles={["admin", "manifest"]}>
+    <RequireRole roles={["admin", "manifest", "instructor"]}>
       <AnalyticsPageContent />
     </RequireRole>
   )

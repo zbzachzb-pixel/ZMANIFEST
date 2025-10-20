@@ -282,7 +282,7 @@ function InstructorsPageContent() {
 
 export default function InstructorsPage() {
   return (
-    <RequireRole roles={['admin', 'manifest']}>
+    <RequireRole roles={['admin', 'manifest', 'instructor']}>
       <PageErrorBoundary>
         <InstructorsPageContent />
       </PageErrorBoundary>

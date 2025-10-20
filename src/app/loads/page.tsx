@@ -922,7 +922,7 @@ function LoadBuilderPageContent() {
 
 export default function LoadBuilderPage() {
   return (
-    <RequireRole roles={['admin', 'manifest']}>
+    <RequireRole roles={['admin', 'manifest', 'instructor']}>
       <PageErrorBoundary>
         <LoadBuilderPageContent />
       </PageErrorBoundary>

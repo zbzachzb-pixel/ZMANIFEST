@@ -632,7 +632,7 @@ function AssignmentsPageContent() {
 
 export default function AssignmentsPage() {
   return (
-    <RequireRole roles={["admin", "manifest"]}>
+    <RequireRole roles={["admin", "manifest", "instructor"]}>
       <AssignmentsPageContent />
     </RequireRole>
   )

@@ -120,7 +120,7 @@ Examples:
 
 export default function NotesPage() {
   return (
-    <RequireRole roles={["admin", "manifest"]}>
+    <RequireRole roles={["admin", "manifest", "instructor"]}>
       <NotesPageContent />
     </RequireRole>
   )
