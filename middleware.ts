@@ -8,11 +8,6 @@ import type { NextRequest } from 'next/server'
 // Public routes that don't require authentication
 const PUBLIC_ROUTES = ['/login', '/register']
 
-// Routes that require specific roles
-const ROLE_ROUTES: Record<string, string[]> = {
-  '/requests': ['admin', 'manifest'],
-}
-
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
