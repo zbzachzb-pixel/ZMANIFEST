@@ -31,8 +31,9 @@ export function Navigation() {
       label: 'Operations',
       icon: '✈️',
       links: [
-        { href: '/loads', label: 'Load Builder', icon: '✈️' },
-        { href: '/queue', label: 'Queue', icon: '👥' },
+        { href: '/loads', label: 'Load Builder', icon: '✈️', roles: ['admin', 'manifest', 'instructor'] },
+        { href: '/queue', label: 'Queue', icon: '👥', roles: ['admin', 'manifest', 'instructor'] },
+        { href: '/submit-request', label: 'Submit Request', icon: '✈️' },
         { href: '/my-requests', label: 'My Requests', icon: '📝' },
         { href: '/requests', label: 'Fun Jumper Requests', icon: '🪂', roles: ['admin', 'manifest'] },
       ]
@@ -41,9 +42,9 @@ export function Navigation() {
       label: 'Management',
       icon: '👨‍✈️',
       links: [
-        { href: '/instructors', label: 'Instructors', icon: '👨‍✈️' },
-        { href: '/assignments', label: 'History', icon: '📋' },
-        { href: '/analytics', label: 'Analytics', icon: '📊' },
+        { href: '/instructors', label: 'Instructors', icon: '👨‍✈️', roles: ['admin', 'manifest', 'instructor'] },
+        { href: '/assignments', label: 'History', icon: '📋', roles: ['admin', 'manifest', 'instructor'] },
+        { href: '/analytics', label: 'Analytics', icon: '📊', roles: ['admin', 'manifest', 'instructor'] },
       ]
     },
     {
@@ -51,7 +52,7 @@ export function Navigation() {
       icon: '⚙️',
       links: [
         { href: '/users', label: 'Users', icon: '👥', roles: ['admin'] },
-        { href: '/notes', label: 'Notes', icon: '📝' },
+        { href: '/notes', label: 'Notes', icon: '📝', roles: ['admin', 'manifest', 'instructor'] },
         { href: '/settings', label: 'Settings', icon: '⚙️' },
       ]
     }
@@ -96,19 +97,21 @@ export function Navigation() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-2">
-            {/* Dashboard Link (always visible) */}
-            <Link
-              href="/"
-              className={`px-3 py-1.5 rounded-lg font-medium text-sm transition-all ${
-                pathname === '/'
-                  ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/50'
-                  : 'text-slate-300 hover:text-white hover:bg-white/10'
-              }`}
-              onClick={closeDropdowns}
-            >
-              <span className="mr-1.5">🏠</span>
-              Dashboard
-            </Link>
+            {/* Dashboard Link (only for admin, manifest, instructor) */}
+            {auth?.userProfile && ['admin', 'manifest', 'instructor'].includes(auth.userProfile.role) && (
+              <Link
+                href="/"
+                className={`px-3 py-1.5 rounded-lg font-medium text-sm transition-all ${
+                  pathname === '/'
+                    ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/50'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+                onClick={closeDropdowns}
+              >
+                <span className="mr-1.5">🏠</span>
+                Dashboard
+              </Link>
+            )}
 
             {/* Grouped Dropdowns */}
             {filteredGroups.map(group => {
@@ -223,19 +226,21 @@ export function Navigation() {
       {mobileMenuOpen && (
         <div className="md:hidden bg-slate-900 border-t border-white/10 animate-in slide-in-from-top duration-200">
           <div className="px-4 py-4 space-y-2">
-            {/* Dashboard */}
-            <Link
-              href="/"
-              onClick={() => setMobileMenuOpen(false)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold transition-all ${
-                pathname === '/'
-                  ? 'bg-blue-500 text-white'
-                  : 'text-slate-300 hover:bg-white/10'
-              }`}
-            >
-              <span>🏠</span>
-              <span>Dashboard</span>
-            </Link>
+            {/* Dashboard (only for admin, manifest, instructor) */}
+            {auth?.userProfile && ['admin', 'manifest', 'instructor'].includes(auth.userProfile.role) && (
+              <Link
+                href="/"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold transition-all ${
+                  pathname === '/'
+                    ? 'bg-blue-500 text-white'
+                    : 'text-slate-300 hover:bg-white/10'
+                }`}
+              >
+                <span>🏠</span>
+                <span>Dashboard</span>
+              </Link>
+            )}
 
             {/* All Links (flat for mobile) */}
             {filteredGroups.map(group => (
