@@ -27,23 +27,16 @@ export function useUsers(): UseUsersResult {
     setLoading(true)
     setError(null)
 
-    try {
-      const unsubscribe = db.subscribeToUserProfiles((users) => {
-        if (mounted) {
-          setData(users)
-          setLoading(false)
-        }
-      })
-
-      return () => {
-        mounted = false
-        unsubscribe()
-      }
-    } catch (err) {
+    const unsubscribe = db.subscribeToUserProfiles((users) => {
       if (mounted) {
-        setError(err instanceof Error ? err : new Error('Failed to subscribe to users'))
+        setData(users)
         setLoading(false)
       }
+    })
+
+    return () => {
+      mounted = false
+      unsubscribe()
     }
   }, [refreshKey])
 
