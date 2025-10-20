@@ -156,9 +156,9 @@ export function StudentCard({
 
       {/* Additional Info */}
       <div className="flex flex-wrap gap-2 text-xs">
-        {student.tandemWeightTax && student.tandemWeightTax > 0 && (
+        {student.tandemWeightTax > 0 && (
           <span className="bg-orange-500/20 text-orange-300 px-2 py-1 rounded">
-            Tax: {student.tandemWeightTax}x
+            TAX x {student.tandemWeightTax}
           </span>
         )}
         {student.tandemHandcam && (

@@ -42,6 +42,7 @@ import type {
   AutoAssignSettings,
   LoadSchedulingSettings
 } from '@/types'
+import type { UserProfile } from '@/types/funJumpers'
 
 // Helper type for raw Firebase Period data (dates are stored as ISO strings)
 type FirebasePeriod = Omit<Period, 'start' | 'end' | 'archivedAt'> & {
@@ -62,6 +63,7 @@ export class FirebaseService implements DatabaseService {
     this.subscribeToClockEvents = this.subscribeToClockEvents.bind(this)
     this.subscribeToPeriods = this.subscribeToPeriods.bind(this)
     this.subscribeToStudentAccounts = this.subscribeToStudentAccounts.bind(this)
+    this.subscribeToUserProfiles = this.subscribeToUserProfiles.bind(this)
     this.subscribeToSettings = this.subscribeToSettings.bind(this)
     this.subscribeToAll = this.subscribeToAll.bind(this)
   }
@@ -219,7 +221,39 @@ export class FirebaseService implements DatabaseService {
     })
     return unsubscribe
   }
-  
+
+  // ==================== USER PROFILES ====================
+
+  async getUserProfiles(): Promise<UserProfile[]> {
+    return this.getData<UserProfile>('users')
+  }
+
+  async getUserProfile(uid: string): Promise<UserProfile | null> {
+    const userRef = ref(this.db, `users/${uid}`)
+    const snapshot = await get(userRef)
+    return snapshot.exists() ? snapshot.val() : null
+  }
+
+  async updateUserProfile(uid: string, updates: Partial<UserProfile>): Promise<void> {
+    const userRef = ref(this.db, `users/${uid}`)
+    const cleanedUpdates = this.cleanData(updates)
+    await update(userRef, cleanedUpdates)
+  }
+
+  async deleteUserProfile(uid: string): Promise<void> {
+    const userRef = ref(this.db, `users/${uid}`)
+    await remove(userRef)
+  }
+
+  subscribeToUserProfiles(callback: (users: UserProfile[]) => void): () => void {
+    const usersRef = ref(this.db, 'users')
+    const unsubscribe = onValue(usersRef, (snapshot) => {
+      const data = snapshot.val()
+      callback(data ? Object.values(data) : [])
+    })
+    return unsubscribe
+  }
+
   // ==================== CLOCK EVENTS ====================
   
   async logClockEvent(instructorId: string, instructorName: string, type: 'in' | 'out'): Promise<ClockEvent> {

@@ -49,6 +49,7 @@ export function Navigation() {
       label: 'System',
       icon: '⚙️',
       links: [
+        { href: '/users', label: 'Users', icon: '👥', roles: ['admin'] },
         { href: '/notes', label: 'Notes', icon: '📝' },
         { href: '/settings', label: 'Settings', icon: '⚙️' },
       ]

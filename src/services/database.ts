@@ -1,4 +1,4 @@
-// src/services/database.ts - COMPLETE WITH STUDENT ACCOUNTS AND SETTINGS
+// src/services/database.ts - COMPLETE WITH STUDENT ACCOUNTS, SETTINGS, AND USER PROFILES
 import type {
   Instructor,
   CreateInstructor,
@@ -24,6 +24,7 @@ import type {
   AutoAssignSettings,
   LoadSchedulingSettings
 } from '@/types'
+import type { UserProfile } from '@/types/funJumpers'
 
 export interface DatabaseService {
   // ==================== INSTRUCTORS ====================
@@ -44,7 +45,14 @@ export interface DatabaseService {
   deactivateStudentAccount(id: string): Promise<void>
   incrementStudentJumpCount(studentAccountId: string, jumpType: 'tandem' | 'aff'): Promise<void>
   subscribeToStudentAccounts(callback: (accounts: StudentAccount[]) => void): () => void
-  
+
+  // ==================== USER PROFILES ====================
+  getUserProfiles(): Promise<UserProfile[]>
+  getUserProfile(uid: string): Promise<UserProfile | null>
+  updateUserProfile(uid: string, updates: Partial<UserProfile>): Promise<void>
+  deleteUserProfile(uid: string): Promise<void>
+  subscribeToUserProfiles(callback: (users: UserProfile[]) => void): () => void
+
   // ==================== CLOCK EVENTS ====================
   logClockEvent(instructorId: string, instructorName: string, type: 'in' | 'out'): Promise<ClockEvent>
   getClockEvents(): Promise<ClockEvent[]>
