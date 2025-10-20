@@ -716,47 +716,47 @@ function LoadBuilderPageContent() {
   }
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-4 lg:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-3 lg:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-xl p-6 mb-8 border border-white/20">
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+        <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-xl p-4 mb-6 border border-white/20">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
             <div>
-              <h1 className="text-3xl font-bold text-white mb-2">🛫 Load Builder</h1>
-              <p className="text-slate-300">Drag students from queue to loads</p>
+              <h1 className="text-2xl font-bold text-white mb-1">🛫 Load Builder</h1>
+              <p className="text-sm text-slate-300">Drag students from queue to loads</p>
             </div>
             <button
               onClick={handleCreateLoad}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg"
+              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors shadow-lg text-sm"
             >
               ➕ New Load
             </button>
           </div>
-          
+
           {/* Status Filter Tabs */}
-          <div className="mt-6 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
             {(['all', 'building', 'ready', 'departed', 'completed'] as const).map((status) => (
               <button
                 key={status}
                 onClick={() => setStatusFilter(status)}
-                className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                className={`px-3 py-1.5 rounded-lg font-medium text-sm transition-all ${
                   statusFilter === status
                     ? 'bg-blue-500 text-white shadow-lg'
                     : 'bg-white/10 text-slate-300 hover:bg-white/20'
                 }`}
               >
                 {status.charAt(0).toUpperCase() + status.slice(1)}
-                <span className="ml-2 text-xs">({loadCounts[status]})</span>
+                <span className="ml-1.5 text-xs">({loadCounts[status]})</span>
               </button>
             ))}
           </div>
         </div>
         
         {/* Main Content */}
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
           {/* Loads Grid */}
           <div className="xl:col-span-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-3">
               {filteredLoads.length === 0 ? (
                 <div className="col-span-full text-center text-slate-400 py-12">
                   <p className="text-xl mb-2">
@@ -803,8 +803,8 @@ function LoadBuilderPageContent() {
           
           {/* Sidebar - Queue */}
           <div className="xl:col-span-1">
-            <div 
-              className="bg-white/10 backdrop-blur-lg rounded-xl shadow-xl p-6 border border-white/20 sticky top-8"
+            <div
+              className="bg-white/10 backdrop-blur-lg rounded-xl shadow-xl p-4 border border-white/20 sticky top-20"
               onDragOver={(e) => {
                 if (draggedItem?.sourceLoadId) {
                   e.preventDefault()
@@ -826,27 +826,27 @@ function LoadBuilderPageContent() {
                 transform: dropTarget === 'queue' ? 'scale(1.02)' : undefined
               }}
             >
-              <h2 className="text-2xl font-bold text-white mb-4">📋 Student Queue</h2>
-              <div className="text-sm text-slate-300 mb-4">
+              <h2 className="text-lg font-bold text-white mb-2">📋 Student Queue</h2>
+              <div className="text-xs text-slate-300 mb-3">
                 {filteredQueue.length} student{filteredQueue.length !== 1 ? 's' : ''} waiting
               </div>
-              
+
               {/* Search and Filter */}
-              <div className="space-y-3 mb-4">
+              <div className="space-y-2 mb-3">
                 <input
                   type="text"
                   placeholder="Search students..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-slate-400"
+                  className="w-full px-2.5 py-1.5 text-sm bg-white/10 border border-white/20 rounded-lg text-white placeholder-slate-400"
                 />
-                
-                <div className="flex gap-2">
+
+                <div className="flex gap-1.5">
                   {(['all', 'tandem', 'aff'] as const).map((type) => (
                     <button
                       key={type}
                       onClick={() => setSelectedJumpType(type)}
-                      className={`flex-1 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      className={`flex-1 px-2 py-1 rounded-lg text-xs font-semibold transition-colors ${
                         selectedJumpType === type
                           ? 'bg-blue-500 text-white'
                           : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
@@ -857,9 +857,9 @@ function LoadBuilderPageContent() {
                   ))}
                 </div>
               </div>
-              
+
               {/* Queue List */}
-              <div className="space-y-3 max-h-[600px] overflow-y-auto">
+              <div className="space-y-2 max-h-[600px] overflow-y-auto">
                 {/* Groups */}
                 {queueGroups.map((group) => (
                   <div
@@ -867,19 +867,19 @@ function LoadBuilderPageContent() {
                     draggable
                     onDragStart={() => handleDragStart('group', group.groupId)}
                     onDragEnd={handleDragEnd}
-                    className="bg-gradient-to-br from-purple-500/20 to-blue-500/20 border-2 border-purple-500/40 rounded-lg p-3 cursor-move hover:bg-purple-500/30"
+                    className="bg-gradient-to-br from-purple-500/20 to-blue-500/20 border-2 border-purple-500/40 rounded-lg p-2.5 cursor-move hover:bg-purple-500/30"
                   >
-                    <div className="font-bold text-purple-300 mb-2">👥 {group.name}</div>
+                    <div className="font-semibold text-sm text-purple-300 mb-1.5">👥 {group.name}</div>
                     <div className="space-y-1">
                       {group.students.map(student => (
-                        <div key={student.id} className="text-sm text-white bg-black/20 rounded px-2 py-1">
+                        <div key={student.id} className="text-xs text-white bg-black/20 rounded px-2 py-0.5">
                           {student.name} ({student.weight} lbs)
                         </div>
                       ))}
                     </div>
                   </div>
                 ))}
-                
+
                 {/* Individual Students */}
                 {individualStudents.map((student) => (
                   <div
@@ -887,10 +887,10 @@ function LoadBuilderPageContent() {
                     draggable
                     onDragStart={() => handleDragStart('student', student.id)}
                     onDragEnd={handleDragEnd}
-                    className="bg-white/5 rounded-lg p-3 border border-white/10 cursor-move hover:bg-white/10"
+                    className="bg-white/5 rounded-lg p-2.5 border border-white/10 cursor-move hover:bg-white/10"
                   >
-                    <div className="font-semibold text-white">{student.name}</div>
-                    <div className="text-sm text-slate-400">
+                    <div className="font-medium text-sm text-white">{student.name}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">
                       {student.jumpType.toUpperCase()} • {student.weight} lbs
                       {student.tandemWeightTax && ` • Tax: ${student.tandemWeightTax}`}
                       {student.isRequest && ' • ⭐ Request'}
