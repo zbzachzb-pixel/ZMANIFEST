@@ -10,6 +10,14 @@ import { useRequestsData } from '@/hooks/useRequestsData'
 import type { FunJumperRequest } from '@/types'
 import { RequireRole } from '@/components/auth'
 
+// Preset denial reasons
+const DENIAL_REASONS = [
+  { value: 'load_full', label: 'Load Full' },
+  { value: 'insufficient_funds', label: 'Insufficient Funds' },
+  { value: 'reserve_card', label: 'Reserve Card/Currency' },
+  { value: 'other', label: 'Other - See Manifest' }
+]
+
 function RequestsPageContent() {
   const { userProfile } = useAuth()
   const toast = useToast()
@@ -21,6 +29,7 @@ function RequestsPageContent() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved'>('pending')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRequest, setSelectedRequest] = useState<FunJumperRequest | null>(null)
+  const [denialReason, setDenialReason] = useState<string>('')
   const [actionLoading, setActionLoading] = useState(false)
   const [recentActivity, setRecentActivity] = useState<Array<{id: string, message: string, time: number}>>([])
 
@@ -380,6 +389,7 @@ function RequestsPageContent() {
                         onClick={(e) => {
                           e.stopPropagation()
                           setSelectedRequest(request)
+                          setDenialReason('') // Reset denial reason on new modal
                         }}
                         className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all"
                       >
@@ -456,16 +466,45 @@ function RequestsPageContent() {
               </div>
             </div>
 
+            {/* Denial Reason Selection */}
+            <div className="mb-6 p-4 bg-slate-900/50 rounded-lg border border-red-500/20">
+              <p className="text-sm font-semibold text-red-400 mb-3">Denial Reason (Select one to deny)</p>
+              <div className="space-y-2">
+                {DENIAL_REASONS.map((reason) => (
+                  <label
+                    key={reason.value}
+                    className="flex items-center p-3 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg cursor-pointer transition-all border border-transparent hover:border-red-500/30"
+                  >
+                    <input
+                      type="radio"
+                      name="denialReason"
+                      value={reason.value}
+                      checked={denialReason === reason.value}
+                      onChange={(e) => setDenialReason(e.target.value)}
+                      className="w-4 h-4 text-red-600 bg-slate-700 border-slate-600 focus:ring-red-500 focus:ring-2"
+                    />
+                    <span className="ml-3 text-white">{reason.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
             <div className="flex gap-3">
               <button
-                onClick={() => handleDeny(selectedRequest, 'Request denied by manifest')}
-                disabled={actionLoading}
-                className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-all disabled:opacity-50"
+                onClick={() => {
+                  const reasonLabel = DENIAL_REASONS.find(r => r.value === denialReason)?.label || 'Request denied by manifest'
+                  handleDeny(selectedRequest, reasonLabel)
+                }}
+                disabled={actionLoading || !denialReason}
+                className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Deny Request
+                {denialReason ? 'Deny Request' : 'Select Reason to Deny'}
               </button>
               <button
-                onClick={() => setSelectedRequest(null)}
+                onClick={() => {
+                  setSelectedRequest(null)
+                  setDenialReason('')
+                }}
                 className="px-4 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-all"
               >
                 Cancel

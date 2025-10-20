@@ -3,10 +3,14 @@
 
 'use client'
 
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { ref, onValue } from 'firebase/database'
 import { useMyRequests } from '@/hooks/useMyRequests'
 import { RequireAuth } from '@/components/auth'
-import type { RequestStatus, SkyDiveType } from '@/types'
+import { useLoadCountdown } from '@/hooks/useLoadCountdown'
+import { database } from '@/lib/firebase'
+import type { RequestStatus, SkyDiveType, Load, LoadSchedulingSettings } from '@/types'
 
 const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; bgColor: string }> = {
   pending: { label: 'Pending', color: 'text-yellow-400', bgColor: 'bg-yellow-500/20 border-yellow-500/30' },
@@ -32,9 +36,122 @@ const SKYDIVE_TYPE_LABELS: Record<SkyDiveType, string> = {
   wingsuit: 'Wingsuit'
 }
 
+// Component to display load countdown timer
+function LoadCountdownDisplay({ loadId, loads, settings }: {
+  loadId: string
+  loads: Load[]
+  settings: LoadSchedulingSettings
+}) {
+  const load = loads.find(l => l.id === loadId)
+  const countdown = useLoadCountdown(
+    load || {} as Load,
+    settings,
+    loads
+  )
+
+  if (!load) {
+    return (
+      <div className="mt-3 p-4 bg-slate-900/50 rounded-lg border border-blue-500/20">
+        <p className="text-xs text-slate-500 mb-1">Assigned Load</p>
+        <p className="text-slate-400 text-sm">Load #{loadId}</p>
+        <p className="text-xs text-slate-500 mt-1">Loading status...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-3 p-4 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-lg border border-blue-500/30">
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <p className="text-xs text-slate-400 mb-1">Your Load</p>
+          <p className="text-xl font-bold text-white">Load #{load.position}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-slate-400 mb-1">Status</p>
+          <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
+            load.status === 'building'
+              ? 'bg-yellow-500/20 text-yellow-300'
+              : load.status === 'ready'
+              ? 'bg-green-500/20 text-green-300'
+              : load.status === 'departed'
+              ? 'bg-blue-500/20 text-blue-300'
+              : 'bg-slate-500/20 text-slate-300'
+          }`}>
+            {load.status.toUpperCase()}
+          </div>
+        </div>
+      </div>
+
+      {/* Countdown Timer Display */}
+      {countdown && countdown.countdown !== null && load.status === 'ready' && (
+        <div className="mt-3 p-4 bg-slate-900/70 rounded-lg border border-blue-400/30">
+          <p className="text-xs text-slate-400 mb-2 text-center">Time Until Departure</p>
+          <div className="text-center">
+            <div className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-1">
+              {countdown.formattedTime}
+            </div>
+            {countdown.isReadyToDepart && (
+              <p className="text-green-400 font-semibold text-sm animate-pulse">
+                ✅ Clear to Depart!
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Status Messages */}
+      {countdown && countdown.countdown === null && (
+        <div className="mt-3 text-center">
+          <p className="text-slate-300 font-medium">{countdown.displayText}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MyRequestsPageContent() {
   const router = useRouter()
   const { data: requests, loading, error, refresh } = useMyRequests()
+  const [loads, setLoads] = useState<Load[]>([])
+  const [settings, setSettings] = useState<LoadSchedulingSettings>({
+    minutesBetweenLoads: 20,
+    instructorCycleTime: 40,
+    defaultPlaneCapacity: 18
+  })
+
+  // Subscribe to all loads
+  useEffect(() => {
+    const loadsRef = ref(database, 'loads')
+    const unsubscribe = onValue(loadsRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        setLoads([])
+        return
+      }
+
+      const loadsList: Load[] = []
+      snapshot.forEach((child) => {
+        loadsList.push(child.val() as Load)
+      })
+      setLoads(loadsList)
+    })
+
+    return () => unsubscribe()
+  }, [])
+
+  // Subscribe to settings
+  useEffect(() => {
+    const settingsRef = ref(database, 'settings')
+    const unsubscribe = onValue(settingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val()
+        if (data.loadScheduling) {
+          setSettings(data.loadScheduling)
+        }
+      }
+    })
+
+    return () => unsubscribe()
+  }, [])
 
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp)
@@ -147,12 +264,6 @@ function MyRequestsPageContent() {
                         {request.requestedLoadIds.length} load{request.requestedLoadIds.length !== 1 ? 's' : ''}
                       </p>
                     </div>
-                    {request.assignedLoadId && (
-                      <div>
-                        <p className="text-xs text-slate-500 mb-1">Assigned To</p>
-                        <p className="text-green-400 font-semibold">Load {request.assignedLoadId}</p>
-                      </div>
-                    )}
                     {request.jumprunId && (
                       <div>
                         <p className="text-xs text-slate-500 mb-1">Jumprun ID</p>
@@ -160,6 +271,15 @@ function MyRequestsPageContent() {
                       </div>
                     )}
                   </div>
+
+                  {/* Load Assignment with Countdown Timer */}
+                  {request.status === 'approved' && request.assignedLoadId && (
+                    <LoadCountdownDisplay
+                      loadId={request.assignedLoadId}
+                      loads={loads}
+                      settings={settings}
+                    />
+                  )}
 
                   {/* Notes */}
                   {request.notes && (
