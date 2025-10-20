@@ -1,0 +1,265 @@
+// src/services/assignmentLogic.ts
+// ✅ CLEANED VERSION - No backwards compatibility code
+// Updated version with instructor availability checks based on load timer
+
+import { isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
+import { getCurrentPeriod, calculateInstructorBalance } from '@/lib/utils'
+import type { QueueStudent, Instructor, Assignment, Load, LoadSchedulingSettings } from '@/types'
+
+export interface SuggestedInstructors {
+  main: Instructor | null
+  video: Instructor | null
+  needsVideo: boolean
+  isMainClockedOut: boolean
+  unavailableReason?: string
+}
+
+/**
+ * Get suggested instructors for a student with load timer awareness
+ * Now checks if instructors are available for the target load based on cycle time
+ */
+export function getSuggestedInstructors(
+  student: QueueStudent,
+  instructors: Instructor[],
+  assignments: Assignment[],
+  targetLoad: Load,
+  allLoads: Load[],
+  loadSettings: LoadSchedulingSettings,
+  ignoreClockStatus = false
+): SuggestedInstructors {
+  const period = getCurrentPeriod()
+  const needsVideo = student.jumpType === 'tandem' && (student.outsideVideo === true)
+
+  // Find qualified main instructors
+  const qualified: Instructor[] = []
+
+  for (const inst of instructors) {
+    if (inst.archived) continue
+    if (!ignoreClockStatus && !inst.clockedIn) continue
+
+    // ✅ CLEAN: Use correct property names without fallbacks
+    if (student.jumpType === 'tandem' && !inst.canTandem) continue
+    if (student.jumpType === 'aff' && !inst.canAFF) continue
+
+    // Check weight limits
+    const totalWeight = student.weight + (student.tandemWeightTax || 0)
+    if (student.jumpType === 'tandem' && inst.tandemWeightLimit) {
+      if (totalWeight > inst.tandemWeightLimit) continue
+    }
+    if (student.jumpType === 'aff' && inst.affWeightLimit) {
+      if (totalWeight > inst.affWeightLimit) continue
+    }
+
+    // Check AFF locked status
+    if (student.jumpType === 'aff' && inst.affLocked) {
+      const isTheirStudent = inst.affStudents?.some(s => s.name === student.name)
+      if (!isTheirStudent) continue
+    }
+
+    // ✅ NEW: Check if instructor is available for this load based on timing
+    const available = isInstructorAvailableForLoad(
+      inst.id, 
+      targetLoad.position, 
+      allLoads,
+      loadSettings.instructorCycleTime,
+      loadSettings.minutesBetweenLoads
+    )
+    if (!available) {
+      console.log(`⏰ Instructor ${inst.name} not available for Load #${targetLoad.position}`)
+      continue
+    }
+
+    qualified.push(inst)
+  }
+
+  if (qualified.length === 0) {
+    return {
+      main: null,
+      video: null,
+      needsVideo,
+      isMainClockedOut: true,
+      unavailableReason: 'No qualified instructors available for this load timing'
+    }
+  }
+
+  // Sort by balance (lowest first)
+  qualified.sort((a, b) => {
+    const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period)
+    const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period)
+    return balanceA - balanceB
+  })
+
+  const mainInstructor = qualified[0]
+
+  // Find video instructor if needed
+  let videoInstructor: Instructor | null = null
+  if (needsVideo) {
+    const qualifiedVideo = instructors.filter(inst => {
+      if (inst.archived) return false
+      if (!ignoreClockStatus && !inst.clockedIn) return false
+      
+      if (!inst.canVideo) return false
+      if (inst.id === mainInstructor.id) return false
+
+      // ✅ FIXED: Check video weight restrictions if applicable
+      if (inst.videoMinWeight != null || inst.videoMaxWeight != null) {
+        const combinedWeight = mainInstructor.bodyWeight + student.weight
+        if (inst.videoMinWeight && combinedWeight < inst.videoMinWeight) return false
+        if (inst.videoMaxWeight && combinedWeight > inst.videoMaxWeight) return false
+      }
+
+      // Check timing availability
+      const available = isInstructorAvailableForLoad(
+        inst.id, 
+        targetLoad.position, 
+        allLoads,
+        loadSettings.instructorCycleTime,
+        loadSettings.minutesBetweenLoads
+      )
+      if (!available) {
+        console.log(`⏰ Video instructor ${inst.name} not available for Load #${targetLoad.position}`)
+        return false
+      }
+
+      return true
+    })
+
+    if (qualifiedVideo.length > 0) {
+      qualifiedVideo.sort((a, b) => {
+        const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period)
+        const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period)
+        return balanceA - balanceB
+      })
+      videoInstructor = qualifiedVideo[0]
+    }
+  }
+
+  return {
+    main: mainInstructor,
+    video: videoInstructor,
+    needsVideo,
+    isMainClockedOut: false
+  }
+}
+
+/**
+ * Simplified version without load timer checks (for backward compatibility)
+ * Use this when you don't care about load timing
+ */
+export function getSuggestedInstructorsSimple(
+  student: QueueStudent,
+  instructors: Instructor[],
+  assignments: Assignment[],
+  ignoreClockStatus = false
+): SuggestedInstructors {
+  const period = getCurrentPeriod()
+  const needsVideo = student.jumpType === 'tandem' && (student.outsideVideo === true)
+
+  // Find qualified main instructors
+  const qualified: Instructor[] = []
+
+  for (const inst of instructors) {
+    if (inst.archived) continue
+    if (!ignoreClockStatus && !inst.clockedIn) continue
+
+    // ✅ CLEAN: Use correct property names without fallbacks
+    if (student.jumpType === 'tandem' && !inst.canTandem) continue
+    if (student.jumpType === 'aff' && !inst.canAFF) continue
+
+    // Check weight limits
+    const totalWeight = student.weight + (student.tandemWeightTax || 0)
+    if (student.jumpType === 'tandem' && inst.tandemWeightLimit) {
+      if (totalWeight > inst.tandemWeightLimit) continue
+    }
+    if (student.jumpType === 'aff' && inst.affWeightLimit) {
+      if (totalWeight > inst.affWeightLimit) continue
+    }
+
+    // Check AFF locked status
+    if (student.jumpType === 'aff' && inst.affLocked) {
+      const isTheirStudent = inst.affStudents?.some(s => s.name === student.name)
+      if (!isTheirStudent) continue
+    }
+
+    qualified.push(inst)
+  }
+
+  if (qualified.length === 0) {
+    return {
+      main: null,
+      video: null,
+      needsVideo,
+      isMainClockedOut: true
+    }
+  }
+
+  // Sort by balance (lowest first)
+  qualified.sort((a, b) => {
+    const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period)
+    const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period)
+    return balanceA - balanceB
+  })
+
+  const mainInstructor = qualified[0]
+
+  // Find video instructor if needed
+  let videoInstructor: Instructor | null = null
+  if (needsVideo) {
+    const qualifiedVideo = instructors.filter(inst => {
+      if (inst.archived) return false
+      if (!ignoreClockStatus && !inst.clockedIn) return false
+      
+      // ✅ CLEAN: Use correct property name without fallback
+      if (!inst.canVideo) return false
+      if (inst.id === mainInstructor.id) return false
+      return true
+    })
+
+    if (qualifiedVideo.length > 0) {
+      qualifiedVideo.sort((a, b) => {
+        const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period)
+        const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period)
+        return balanceA - balanceB
+      })
+      videoInstructor = qualifiedVideo[0]
+    }
+  }
+
+  return {
+    main: mainInstructor,
+    video: videoInstructor,
+    needsVideo,
+    isMainClockedOut: false
+  }
+}
+
+function calculateBalance(instructor: Instructor, assignments: Assignment[], period: any): number {
+  let balance = 0
+  
+  for (const assignment of assignments) {
+    const assignmentDate = new Date(assignment.timestamp)
+    if (assignmentDate < period.start || assignmentDate > period.end) continue
+    if (assignment.isRequest) continue
+    
+    let pay = 0
+    if (!assignment.isMissedJump) {
+      if (assignment.jumpType === 'tandem') {
+        pay = 40 + (assignment.tandemWeightTax || 0) * 20
+        if (assignment.tandemHandcam) pay += 30
+      } else if (assignment.jumpType === 'aff') {
+        pay = assignment.affLevel === 'lower' ? 55 : 45
+      } else if (assignment.jumpType === 'video') {
+        pay = 45
+      }
+    }
+    
+    if (assignment.instructorId === instructor.id) {
+      balance += pay
+    }
+    if (assignment.videoInstructorId === instructor.id && !assignment.isMissedJump) {
+      balance += 45
+    }
+  }
+  
+  return balance
+}

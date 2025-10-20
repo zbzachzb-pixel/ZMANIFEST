@@ -1,0 +1,30 @@
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.4s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/src/components/KeyboardShortcuts.tsx:16:15
+Type error: Expected 0 arguments, but got 1.
+
+[0m [90m 14 |[39m   
+ [90m 15 |[39m   [90m// Use navigation shortcuts[39m
+[31m[1m>[22m[39m[90m 16 |[39m   useGoToMenu({
+ [90m    |[39m               [31m[1m^[22m[39m
+ [90m 17 |[39m     onNavigate[33m:[39m (path) [33m=>[39m {
+ [90m 18 |[39m       router[33m.[39mpush(path)
+ [90m 19 |[39m     }[0m
+Next.js build worker exited with code: 1 and signal: null

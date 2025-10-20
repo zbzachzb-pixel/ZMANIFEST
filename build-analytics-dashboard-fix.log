@@ -1,0 +1,39 @@
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.3s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/14) ...
+   Generating static pages (3/14) 
+   Generating static pages (6/14) 
+   Generating static pages (10/14) 
+ ✓ Generating static pages (14/14)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                      541 B         103 kB
+├ ○ /_not-found                            996 B         103 kB
+├ ○ /analytics                           3.64 kB         159 kB
+├ ○ /assignments                         7.76 kB         163 kB
+├ ○ /dashboard                           4.59 kB         164 kB
+├ ○ /instructors                         4.88 kB         164 kB
+├ ○ /loads                               12.9 kB         171 kB
+├ ○ /notes                               2.39 kB         153 kB
+├ ○ /queue                                 14 kB         169 kB
+├ ○ /settings                            4.63 kB         163 kB
+└ ○ /test-shortcuts                      2.07 kB         104 kB
++ First Load JS shared by all             102 kB
+  ├ chunks/255-839588e0f3decf6f.js       45.7 kB
+  ├ chunks/4bd1b696-c023c6e3521b1417.js  54.2 kB
+  └ other shared chunks (total)          1.99 kB
+
+
+○  (Static)  prerendered as static content
+

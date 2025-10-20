@@ -1,0 +1,23 @@
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.9s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/components/LoadBuilderCard.tsx:122:24
+Type error: Block-scoped variable 'getQualifiedInstructors' used before its declaration.
+
+[0m [90m 120 |[39m     })
+ [90m 121 |[39m     [36mreturn[39m map
+[31m[1m>[22m[39m[90m 122 |[39m   }[33m,[39m [loadAssignments[33m,[39m getQualifiedInstructors])
+ [90m     |[39m                        [31m[1m^[22m[39m
+ [90m 123 |[39m   
+ [90m 124 |[39m   [90m// Available transitions[39m
+ [90m 125 |[39m   [36mconst[39m availableTransitions [33m=[39m useMemo(() [33m=>[39m {[0m
+Next.js build worker exited with code: 1 and signal: null

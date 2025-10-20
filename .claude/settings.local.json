@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"C:\\Users\\zbzac\\instructor-system-v2\\src\\components\" -name \"LoadBuilderCard.tsx\" -exec wc -l {} +)",
+      "Bash(tee build-test.log)",
+      "Bash(tee build-balance-update.log)",
+      "Bash(tee -a build-balance-update.log)",
+      "Bash(tee build-loads-page-fix.log)",
+      "Bash(tee build-analytics-dashboard-fix.log)",
+      "Bash(tee build-firebase-shortcuts.log)",
+      "Bash(tee build-auto-fix.log)",
+      "Bash(tee -a build-auto-fix.log)",
+      "Bash(tee build-visual-improvements.log)",
+      "Bash(tee build-undo-fix.log)",
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(tee build-enhancements.log)",
+      "Bash(tee build-group-fix.log)",
+      "Bash(tasklist)",
+      "Bash(findstr /i node)",
+      "Bash(npm run dev)",
+      "Bash(dir /a:d)",
+      "Bash(dir)",
+      "Bash(dir .next /s /b)",
+      "Bash(findstr /i \"loads\\page\")",
+      "Bash(npm run build)",
+      "Bash(git init)",
+      "Bash(git add .)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

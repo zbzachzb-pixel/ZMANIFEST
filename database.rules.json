@@ -1,0 +1,77 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null",
+
+    "users": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && (
+          auth.uid == $uid ||
+          root.child('users').child(auth.uid).child('role').val() == 'admin'
+        )",
+        ".indexOn": ["role", "email"]
+      }
+    },
+
+    "loads": {
+      ".read": "auth != null",
+      ".write": "auth != null && (
+        root.child('users').child(auth.uid).child('role').val() == 'admin' ||
+        root.child('users').child(auth.uid).child('role').val() == 'manifest'
+      )",
+      ".indexOn": ["status", "position", "createdAt"]
+    },
+
+    "funJumperRequests": {
+      "$requestId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (
+          root.child('users').child(auth.uid).child('role').val() == 'admin' ||
+          root.child('users').child(auth.uid).child('role').val() == 'manifest' ||
+          (data.child('userId').val() == auth.uid && !data.exists())
+        )",
+        ".indexOn": ["status", "createdAt", "userId", "updatedAt"]
+      }
+    },
+
+    "instructors": {
+      ".read": "auth != null",
+      ".write": "auth != null && (
+        root.child('users').child(auth.uid).child('role').val() == 'admin' ||
+        root.child('users').child(auth.uid).child('role').val() == 'manifest'
+      )",
+      ".indexOn": ["uid", "status"]
+    },
+
+    "queue": {
+      ".read": "auth != null",
+      ".write": "auth != null && (
+        root.child('users').child(auth.uid).child('role').val() == 'admin' ||
+        root.child('users').child(auth.uid).child('role').val() == 'manifest'
+      )",
+      ".indexOn": ["position", "addedAt"]
+    },
+
+    "assignments": {
+      ".read": "auth != null",
+      ".write": "auth != null && (
+        root.child('users').child(auth.uid).child('role').val() == 'admin' ||
+        root.child('users').child(auth.uid).child('role').val() == 'manifest'
+      )",
+      ".indexOn": ["loadId", "instructorId", "createdAt"]
+    },
+
+    "actionHistory": {
+      ".read": "auth != null && (
+        root.child('users').child(auth.uid).child('role').val() == 'admin' ||
+        root.child('users').child(auth.uid).child('role').val() == 'manifest'
+      )",
+      ".write": "auth != null && (
+        root.child('users').child(auth.uid).child('role').val() == 'admin' ||
+        root.child('users').child(auth.uid).child('role').val() == 'manifest'
+      )",
+      ".indexOn": ["timestamp", "actionType"]
+    }
+  }
+}
