@@ -9,6 +9,7 @@ import { ReleaseAFFModal } from '@/components/ReleaseAFFModal'
 import type { Instructor } from '@/types'
 import { TeamManagementSection } from '@/components/TeamManagementSection'
 import { PageErrorBoundary } from '@/components/ErrorBoundary'
+import { RequireRole } from '@/components/auth'
 
 function InstructorsPageContent() {
   const { data: instructors, loading } = useActiveInstructors()
@@ -281,8 +282,10 @@ function InstructorsPageContent() {
 
 export default function InstructorsPage() {
   return (
-    <PageErrorBoundary>
-      <InstructorsPageContent />
-    </PageErrorBoundary>
+    <RequireRole roles={['admin', 'manifest']}>
+      <PageErrorBoundary>
+        <InstructorsPageContent />
+      </PageErrorBoundary>
+    </RequireRole>
   )
 }

@@ -22,6 +22,7 @@ import { AssignInstructorsModal } from './AssignInstructorsModal'
 import { LoadStudentsList } from './LoadStudentsList'
 import { StatusChangeConfirmModal, DelayModal, DeleteConfirmModal } from './LoadModals'
 import { LoadStats } from './LoadStats'
+import { LoadFunJumpers } from './LoadFunJumpers'
 import { ConflictWarnings } from './ConflictWarnings'
 import { detectLoadConflicts } from '@/lib/conflictDetection'
 import type { Load, Instructor, LoadSchedulingSettings, CreateQueueStudent, LoadAssignment, UpdateLoad } from '@/types'
@@ -482,22 +483,22 @@ export function LoadBuilderCard({
   
   const removeGroupFromLoad = async (groupAssignments: LoadAssignment[]) => {
     if (isCompleted) return
-    
+
     try {
       const currentQueue = await db.getQueue()
-      
+
       const assignmentIds = groupAssignments.map(a => a.id)
       const updatedAssignments = loadAssignments.filter(
         a => !assignmentIds.includes(a.id)
       )
-      
+
       await update(load.id, { assignments: updatedAssignments })
-      
+
       for (const assignment of groupAssignments) {
         const existingInQueue = currentQueue.find(
           s => s.studentAccountId === assignment.studentId
         )
-        
+
         if (existingInQueue) {
           if (assignment.groupId && existingInQueue.groupId !== assignment.groupId) {
             await db.updateQueueStudent(existingInQueue.id, {
@@ -505,9 +506,9 @@ export function LoadBuilderCard({
             })
           }
         } else {
-          const timestamp = assignment.originalQueueTimestamp || 
+          const timestamp = assignment.originalQueueTimestamp ||
             new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-          
+
           const queueStudent: CreateQueueStudent = {
             studentAccountId: assignment.studentId,
             name: assignment.studentName,
@@ -520,13 +521,42 @@ export function LoadBuilderCard({
             affLevel: assignment.affLevel,
             groupId: assignment.groupId
           }
-          
+
           await db.addToQueue(queueStudent, timestamp)
         }
       }
     } catch (error) {
       console.error('Failed to remove group from load:', error)
       toast.error('Failed to remove group from load')
+    }
+  }
+
+  const removeFunJumperFromLoad = async (funJumper: any) => {
+    if (isCompleted) return
+
+    try {
+      // Remove fun jumper from load's funJumpers array
+      const updatedFunJumpers = (load.funJumpers || []).filter(
+        fj => !(fj.userId === funJumper.userId && fj.addedAt === funJumper.addedAt)
+      )
+
+      await update(load.id, { funJumpers: updatedFunJumpers })
+
+      // TODO: Send notification to fun jumper when SMS/push is implemented
+      // For now, we'll just log it
+      console.log(`Fun jumper ${funJumper.userName} removed from load #${load.position}. Notification would be sent here.`)
+
+      // Show success toast
+      toast.success(`Removed ${funJumper.userName} from load`, 'Fun jumper will be notified')
+
+      // TODO: Optionally update fun jumper request status back to pending
+      // if (funJumper.requestId) {
+      //   await FunJumperRequestService.updateStatus(funJumper.requestId, 'pending', ...)
+      // }
+
+    } catch (error) {
+      console.error('Failed to remove fun jumper from load:', error)
+      toast.error('Failed to remove fun jumper from load')
     }
   }
   
@@ -977,6 +1007,13 @@ const handleChangeCall = async () => {
           onDragEnd={onDragEnd}
           onRemoveAssignment={removeFromLoad}
           onRemoveGroup={removeGroupFromLoad}
+        />
+
+        {/* Fun Jumpers (Collapsible) */}
+        <LoadFunJumpers
+          funJumpers={load.funJumpers || []}
+          isCompleted={isCompleted}
+          onRemove={removeFunJumperFromLoad}
         />
 
         {/* Stats */}

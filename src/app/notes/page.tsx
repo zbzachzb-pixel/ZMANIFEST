@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react'
 import { ref, onValue, set } from 'firebase/database'
 import { database } from '@/lib/firebase'
 import { useToast } from '@/contexts/ToastContext'
+import { RequireRole } from '@/components/auth'
 
-export default function NotesPage() {
+function NotesPageContent() {
   const toast = useToast()
   const [notes, setNotes] = useState('')
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
@@ -114,5 +115,13 @@ Examples:
         </div>
       </div>
     </div>
+  )
+}
+
+export default function NotesPage() {
+  return (
+    <RequireRole roles={["admin", "manifest"]}>
+      <NotesPageContent />
+    </RequireRole>
   )
 }

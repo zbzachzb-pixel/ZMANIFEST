@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react'
 import { useInstructors, useAssignments } from '@/hooks/useDatabase'
 import { db } from '@/services'
-import { calculateInstructorEarnings } from '@/lib/utils'
+import { calculateInstructorBalance } from '@/lib/utils'
 import { useToast } from '@/contexts/ToastContext'
 import type { Period } from '@/types'
 
@@ -32,7 +32,7 @@ export function EndPeriodModal({ period, onClose, onSuccess }: EndPeriodModalPro
   const finalBalances = useMemo(() => {
     const balances: Record<string, number> = {}
     instructors.forEach(instructor => {
-      balances[instructor.id] = calculateInstructorEarnings(
+      balances[instructor.id] = calculateInstructorBalance(
         instructor.id,
         periodAssignments,
         instructors,

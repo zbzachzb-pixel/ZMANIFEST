@@ -16,8 +16,9 @@ import {
   saveDarkMode,
   type AutoAssignSettings
 } from '@/lib/settingsStorage'
+import { RequireRole } from '@/components/auth'
 
-export default function SettingsPage() {
+function SettingsPageContent() {
   const toast = useToast()
   const [darkMode, setDarkMode] = useState(false)
   const [autoAssignSettings, setAutoAssignSettings] = useState<AutoAssignSettings>(getAutoAssignSettings())
@@ -432,5 +433,13 @@ export default function SettingsPage() {
         />
       )}
     </div>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <RequireRole roles={["admin", "manifest"]}>
+      <SettingsPageContent />
+    </RequireRole>
   )
 }

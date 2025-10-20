@@ -3,12 +3,13 @@
 'use client'
 
 import { useState, useEffect, FormEvent } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { useRouter } from 'next/navigation'
 import { FunJumperRequestService } from '@/lib/funJumperRequests'
 import { useAvailableLoads } from '@/hooks/useRequestsData'
 import type { SkyDiveType } from '@/types'
+import { RequireAuth } from '@/components/auth'
 
 const SKYDIVE_TYPES: { value: SkyDiveType; label: string; icon: string }[] = [
   { value: 'hop_n_pop', label: 'Hop & Pop', icon: '🪂' },
@@ -18,8 +19,8 @@ const SKYDIVE_TYPES: { value: SkyDiveType; label: string; icon: string }[] = [
   { value: 'wingsuit', label: 'Wingsuit', icon: '🦅' },
 ]
 
-export default function SubmitRequestPage() {
-  const { user, userProfile, loading: authLoading } = useAuth()
+function SubmitRequestPageContent() {
+  const { user, userProfile } = useAuth()
   const toast = useToast()
   const router = useRouter()
 
@@ -30,14 +31,6 @@ export default function SubmitRequestPage() {
   const [skyDiveType, setSkyDiveType] = useState<SkyDiveType | ''>('')
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
-
-  // Redirect if not logged in
-  useEffect(() => {
-    if (!authLoading && !user) {
-      toast.error('Sign in required', 'Please sign in to submit requests')
-      router.push('/login')
-    }
-  }, [user, authLoading, router, toast])
 
   const toggleLoad = (loadId: string) => {
     setSelectedLoadIds(prev =>
@@ -94,16 +87,7 @@ export default function SubmitRequestPage() {
     }
   }
 
-  if (authLoading || !user || !userProfile) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-slate-400">Loading...</p>
-        </div>
-      </div>
-    )
-  }
+  // Auth is handled by RequireAuth wrapper - user is guaranteed to exist here
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-6">
@@ -136,6 +120,19 @@ export default function SubmitRequestPage() {
                   const isSelected = selectedLoadIds.includes(load.id)
                   const loadNumber = (load.position || 0) + 1
 
+                  // Calculate available capacity
+                  const loadAssignments = load.assignments || []
+                  const loadCapacity = load.capacity || 18
+
+                  // Count total people on load
+                  const totalPeople = loadAssignments.reduce((sum, assignment) => {
+                    let count = 2 // Student + Instructor
+                    if (assignment.hasOutsideVideo) count += 1 // + Video Instructor
+                    return sum + count
+                  }, 0) + (load.funJumpers || []).length  // + Fun Jumpers (1 slot each)
+
+                  const availableSlots = loadCapacity - totalPeople
+
                   return (
                     <button
                       key={load.id}
@@ -159,8 +156,10 @@ export default function SubmitRequestPage() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm text-slate-400">Capacity</p>
-                        <p className="text-white font-medium">{load.capacity || 18}</p>
+                        <p className="text-sm text-slate-400">Available</p>
+                        <p className={`font-medium ${availableSlots > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {availableSlots} / {loadCapacity}
+                        </p>
                       </div>
                     </button>
                   )
@@ -244,5 +243,14 @@ export default function SubmitRequestPage() {
         </form>
       </div>
     </div>
+  )
+}
+
+
+export default function SubmitRequestPage() {
+  return (
+    <RequireAuth>
+      <SubmitRequestPageContent />
+    </RequireAuth>
   )
 }

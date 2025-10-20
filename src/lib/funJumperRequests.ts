@@ -32,15 +32,19 @@ function createHistoryEntry(
   oldStatus?: string,
   newStatus?: string
 ): RequestHistoryEntry {
-  return {
+  const entry: any = {
     action,
-    timestamp: now(),
-    actorId,
-    actorName,
-    note,
-    oldStatus: oldStatus as any,
-    newStatus: newStatus as any
+    timestamp: now()
   }
+
+  // Only add optional fields if they're defined
+  if (actorId !== undefined) entry.actorId = actorId
+  if (actorName !== undefined) entry.actorName = actorName
+  if (note !== undefined) entry.note = note
+  if (oldStatus !== undefined) entry.oldStatus = oldStatus
+  if (newStatus !== undefined) entry.newStatus = newStatus
+
+  return entry as RequestHistoryEntry
 }
 
 // ==================== SERVICE CLASS ====================

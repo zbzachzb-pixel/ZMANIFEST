@@ -6,6 +6,7 @@ import React, { useMemo } from 'react'
 import { useCurrentPeriodAssignments, useActiveInstructors, useActiveLoads } from '@/hooks/useDatabase'
 import { getCurrentPeriod, calculateAssignmentPay, calculateInstructorBalance } from '@/lib/utils'
 import type { Assignment, Instructor, Period, Load } from '@/types'
+import { RequireRole } from '@/components/auth'
 
 function calculateInstructorStats(
   instructor: Instructor,
@@ -98,7 +99,7 @@ function calculateInstructorStats(
   }
 }
 
-export default function AnalyticsPage() {
+function AnalyticsPageContent() {
   // ✅ OPTIMIZED: Only fetch current period assignments and active loads
   const { data: assignments, loading: assignmentsLoading } = useCurrentPeriodAssignments()
   const { data: instructors, loading: instructorsLoading } = useActiveInstructors()
@@ -396,5 +397,13 @@ export default function AnalyticsPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function AnalyticsPage() {
+  return (
+    <RequireRole roles={["admin", "manifest"]}>
+      <AnalyticsPageContent />
+    </RequireRole>
   )
 }

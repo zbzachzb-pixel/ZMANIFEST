@@ -59,7 +59,7 @@
         root.child('users').child(auth.uid).child('role').val() == 'admin' ||
         root.child('users').child(auth.uid).child('role').val() == 'manifest'
       )",
-      ".indexOn": ["loadId", "instructorId", "createdAt"]
+      ".indexOn": ["loadId", "instructorId", "createdAt", "timestamp"]
     },
 
     "actionHistory": {

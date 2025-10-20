@@ -17,6 +17,7 @@ import { ImportStudentsModal } from '@/components/ImportStudentsModal'
 import type { QueueStudent, Group } from '@/types'
 import { useAddStudentToGroup } from '@/hooks/useDatabase'
 import { PageErrorBoundary } from '@/components/ErrorBoundary'
+import { RequireRole } from '@/components/auth'
 
 interface GroupWithStudents extends Group {
   students: QueueStudent[]
@@ -516,8 +517,10 @@ function QueuePageContent() {
 
 export default function QueuePage() {
   return (
-    <PageErrorBoundary>
-      <QueuePageContent />
-    </PageErrorBoundary>
+    <RequireRole roles={['admin', 'manifest']}>
+      <PageErrorBoundary>
+        <QueuePageContent />
+      </PageErrorBoundary>
+    </RequireRole>
   )
 }

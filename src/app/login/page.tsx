@@ -1,7 +1,7 @@
 // src/app/login/page.tsx
 'use client'
 
-import { useState, FormEvent } from 'react'
+import { useState, useEffect, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
@@ -16,10 +16,11 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
 
   // Redirect if already logged in
-  if (user) {
-    router.push('/')
-    return null
-  }
+  useEffect(() => {
+    if (user) {
+      router.push('/')
+    }
+  }, [user, router])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()

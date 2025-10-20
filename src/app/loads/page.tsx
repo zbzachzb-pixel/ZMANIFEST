@@ -21,6 +21,7 @@ import { OptimizeLoadModal } from '@/components/OptimizeLoadModal'
 import { PageErrorBoundary } from '@/components/ErrorBoundary'
 import { getLoadSettings } from '@/lib/settingsStorage'
 import { useLoadsPageShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { RequireRole } from '@/components/auth'
 
 function LoadBuilderPageContent() {
   // ============================================
@@ -921,8 +922,10 @@ function LoadBuilderPageContent() {
 
 export default function LoadBuilderPage() {
   return (
-    <PageErrorBoundary>
-      <LoadBuilderPageContent />
-    </PageErrorBoundary>
+    <RequireRole roles={['admin', 'manifest']}>
+      <PageErrorBoundary>
+        <LoadBuilderPageContent />
+      </PageErrorBoundary>
+    </RequireRole>
   )
 }

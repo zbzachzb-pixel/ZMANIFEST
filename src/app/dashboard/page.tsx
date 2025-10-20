@@ -15,13 +15,14 @@ import { InstructorCard } from '@/components/InstructorCard'
 import { AddJumpModal } from '@/components/AddJumpModal'
 import { ReleaseAFFModal } from '@/components/ReleaseAFFModal'
 import {
-  calculateInstructorEarnings,
+  calculateInstructorBalance,
   calculateInstructorTotalEarnings,
   calculateAssignmentPay
 } from '@/lib/utils'
 import { PAY_RATES } from '@/lib/constants'
 import type { Instructor } from '@/types'
 import { PageErrorBoundary } from '@/components/ErrorBoundary'
+import { RequireRole } from '@/components/auth'
 
 function DashboardPageContent() {
   // ✅ IMPROVEMENT: Use global context instead of local hooks
@@ -45,7 +46,7 @@ function DashboardPageContent() {
     
     return instructors.map(instructor => {
       // Balance (for rotation) - uses 1.2x multiplier for off days + includes pending loads
-      const balance = calculateInstructorEarnings(
+      const balance = calculateInstructorBalance(
         instructor.id,
         assignments,
         instructors,
@@ -248,8 +249,10 @@ function DashboardPageContent() {
 
 export default function DashboardPage() {
   return (
-    <PageErrorBoundary>
-      <DashboardPageContent />
-    </PageErrorBoundary>
+    <RequireRole roles={['admin', 'manifest']}>
+      <PageErrorBoundary>
+        <DashboardPageContent />
+      </PageErrorBoundary>
+    </RequireRole>
   )
 }

@@ -10,8 +10,9 @@ import { useToast } from '@/contexts/ToastContext'
 import { EditAssignmentModal } from '@/components/EditAssignmentModal'
 import { EditClockEventModal } from '@/components/EditClockEventModal'
 import type { Assignment, ClockEvent } from '@/types'
+import { RequireRole } from '@/components/auth'
 
-export default function AssignmentsPage() {
+function AssignmentsPageContent() {
   const { data: assignments, loading } = useAssignments()
   const { data: instructors } = useActiveInstructors()
   const { deleteEvent, loading: deleteClockLoading } = useDeleteClockEvent()
@@ -626,5 +627,13 @@ export default function AssignmentsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function AssignmentsPage() {
+  return (
+    <RequireRole roles={["admin", "manifest"]}>
+      <AssignmentsPageContent />
+    </RequireRole>
   )
 }

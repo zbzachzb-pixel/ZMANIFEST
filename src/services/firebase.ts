@@ -67,7 +67,15 @@ export class FirebaseService implements DatabaseService {
   }
   
   private cleanData<T>(data: T): T {
-    return JSON.parse(JSON.stringify(data))
+    try {
+      if (data === undefined || data === null) {
+        return data
+      }
+      return JSON.parse(JSON.stringify(data))
+    } catch (error) {
+      console.error('Error cleaning data:', error, data)
+      return data
+    }
   }
   
   private generateId(): string {

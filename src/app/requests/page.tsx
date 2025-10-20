@@ -5,15 +5,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
-import { useRouter } from 'next/navigation'
 import { FunJumperRequestService } from '@/lib/funJumperRequests'
 import { useRequestsData } from '@/hooks/useRequestsData'
 import type { FunJumperRequest } from '@/types'
+import { RequireRole } from '@/components/auth'
 
-export default function RequestsPage() {
-  const { userProfile, loading: authLoading } = useAuth()
+function RequestsPageContent() {
+  const { user, userProfile } = useAuth()
   const toast = useToast()
-  const router = useRouter()
 
   // Use combined hook for better performance
   const { requests: serverRequests, loads, loading } = useRequestsData()
@@ -29,14 +28,6 @@ export default function RequestsPage() {
   useEffect(() => {
     setRequests(serverRequests)
   }, [serverRequests])
-
-  // Check authorization
-  useEffect(() => {
-    if (!authLoading && userProfile && !['admin', 'manifest'].includes(userProfile.role)) {
-      toast.error('Unauthorized', 'You do not have permission to access this page')
-      router.push('/')
-    }
-  }, [userProfile, authLoading, router, toast])
 
   // Detect recent activity (live status updates)
   useEffect(() => {
@@ -219,7 +210,7 @@ export default function RequestsPage() {
     return formatTime(timestamp)
   }
 
-  if (authLoading || loading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -228,10 +219,6 @@ export default function RequestsPage() {
         </div>
       </div>
     )
-  }
-
-  if (!userProfile || !['admin', 'manifest'].includes(userProfile.role)) {
-    return null
   }
 
   return (
@@ -488,5 +475,14 @@ export default function RequestsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+
+export default function RequestsPage() {
+  return (
+    <RequireRole roles={["admin", "manifest"]}>
+      <RequestsPageContent />
+    </RequireRole>
   )
 }
