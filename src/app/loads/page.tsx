@@ -9,7 +9,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { useActiveLoads, useQueue, useActiveInstructors, useAssignments, useUpdateLoad, useDeleteLoad, useGroups } from '@/hooks/useDatabase'
+import { useActiveLoads, useQueue, useActiveInstructors, useAssignments, useUpdateLoad, useDeleteLoad, useGroups, useAircraft } from '@/hooks/useDatabase'
 import { LoadBuilderCard } from '@/components/LoadBuilderCard'
 import { useToast } from '@/contexts/ToastContext'
 import { useActionHistory } from '@/contexts/ActionHistoryContext'
@@ -43,6 +43,7 @@ function LoadBuilderPageContent() {
   const { update: updateLoad } = useUpdateLoad()
   useDeleteLoad()
   const { data: groups } = useGroups()
+  const { data: aircraft } = useAircraft()
 
   // Toast notifications and action history
   const toast = useToast()
@@ -57,6 +58,7 @@ function LoadBuilderPageContent() {
   const [optimizeLoadId, setOptimizeLoadId] = useState<string | null>(null)
   const [loadSettings, setLoadSettings] = useState<LoadSchedulingSettings>(getLoadSettings())
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null)
+  const [showAircraftSelector, setShowAircraftSelector] = useState(false)
 
   // ============================================
   // EFFECTS - ALWAYS IN SAME ORDER
@@ -148,8 +150,18 @@ function LoadBuilderPageContent() {
     }
   }, [queue, searchTerm, selectedJumpType, groups])
   
-  // ✅ OPTIMIZED: Single-pass load filtering and counting
-  const { filteredLoads, loadCounts } = useMemo(() => {
+  // Get active aircraft from settings
+  const activeAircraft = useMemo(() => {
+    const activeIds = loadSettings.activeAircraftIds || []
+    if (activeIds.length === 0) {
+      // No active aircraft configured - use all active aircraft
+      return aircraft.filter(a => a.isActive)
+    }
+    return aircraft.filter(a => activeIds.includes(a.id) && a.isActive)
+  }, [aircraft, loadSettings.activeAircraftIds])
+
+  // ✅ OPTIMIZED: Single-pass load filtering and counting, grouped by aircraft
+  const { filteredLoads, loadCounts, loadsByAircraft } = useMemo(() => {
     const counts = {
       all: loads.length,
       building: 0,
@@ -168,8 +180,40 @@ function LoadBuilderPageContent() {
       ? loads
       : loads.filter(load => load.status === statusFilter)
 
-    return { filteredLoads: filtered, loadCounts: counts }
-  }, [loads, statusFilter])
+    // Group by aircraft
+    const byAircraft = new Map<string, Load[]>()
+
+    // Initialize with active aircraft
+    activeAircraft.forEach(ac => {
+      byAircraft.set(ac.id, [])
+    })
+
+    // Add loads to their aircraft groups
+    filtered.forEach(load => {
+      if (load.aircraftId && byAircraft.has(load.aircraftId)) {
+        byAircraft.get(load.aircraftId)!.push(load)
+      } else if (load.aircraftId) {
+        // Load has aircraft but it's not in active list
+        if (!byAircraft.has(load.aircraftId)) {
+          byAircraft.set(load.aircraftId, [])
+        }
+        byAircraft.get(load.aircraftId)!.push(load)
+      } else {
+        // Load has no aircraft - put in "unassigned" group
+        if (!byAircraft.has('unassigned')) {
+          byAircraft.set('unassigned', [])
+        }
+        byAircraft.get('unassigned')!.push(load)
+      }
+    })
+
+    // Sort loads within each aircraft group by position
+    byAircraft.forEach((loads) => {
+      loads.sort((a, b) => (a.position || 0) - (b.position || 0))
+    })
+
+    return { filteredLoads: filtered, loadCounts: counts, loadsByAircraft: byAircraft }
+  }, [loads, statusFilter, activeAircraft])
 
   // ============================================
   // Group weight validation function
@@ -222,20 +266,28 @@ function LoadBuilderPageContent() {
   // HANDLERS
   // ============================================
   
-  const handleCreateLoad = async () => {
+  const handleCreateLoad = async (aircraftId?: string) => {
     try {
-      const savedSettings = localStorage.getItem('loadSchedulingSettings')
-      let defaultCapacity = 18
+      // If multiple active aircraft and no aircraft selected, show selector
+      if (!aircraftId && activeAircraft.length > 1) {
+        setShowAircraftSelector(true)
+        return
+      }
 
-      if (savedSettings) {
-        try {
-          const settings = JSON.parse(savedSettings)
-          defaultCapacity = settings.defaultPlaneCapacity || 18
-        } catch (e) {
-          console.error('Failed to parse load settings, using default capacity')
-          toast.warning('Failed to load capacity setting', 'Using default capacity of 18.')
+      // Determine aircraft ID
+      let targetAircraftId = aircraftId
+      if (!targetAircraftId) {
+        if (activeAircraft.length === 1 && activeAircraft[0]) {
+          targetAircraftId = activeAircraft[0].id
+        } else if (activeAircraft.length === 0) {
+          toast.error('No Active Aircraft', 'Please configure aircraft in Settings first.')
+          return
         }
       }
+
+      // Get aircraft to use its capacity
+      const targetAircraft = aircraft.find(a => a.id === targetAircraftId)
+      const defaultCapacity = targetAircraft?.capacity || loadSettings.defaultPlaneCapacity || 18
 
       const nextPosition = Math.max(0, ...loads.map(l => l.position || 0)) + 1
       const loadNumber = loads.length + 1
@@ -245,11 +297,13 @@ function LoadBuilderPageContent() {
         name: `Load ${loadNumber}`,
         status: 'building',
         capacity: defaultCapacity,
+        aircraftId: targetAircraftId,
         assignments: [],
         position: nextPosition
       }, addAction)
 
       toast.success('Load created')
+      setShowAircraftSelector(false)
     } catch (error) {
       console.error('Failed to create load:', error)
       toast.error('Failed to create load')
@@ -752,7 +806,7 @@ function LoadBuilderPageContent() {
               <p className="text-sm text-slate-300">Drag students from queue to loads</p>
             </div>
             <button
-              onClick={handleCreateLoad}
+              onClick={() => handleCreateLoad()}
               className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors shadow-lg text-sm"
             >
               ➕ New Load
@@ -797,21 +851,22 @@ function LoadBuilderPageContent() {
                 onDelay: handleDelayLoad
               }}
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-3">
-                {filteredLoads.length === 0 ? (
-                  <div className="col-span-full text-center text-slate-400 py-12">
-                    <p className="text-xl mb-2">
-                      {statusFilter === 'all' ? 'No loads yet' : `No ${statusFilter} loads`}
-                    </p>
-                    <p>
-                      {statusFilter === 'all'
-                        ? 'Click "New Load" to get started'
-                        : `Switch to "All Loads" or create a new load`
-                      }
-                    </p>
-                  </div>
-                ) : (
-                  filteredLoads
+              {filteredLoads.length === 0 ? (
+                <div className="text-center text-slate-400 py-12">
+                  <p className="text-xl mb-2">
+                    {statusFilter === 'all' ? 'No loads yet' : `No ${statusFilter} loads`}
+                  </p>
+                  <p>
+                    {statusFilter === 'all'
+                      ? 'Click "New Load" to get started'
+                      : `Switch to "All Loads" or create a new load`
+                    }
+                  </p>
+                </div>
+              ) : activeAircraft.length <= 1 ? (
+                // Single aircraft mode - use original grid layout
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-3">
+                  {filteredLoads
                     .sort((a, b) => (a.position || 0) - (b.position || 0))
                     .map((load) => (
                       <div
@@ -826,8 +881,81 @@ function LoadBuilderPageContent() {
                         <LoadBuilderCard load={load} />
                       </div>
                     ))
-                )}
-              </div>
+                  }
+                </div>
+              ) : (
+                // Multi-aircraft mode - column per aircraft
+                <div className={`grid gap-4 ${
+                  activeAircraft.length === 2 ? 'grid-cols-1 lg:grid-cols-2' :
+                  activeAircraft.length === 3 ? 'grid-cols-1 lg:grid-cols-3' :
+                  'grid-cols-1 lg:grid-cols-2 xl:grid-cols-3'
+                }`}>
+                  {Array.from(loadsByAircraft.entries()).map(([aircraftId, aircraftLoads]) => {
+                    const aircraftInfo = aircraft.find(a => a.id === aircraftId)
+                    const isUnassigned = aircraftId === 'unassigned'
+
+                    return (
+                      <div key={aircraftId} className="space-y-3">
+                        {/* Aircraft Header */}
+                        <div className="bg-gradient-to-r from-blue-600 to-blue-500 rounded-lg p-3 shadow-lg sticky top-0 z-10">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-2xl">{isUnassigned ? '⚠️' : '✈️'}</span>
+                              <div>
+                                <h3 className="text-white font-bold text-lg">
+                                  {isUnassigned ? 'Unassigned' : aircraftInfo?.tailNumber || 'Unknown'}
+                                </h3>
+                                {!isUnassigned && aircraftInfo && (
+                                  <p className="text-blue-100 text-sm">
+                                    {aircraftInfo.name} • {aircraftInfo.capacity} pax
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-white font-bold text-lg">{aircraftLoads.length}</div>
+                              <div className="text-blue-100 text-xs">Loads</div>
+                            </div>
+                          </div>
+                          {!isUnassigned && (
+                            <button
+                              onClick={() => handleCreateLoad(aircraftId)}
+                              className="w-full bg-white/20 hover:bg-white/30 text-white font-semibold py-2 px-3 rounded-lg transition-colors text-sm"
+                            >
+                              + Create Load
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Loads for this aircraft */}
+                        <div className="space-y-3">
+                          {aircraftLoads.length === 0 ? (
+                            <div className="bg-white/5 border-2 border-dashed border-white/20 rounded-lg p-8 text-center">
+                              <p className="text-slate-400 text-sm">
+                                No loads for this aircraft
+                              </p>
+                            </div>
+                          ) : (
+                            aircraftLoads.map((load) => (
+                              <div
+                                key={load.id}
+                                onClick={() => setSelectedLoadId(load.id)}
+                                className={`rounded-xl transition-all ${
+                                  selectedLoadId === load.id
+                                    ? 'ring-4 ring-blue-400 ring-offset-2 ring-offset-slate-900'
+                                    : ''
+                                }`}
+                              >
+                                <LoadBuilderCard load={load} />
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </LoadBuilderProvider>
           </div>
           
@@ -945,6 +1073,50 @@ function LoadBuilderPageContent() {
           load={loads.find(l => l.id === optimizeLoadId)!}
           onClose={() => setOptimizeLoadId(null)}
         />
+      )}
+
+      {/* Aircraft Selector Modal */}
+      {showAircraftSelector && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl shadow-2xl max-w-md w-full border border-white/20">
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-white mb-4">
+                ✈️ Select Aircraft for New Load
+              </h2>
+
+              <div className="space-y-3 mb-6">
+                {activeAircraft.map((aircraftItem) => (
+                  <button
+                    key={aircraftItem.id}
+                    onClick={() => {
+                      handleCreateLoad(aircraftItem.id)
+                      setShowAircraftSelector(false)
+                    }}
+                    className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-lg p-4 transition-all shadow-lg hover:shadow-xl text-left"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-lg">{aircraftItem.tailNumber}</div>
+                        <div className="text-sm text-blue-100">{aircraftItem.name}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-2xl font-bold">{aircraftItem.capacity}</div>
+                        <div className="text-xs text-blue-200">passengers</div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setShowAircraftSelector(false)}
+                className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

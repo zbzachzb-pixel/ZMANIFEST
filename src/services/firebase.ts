@@ -1078,6 +1078,7 @@ subscribeToGroups(callback: (groups: Group[]) => void): () => void {
       studentAccounts,
       groups,
       loads,
+      aircraft,
       clockEvents,
       periods
     ] = await Promise.all([
@@ -1087,10 +1088,11 @@ subscribeToGroups(callback: (groups: Group[]) => void): () => void {
       this.getStudentAccounts(),
       this.getGroups(),
       this.getLoads(),
+      this.getAllAircraft(),
       this.getClockEvents(),
       this.getPeriods()
     ])
-    
+
     return {
       instructors,
       assignments,
@@ -1098,6 +1100,7 @@ subscribeToGroups(callback: (groups: Group[]) => void): () => void {
       studentAccounts,
       groups,
       loads,
+      aircraft,
       clockEvents,
       periods
     }
@@ -1121,6 +1124,7 @@ subscribeToGroups(callback: (groups: Group[]) => void): () => void {
           studentAccounts: data.studentAccounts ? Object.values(data.studentAccounts) : [],
           groups: data.groups ? Object.values(data.groups) : [],
           loads: data.loads ? Object.values(data.loads) : [],
+          aircraft: data.aircraft ? Object.values(data.aircraft) : [],
           clockEvents: data.clockEvents ? Object.values(data.clockEvents) : [],
           periods: data.periods ? (Object.values(data.periods) as FirebasePeriod[]).map((p) => ({
             ...p,
@@ -1137,6 +1141,7 @@ subscribeToGroups(callback: (groups: Group[]) => void): () => void {
           studentAccounts: [],
           groups: [],
           loads: [],
+          aircraft: [],
           clockEvents: [],
           periods: []
         })

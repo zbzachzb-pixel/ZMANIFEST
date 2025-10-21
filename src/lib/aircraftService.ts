@@ -300,7 +300,7 @@ export async function getAircraftByTailNumber(tailNumber: string): Promise<Aircr
  */
 export async function getDefaultCapacity(): Promise<number> {
   const activeAircraft = await getActiveAircraft()
-  if (activeAircraft.length === 0) {
+  if (activeAircraft.length === 0 || !activeAircraft[0]) {
     return 18 // Legacy default
   }
   return activeAircraft[0].capacity
