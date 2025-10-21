@@ -9,7 +9,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { useUsers } from '@/hooks/useUsers'
 import { MessageService } from '@/lib/messageService'
 import { RequireRole } from '@/components/auth'
-import type { Message, MessageWithStatus, CreateMessage, MessagePriority, RecipientType } from '@/types'
+import type { Message, CreateMessage, MessagePriority, RecipientType } from '@/types'
 import type { UserProfile } from '@/types'
 
 function MessagesPageContent() {
