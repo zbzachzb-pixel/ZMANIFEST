@@ -304,3 +304,14 @@ export type {
   ApiResponse,
   PaginatedResponse
 } from './funJumpers'
+
+// ==================== RE-EXPORT MESSAGE TYPES ====================
+
+export type {
+  MessagePriority,
+  RecipientType,
+  Message,
+  CreateMessage,
+  MessageWithStatus,
+  UnreadMessagesSummary
+} from './messages'

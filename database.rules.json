@@ -72,6 +72,21 @@
         root.child('users').child(auth.uid).child('role').val() == 'manifest'
       )",
       ".indexOn": ["timestamp", "actionType"]
+    },
+
+    "messages": {
+      "$messageId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (
+          root.child('users').child(auth.uid).child('role').val() == 'admin' ||
+          root.child('users').child(auth.uid).child('role').val() == 'manifest' ||
+          (data.exists() && (
+            newData.child('readBy').child(auth.uid).exists() ||
+            newData.child('acknowledgedBy').child(auth.uid).exists()
+          ))
+        )",
+        ".indexOn": ["recipientType", "recipientId", "createdAt", "senderId"]
+      }
     }
   }
 }
