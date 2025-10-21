@@ -22,6 +22,7 @@ import { useAircraft, useCreateAircraft, useUpdateAircraft, useDeactivateAircraf
 // ✅ PERFORMANCE: Dynamic imports for modals - only loaded when opened
 const EndPeriodModal = dynamic(() => import('@/components/EndPeriodModal').then(mod => ({ default: mod.EndPeriodModal })), { ssr: false })
 const AircraftModal = dynamic(() => import('@/components/AircraftModal').then(mod => ({ default: mod.AircraftModal })), { ssr: false })
+const AircraftMigrationPanel = dynamic(() => import('@/components/AircraftMigrationPanel').then(mod => ({ default: mod.AircraftMigrationPanel })), { ssr: false })
 
 function SettingsPageContent() {
   const toast = useToast()
@@ -291,7 +292,10 @@ function SettingsPageContent() {
               🔒 End Current Period
             </button>
           </div>
-          
+
+          {/* Aircraft Migration */}
+          <AircraftMigrationPanel />
+
           {/* Load Scheduling */}
           <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
             <div className="flex justify-between items-center mb-6">
