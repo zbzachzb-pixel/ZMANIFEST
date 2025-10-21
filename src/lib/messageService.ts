@@ -10,7 +10,7 @@ import type { UserProfile } from '@/types'
 // ==================== CONSTANTS ====================
 
 const MESSAGE_EXPIRY_DAYS = 7
-const MAX_MESSAGES_PER_HOUR = 10
+// const MAX_MESSAGES_PER_HOUR = 10 // TODO: Implement rate limiting
 
 // ==================== HELPER FUNCTIONS ====================
 
