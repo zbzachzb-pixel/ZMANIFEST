@@ -37,6 +37,7 @@ export interface Instructor {
   affStudents: Array<{ id: string; name: string }>
   team: Team
   coveringFor?: string | null
+  aircraftIds?: string[]          // ✅ ADDED: Aircraft qualifications (empty/undefined = all aircraft)
 }
 
 export type CreateInstructor = Omit<Instructor, 'id' | 'clockedIn' | 'clockInTime' | 'archived' | 'affLocked' | 'affStudents'>

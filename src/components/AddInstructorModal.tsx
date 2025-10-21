@@ -3,7 +3,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { useCreateInstructor } from '@/hooks/useDatabase'
+import { useCreateInstructor, useAircraft } from '@/hooks/useDatabase'
 import { useToast } from '@/contexts/ToastContext'
 import { validateName, validateWeightLimit } from '@/lib/validation'
 import { db } from '@/services'
@@ -16,15 +16,19 @@ interface AddInstructorModalProps {
 
 export function AddInstructorModal({ instructor, onClose }: AddInstructorModalProps) {
   const { create, loading: createLoading } = useCreateInstructor()
+  const { data: aircraft } = useAircraft()
   const toast = useToast()
   const [loading, setLoading] = useState(false)
 
   const isEdit = !!instructor
-  
+
   // ✅ FIX #1: Allow null for team state
   const [name, setName] = useState(instructor?.name || '')
   const [bodyWeight, setBodyWeight] = useState(instructor?.bodyWeight || 180)
   const [team, setTeam] = useState<Team | null>(instructor?.team || null)
+
+  // Aircraft qualifications (empty = qualified for all aircraft)
+  const [selectedAircraftIds, setSelectedAircraftIds] = useState<string[]>(instructor?.aircraftIds || [])
   
   // ✅ FIX #2: Use correct property names (canTandem, canAFF, canVideo)
   const [canTandem, setCanTandem] = useState(instructor?.canTandem || false)
@@ -129,6 +133,7 @@ export function AddInstructorModal({ instructor, onClose }: AddInstructorModalPr
       affWeightLimit: canAFF ? affWeightLimit : 0,
       videoMinWeight: videoRestricted && videoMinWeight ? videoMinWeight : null,
       videoMaxWeight: videoRestricted && videoMaxWeight ? videoMaxWeight : null,
+      aircraftIds: selectedAircraftIds.length > 0 ? selectedAircraftIds : undefined, // undefined = all aircraft
     }
     
     try {
@@ -329,7 +334,47 @@ export function AddInstructorModal({ instructor, onClose }: AddInstructorModalPr
               )}
             </div>
           )}
-          
+
+          {/* Aircraft Qualifications */}
+          {aircraft.length > 0 && (
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-slate-300 mb-2">
+                Aircraft Qualifications
+              </label>
+              <p className="text-xs text-slate-400 mb-3">
+                Select which aircraft this instructor is qualified to fly on. Leave all unchecked to qualify for all aircraft.
+              </p>
+              <div className="space-y-2">
+                {aircraft
+                  .filter(a => a.isActive)
+                  .sort((a, b) => a.order - b.order)
+                  .map(aircraftItem => (
+                    <label
+                      key={aircraftItem.id}
+                      className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg cursor-pointer hover:bg-slate-700 transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedAircraftIds.includes(aircraftItem.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedAircraftIds([...selectedAircraftIds, aircraftItem.id])
+                          } else {
+                            setSelectedAircraftIds(selectedAircraftIds.filter(id => id !== aircraftItem.id))
+                          }
+                        }}
+                        className="w-5 h-5 rounded bg-slate-600 border-slate-500 text-blue-500"
+                      />
+                      <div className="flex-1">
+                        <div className="font-semibold text-white">{aircraftItem.tailNumber}</div>
+                        <div className="text-xs text-slate-400">{aircraftItem.name} • {aircraftItem.capacity} pax</div>
+                      </div>
+                    </label>
+                  ))}
+              </div>
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="flex gap-3 pt-4">
             <button
