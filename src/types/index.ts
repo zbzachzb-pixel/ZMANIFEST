@@ -161,6 +161,22 @@ export interface ClockEvent {
   notes?: string
 }
 
+// ==================== AIRCRAFT ====================
+
+export interface Aircraft {
+  id: string
+  name: string                    // Display name (e.g., "Caravan")
+  tailNumber: string              // Aircraft registration (e.g., "N123AB")
+  capacity: number                // Default passenger capacity
+  isActive: boolean               // Currently in service
+  order: number                   // Display order in UI
+  createdAt: string
+  updatedAt?: string
+}
+
+export type CreateAircraft = Omit<Aircraft, 'id' | 'createdAt' | 'updatedAt'>
+export type UpdateAircraft = Partial<Omit<Aircraft, 'id' | 'createdAt'>>
+
 // ==================== LOADS ====================
 
 // ✅ BUG FIX #3: Added originalQueueTimestamp field
@@ -187,15 +203,16 @@ export interface Load {
   id: string
   name?: string
   position: number
-  capacity?: number
+  aircraftId?: string             // ✅ ADDED: Reference to aircraft
+  capacity?: number               // Override aircraft default capacity
   status: 'building' | 'ready' | 'departed' | 'completed'
   assignments?: LoadAssignment[]
-  funJumpers?: FunJumper[]  // Fun jumpers assigned to this load
+  funJumpers?: FunJumper[]        // Fun jumpers assigned to this load
   createdAt: string
   departedAt?: string
   completedAt?: string
   delayMinutes?: number
-  countdownStartTime?: string  // Timer start time for countdown
+  countdownStartTime?: string     // Timer start time for countdown
 }
 
 export type CreateLoad = Omit<Load, 'id' | 'createdAt'>
@@ -242,7 +259,8 @@ export interface AutoAssignSettings {
 export interface LoadSchedulingSettings {
   minutesBetweenLoads: number
   instructorCycleTime: number
-  defaultPlaneCapacity: number
+  defaultPlaneCapacity: number    // ⚠️ DEPRECATED: Use aircraft.capacity instead (kept for migration)
+  activeAircraftIds?: string[]    // ✅ ADDED: Ordered list of aircraft flying today
 }
 
 export interface AppSettings {
@@ -274,6 +292,7 @@ export interface DatabaseState {
   instructors: Instructor[]
   assignments: Assignment[]
   loads: Load[]
+  aircraft: Aircraft[]            // ✅ ADDED: Aircraft collection
   studentQueue: QueueStudent[]
   studentAccounts: StudentAccount[]
   groups: Group[]

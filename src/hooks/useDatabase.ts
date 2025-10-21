@@ -7,6 +7,9 @@ import { db } from '@/services'
 import { getCurrentPeriod } from '@/lib/utils'
 import type {
   Instructor,
+  Aircraft,
+  CreateAircraft,
+  UpdateAircraft,
   Load,
   Assignment,
   QueueStudent,
@@ -191,6 +194,119 @@ export function useUpdateInstructor() {
   }, [])
 
   return { update, loading, error }
+}
+
+// ==================== AIRCRAFT ====================
+
+export function useAircraft() {
+  return useRealtimeData<Aircraft>(db.subscribeToAircraft)
+}
+
+export function useActiveAircraft() {
+  const { data: allAircraft, loading, error, refresh } = useAircraft()
+  const activeAircraft = allAircraft.filter(a => a.isActive)
+  return { data: activeAircraft, loading, error, refresh }
+}
+
+export function useCreateAircraft() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const create = useCallback(async (aircraft: CreateAircraft) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const newAircraftId = await db.createAircraft(aircraft)
+      return newAircraftId
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { create, loading, error }
+}
+
+export function useUpdateAircraft() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const update = useCallback(async (id: string, updates: UpdateAircraft) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.updateAircraft(id, updates)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { update, loading, error }
+}
+
+export function useDeleteAircraft() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const remove = useCallback(async (id: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.deleteAircraft(id)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { remove, loading, error }
+}
+
+export function useDeactivateAircraft() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const deactivate = useCallback(async (id: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.deactivateAircraft(id)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { deactivate, loading, error }
+}
+
+export function useReactivateAircraft() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const reactivate = useCallback(async (id: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      await db.reactivateAircraft(id)
+    } catch (err) {
+      setError(err as Error)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { reactivate, loading, error }
 }
 
 // ==================== STUDENT ACCOUNTS ====================

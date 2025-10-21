@@ -1,8 +1,11 @@
-// src/services/database.ts - COMPLETE WITH STUDENT ACCOUNTS, SETTINGS, AND USER PROFILES
+// src/services/database.ts - COMPLETE WITH STUDENT ACCOUNTS, SETTINGS, USER PROFILES, AND AIRCRAFT
 import type {
   Instructor,
   CreateInstructor,
   UpdateInstructor,
+  Aircraft,
+  CreateAircraft,
+  UpdateAircraft,
   Load,
   CreateLoad,
   UpdateLoad,
@@ -34,7 +37,18 @@ export interface DatabaseService {
   updateInstructor(id: string, updates: UpdateInstructor): Promise<void>
   archiveInstructor(id: string): Promise<void>
   subscribeToInstructors(callback: (instructors: Instructor[]) => void): () => void
-  
+
+  // ==================== AIRCRAFT ====================
+  createAircraft(aircraft: CreateAircraft): Promise<string>
+  getAllAircraft(): Promise<Aircraft[]>
+  getActiveAircraft(): Promise<Aircraft[]>
+  getAircraftById(id: string): Promise<Aircraft | null>
+  updateAircraft(id: string, updates: UpdateAircraft): Promise<void>
+  deactivateAircraft(id: string): Promise<void>
+  reactivateAircraft(id: string): Promise<void>
+  deleteAircraft(id: string): Promise<void>
+  subscribeToAircraft(callback: (aircraft: Aircraft[]) => void): () => void
+
   // ==================== STUDENT ACCOUNTS ====================
   createStudentAccount(account: CreateStudentAccount): Promise<StudentAccount>
   getStudentAccounts(): Promise<StudentAccount[]>

@@ -21,6 +21,9 @@ import type {
   Instructor,
   CreateInstructor,
   UpdateInstructor,
+  Aircraft,
+  CreateAircraft,
+  UpdateAircraft,
   Load,
   CreateLoad,
   UpdateLoad,
@@ -138,7 +141,70 @@ export class FirebaseService implements DatabaseService {
     })
     return unsubscribe
   }
-  
+
+  // ==================== AIRCRAFT ====================
+
+  async createAircraft(aircraft: CreateAircraft): Promise<string> {
+    const aircraftService = await import('@/lib/aircraftService')
+    return aircraftService.createAircraft(aircraft)
+  }
+
+  async getAllAircraft(): Promise<Aircraft[]> {
+    const aircraftService = await import('@/lib/aircraftService')
+    return aircraftService.getAllAircraft()
+  }
+
+  async getActiveAircraft(): Promise<Aircraft[]> {
+    const aircraftService = await import('@/lib/aircraftService')
+    return aircraftService.getActiveAircraft()
+  }
+
+  async getAircraftById(id: string): Promise<Aircraft | null> {
+    const aircraftService = await import('@/lib/aircraftService')
+    return aircraftService.getAircraftById(id)
+  }
+
+  async updateAircraft(id: string, updates: UpdateAircraft): Promise<void> {
+    const aircraftService = await import('@/lib/aircraftService')
+    return aircraftService.updateAircraft(id, updates)
+  }
+
+  async deactivateAircraft(id: string): Promise<void> {
+    const aircraftService = await import('@/lib/aircraftService')
+    return aircraftService.deactivateAircraft(id)
+  }
+
+  async reactivateAircraft(id: string): Promise<void> {
+    const aircraftService = await import('@/lib/aircraftService')
+    return aircraftService.reactivateAircraft(id)
+  }
+
+  async deleteAircraft(id: string): Promise<void> {
+    const aircraftService = await import('@/lib/aircraftService')
+    return aircraftService.deleteAircraft(id)
+  }
+
+  subscribeToAircraft(callback: (aircraft: Aircraft[]) => void): () => void {
+    const aircraftRef = ref(this.db, 'aircraft')
+    const unsubscribe = onValue(aircraftRef, (snapshot) => {
+      const data = snapshot.val()
+      if (!data) {
+        callback([])
+        return
+      }
+
+      const aircraft: Aircraft[] = Object.values(data)
+      // Sort by order, then by name
+      const sorted = aircraft.sort((a, b) => {
+        if (a.order !== b.order) return a.order - b.order
+        return a.name.localeCompare(b.name)
+      })
+
+      callback(sorted)
+    })
+    return unsubscribe
+  }
+
   // ==================== STUDENT ACCOUNTS ====================
   
   async createStudentAccount(account: CreateStudentAccount): Promise<StudentAccount> {
