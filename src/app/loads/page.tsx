@@ -289,8 +289,11 @@ function LoadBuilderPageContent() {
       const targetAircraft = aircraft.find(a => a.id === targetAircraftId)
       const defaultCapacity = targetAircraft?.capacity || loadSettings.defaultPlaneCapacity || 18
 
+      // Calculate load number per aircraft (each aircraft has independent load numbering)
+      const aircraftLoads = loads.filter(l => l.aircraftId === targetAircraftId)
+      const loadNumber = aircraftLoads.length + 1
+
       const nextPosition = Math.max(0, ...loads.map(l => l.position || 0)) + 1
-      const loadNumber = loads.length + 1
 
       // ✅ Use undoable action
       await createLoadUndoable({

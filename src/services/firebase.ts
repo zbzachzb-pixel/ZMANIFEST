@@ -67,6 +67,7 @@ export class FirebaseService implements DatabaseService {
     this.subscribeToPeriods = this.subscribeToPeriods.bind(this)
     this.subscribeToStudentAccounts = this.subscribeToStudentAccounts.bind(this)
     this.subscribeToUserProfiles = this.subscribeToUserProfiles.bind(this)
+    this.subscribeToAircraft = this.subscribeToAircraft.bind(this)
     this.subscribeToSettings = this.subscribeToSettings.bind(this)
     this.subscribeToAll = this.subscribeToAll.bind(this)
   }
