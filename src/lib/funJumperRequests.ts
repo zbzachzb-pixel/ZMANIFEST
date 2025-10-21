@@ -4,6 +4,7 @@
 import { ref, get, set, update, push, query, orderByChild, equalTo, remove, onValue } from 'firebase/database'
 import { database } from './firebase'
 import { NotificationService, getUserNotificationSettings } from './notifications'
+import { sendPushNotification } from './pushNotifications'
 import type {
   FunJumperRequest,
   CreateFunJumperRequest,
@@ -350,6 +351,27 @@ export class FunJumperRequestService {
         console.error('Failed to send approval notification:', notifError)
         // Don't throw - approval succeeded even if notification failed
       }
+
+      // Send push notification to mobile user
+      try {
+        const userRef = ref(database, `users/${request.userId}`)
+        const userSnap = await get(userRef)
+        const userData = userSnap.val()
+
+        if (userData?.fcmToken) {
+          const load = await this.getLoad(assignedLoadId)
+          const loadNumber = (load.position || 0) + 1
+
+          await sendPushNotification(
+            userData.fcmToken,
+            '✅ Request Approved!',
+            `Hi ${request.userName}, you're on Load #${loadNumber}. Check your timer!`
+          )
+        }
+      } catch (error) {
+        console.error('Failed to send push notification:', error)
+        // Don't fail the approval if notification fails
+      }
     } catch (error) {
       console.error('Failed to approve request:', error)
       throw error
@@ -417,6 +439,24 @@ export class FunJumperRequestService {
       } catch (notifError) {
         console.error('Failed to send denial notification:', notifError)
         // Don't throw - denial succeeded even if notification failed
+      }
+
+      // Send push notification to mobile user
+      try {
+        const userRef = ref(database, `users/${request.userId}`)
+        const userSnap = await get(userRef)
+        const userData = userSnap.val()
+
+        if (userData?.fcmToken) {
+          await sendPushNotification(
+            userData.fcmToken,
+            '❌ Request Denied',
+            `Your request was denied: ${denialReason || 'No reason provided'}`
+          )
+        }
+      } catch (error) {
+        console.error('Failed to send push notification:', error)
+        // Don't fail the denial if notification fails
       }
     } catch (error) {
       console.error('Failed to deny request:', error)
