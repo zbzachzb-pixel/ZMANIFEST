@@ -104,7 +104,7 @@ function MessagesPageContent() {
         requiresAcknowledgment: requiresAck
       }
 
-      const messageId = await MessageService.sendMessage(
+      await MessageService.sendMessage(
         userProfile.uid,
         userProfile.displayName,
         userProfile.role as 'admin' | 'manifest',
