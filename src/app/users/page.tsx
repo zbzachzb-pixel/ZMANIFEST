@@ -16,6 +16,7 @@ import type { UserProfile, UserRole } from '@/types/funJumpers'
 const CreateUserModal = dynamic(() => import('@/components/CreateUserModal').then(mod => ({ default: mod.CreateUserModal })), { ssr: false })
 const EditUserModal = dynamic(() => import('@/components/EditUserModal').then(mod => ({ default: mod.EditUserModal })), { ssr: false })
 const ConfirmDeleteModal = dynamic(() => import('@/components/ConfirmDeleteModal').then(mod => ({ default: mod.ConfirmDeleteModal })), { ssr: false })
+const SendMessageModal = dynamic(() => import('@/components/SendMessageModal').then(mod => ({ default: mod.SendMessageModal })), { ssr: false })
 
 const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Admin',
@@ -44,6 +45,7 @@ function UsersPageContent() {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null)
   const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [messagingUser, setMessagingUser] = useState<UserProfile | null>(null)
 
   // Filter and search users
   const filteredUsers = useMemo(() => {
@@ -326,6 +328,15 @@ function UsersPageContent() {
                             >
                               ✏️ Edit
                             </button>
+                            {user.role === 'fun_jumper' && (
+                              <button
+                                onClick={() => setMessagingUser(user)}
+                                className="px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg transition-colors text-xs font-semibold border border-purple-500/30"
+                                title="Send message"
+                              >
+                                📬 Message
+                              </button>
+                            )}
                             <button
                               onClick={() => setDeletingUser(user)}
                               disabled={isSelf}
@@ -383,6 +394,15 @@ function UsersPageContent() {
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeletingUser(null)}
           loading={deleteLoading}
+        />
+      )}
+
+      {messagingUser && (
+        <SendMessageModal
+          isOpen={true}
+          onClose={() => setMessagingUser(null)}
+          recipientId={messagingUser.uid}
+          recipientName={messagingUser.displayName}
         />
       )}
     </div>
