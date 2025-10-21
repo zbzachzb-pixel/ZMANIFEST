@@ -92,6 +92,7 @@ export interface FunJumperRequest {
 
   // Request details
   requestedLoadIds: string[]  // Prioritized list of load IDs
+  preferredAircraftId?: string // ✅ ADDED: Optional aircraft preference
   skyDiveType: SkyDiveType
   groupId?: string            // Optional group ID for jumping with friends
   notes?: string              // Optional notes for manifest

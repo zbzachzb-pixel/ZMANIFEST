@@ -413,3 +413,32 @@ export function getCurrentPeriod(): Period {
     }
   }
 }
+
+// ==================== AIRCRAFT QUALIFICATION ====================
+
+/**
+ * Check if an instructor is qualified for a specific aircraft
+ *
+ * @param instructor - The instructor to check
+ * @param aircraftId - The aircraft ID to check qualification for
+ * @returns true if instructor is qualified (undefined/empty aircraftIds = qualified for all)
+ *
+ * @example
+ * const isQualified = isInstructorQualifiedForAircraft(instructor, 'aircraft-123')
+ * // Returns true if instructor.aircraftIds is undefined, empty, or includes 'aircraft-123'
+ */
+export function isInstructorQualifiedForAircraft(
+  instructor: Instructor,
+  aircraftId: string | undefined
+): boolean {
+  // If load has no aircraft, instructor can work on it
+  if (!aircraftId) return true
+
+  // If instructor has no aircraft restrictions, they're qualified for all
+  if (!instructor.aircraftIds || instructor.aircraftIds.length === 0) {
+    return true
+  }
+
+  // Check if instructor's qualifications include this aircraft
+  return instructor.aircraftIds.includes(aircraftId)
+}
