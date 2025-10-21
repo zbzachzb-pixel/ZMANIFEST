@@ -1,7 +1,7 @@
 // src/lib/messageService.ts
 // Service for managing one-way messages (admin/manifest → fun jumpers)
 
-import { ref, get, set, update, push, query, orderByChild, onValue, remove } from 'firebase/database'
+import { ref, get, set, update, push, onValue, remove } from 'firebase/database'
 import { database } from './firebase'
 import { sendPushNotification } from './pushNotifications'
 import type { Message, CreateMessage, MessageWithStatus, UnreadMessagesSummary } from '@/types/messages'
