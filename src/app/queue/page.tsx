@@ -5,19 +5,22 @@
 'use client'
 
 import React, { useState, useMemo, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { useTandemQueue, useAFFQueue, useRemoveMultipleFromQueue, useGroups } from '@/hooks/useDatabase'
 import { useToast } from '@/contexts/ToastContext'
-import { AddToQueueModal } from '@/components/AddToQueueModal'
-import { EditStudentModal } from '@/components/EditStudentModal'
 import { StudentCard } from '@/components/StudentCard'
-import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal'
-import { CreateGroupModal } from '@/components/CreateGroupModal'
 import { GroupCard } from '@/components/GroupCard'
-import { ImportStudentsModal } from '@/components/ImportStudentsModal'
 import type { QueueStudent, Group } from '@/types'
 import { useAddStudentToGroup } from '@/hooks/useDatabase'
 import { PageErrorBoundary } from '@/components/ErrorBoundary'
 import { RequireRole } from '@/components/auth'
+
+// ✅ PERFORMANCE: Dynamic imports for modals - only loaded when opened
+const AddToQueueModal = dynamic(() => import('@/components/AddToQueueModal').then(mod => ({ default: mod.AddToQueueModal })), { ssr: false })
+const EditStudentModal = dynamic(() => import('@/components/EditStudentModal').then(mod => ({ default: mod.EditStudentModal })), { ssr: false })
+const ConfirmDeleteModal = dynamic(() => import('@/components/ConfirmDeleteModal').then(mod => ({ default: mod.ConfirmDeleteModal })), { ssr: false })
+const CreateGroupModal = dynamic(() => import('@/components/CreateGroupModal').then(mod => ({ default: mod.CreateGroupModal })), { ssr: false })
+const ImportStudentsModal = dynamic(() => import('@/components/ImportStudentsModal').then(mod => ({ default: mod.ImportStudentsModal })), { ssr: false })
 
 interface GroupWithStudents extends Group {
   students: QueueStudent[]

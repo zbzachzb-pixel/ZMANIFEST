@@ -2,15 +2,18 @@
 'use client'
 
 import React, { useState, useMemo, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { useAssignments, useActiveInstructors, useDeleteClockEvent } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { getCurrentPeriod, calculateAssignmentPay } from '@/lib/utils'
 import { PAY_RATES } from '@/lib/constants'
 import { useToast } from '@/contexts/ToastContext'
-import { EditAssignmentModal } from '@/components/EditAssignmentModal'
-import { EditClockEventModal } from '@/components/EditClockEventModal'
 import type { Assignment, ClockEvent } from '@/types'
 import { RequireRole } from '@/components/auth'
+
+// ✅ PERFORMANCE: Dynamic imports for modals - only loaded when opened
+const EditAssignmentModal = dynamic(() => import('@/components/EditAssignmentModal').then(mod => ({ default: mod.EditAssignmentModal })), { ssr: false })
+const EditClockEventModal = dynamic(() => import('@/components/EditClockEventModal').then(mod => ({ default: mod.EditClockEventModal })), { ssr: false })
 
 function AssignmentsPageContent() {
   const { data: assignments, loading } = useAssignments()

@@ -7,7 +7,8 @@
 
 'use client'
 
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { useActiveLoads, useQueue, useActiveInstructors, useAssignments, useUpdateLoad, useDeleteLoad, useGroups } from '@/hooks/useDatabase'
 import { LoadBuilderCard } from '@/components/LoadBuilderCard'
 import { useToast } from '@/contexts/ToastContext'
@@ -17,11 +18,17 @@ import { createLoadUndoable, deleteLoadUndoable, updateLoadStatusUndoable, delay
 import { getCurrentPeriod, calculateInstructorBalance } from '@/lib/utils'
 import { isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
 import type { QueueStudent, Load, LoadAssignment, LoadSchedulingSettings, Group } from '@/types'
-import { OptimizeLoadModal } from '@/components/OptimizeLoadModal'
 import { PageErrorBoundary } from '@/components/ErrorBoundary'
 import { getLoadSettings } from '@/lib/settingsStorage'
 import { useLoadsPageShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { RequireRole } from '@/components/auth'
+import { LoadBuilderProvider } from '@/contexts/LoadBuilderContext'
+
+// ✅ PERFORMANCE: Dynamic import for OptimizeLoadModal - only loaded when needed
+const OptimizeLoadModal = dynamic(() => import('@/components/OptimizeLoadModal').then(mod => ({ default: mod.OptimizeLoadModal })), {
+  ssr: false,
+  loading: () => <div className="text-white">Loading...</div>
+})
 
 function LoadBuilderPageContent() {
   // ============================================
@@ -90,9 +97,10 @@ function LoadBuilderPageContent() {
     return balances
   }, [instructors, assignments, period, loads])
   
-  // Filter queue
-  const filteredQueue = useMemo(() => {
-    return queue
+  // ✅ OPTIMIZED: Single-pass filtering and grouping to reduce O(3n) to O(n)
+  const { filteredQueue, queueGroups, individualStudents } = useMemo(() => {
+    // Step 1: Filter and sort queue in single pass
+    const filtered = queue
       .filter(s => {
         if (searchTerm) {
           const search = searchTerm.toLowerCase()
@@ -104,50 +112,64 @@ function LoadBuilderPageContent() {
         return true
       })
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-  }, [queue, searchTerm, selectedJumpType])
-  
-  // Get queue groups - ✅ FIXED: Use studentAccountIds
-  const queueGroups = useMemo(() => {
-    return groups.map(groupDoc => {
-      const groupId = groupDoc.id
-      
-      // ✅ FIX: Match by studentAccountId (permanent) instead of QueueStudent.id
-      const students = filteredQueue.filter(s => 
-        groupDoc.studentAccountIds.includes(s.studentAccountId)
-      )
-      
-      // Only return groups that have students in the current filtered queue
-      if (students.length > 0) {
-        return {
-          ...groupDoc,
-          students,
-          groupId
+
+    // Step 2: Build student lookup map for O(1) group matching
+    const studentMap = new Map(filtered.map(s => [s.studentAccountId, s]))
+    const groupedStudentIds = new Set<string>()
+
+    // Step 3: Build groups and track grouped students simultaneously
+    const groups_result = groups
+      .map(groupDoc => {
+        const students = groupDoc.studentAccountIds
+          .map(accountId => studentMap.get(accountId))
+          .filter((s): s is QueueStudent => s !== undefined)
+
+        if (students.length > 0) {
+          // Mark these students as grouped
+          students.forEach(s => groupedStudentIds.add(s.id))
+
+          return {
+            ...groupDoc,
+            students,
+            groupId: groupDoc.id
+          }
         }
-      }
-      return null
-    }).filter((g): g is (Group & { students: QueueStudent[], groupId: string }) => g !== null)
-  }, [filteredQueue, groups])
+        return null
+      })
+      .filter((g): g is (Group & { students: QueueStudent[], groupId: string }) => g !== null)
+
+    // Step 4: Get individual students (not in any group)
+    const individuals = filtered.filter(s => !groupedStudentIds.has(s.id))
+
+    return {
+      filteredQueue: filtered,
+      queueGroups: groups_result,
+      individualStudents: individuals
+    }
+  }, [queue, searchTerm, selectedJumpType, groups])
   
-  // Separate individual students
-  const individualStudents = useMemo(() => {
-    const groupedIds = new Set(queueGroups.flatMap(g => g.students.map(s => s.id)))
-    return filteredQueue.filter(s => !groupedIds.has(s.id))
-  }, [filteredQueue, queueGroups])
-  
-  // Filter loads by status
-  const filteredLoads = useMemo(() => {
-    if (statusFilter === 'all') return loads
-    return loads.filter(load => load.status === statusFilter)
+  // ✅ OPTIMIZED: Single-pass load filtering and counting
+  const { filteredLoads, loadCounts } = useMemo(() => {
+    const counts = {
+      all: loads.length,
+      building: 0,
+      ready: 0,
+      departed: 0,
+      completed: 0
+    }
+
+    // Count all statuses in single pass
+    loads.forEach(load => {
+      counts[load.status]++
+    })
+
+    // Filter if needed
+    const filtered = statusFilter === 'all'
+      ? loads
+      : loads.filter(load => load.status === statusFilter)
+
+    return { filteredLoads: filtered, loadCounts: counts }
   }, [loads, statusFilter])
-  
-  // Count loads by status
-  const loadCounts = useMemo(() => ({
-    all: loads.length,
-    building: loads.filter(l => l.status === 'building').length,
-    ready: loads.filter(l => l.status === 'ready').length,
-    departed: loads.filter(l => l.status === 'departed').length,
-    completed: loads.filter(l => l.status === 'completed').length
-  }), [loads])
 
   // ============================================
   // Group weight validation function
@@ -234,7 +256,8 @@ function LoadBuilderPageContent() {
     }
   }
   
-  const handleDelayLoad = async (loadId: string, minutes: number) => {
+  // ✅ OPTIMIZED: Memoized with useCallback to prevent child re-renders
+  const handleDelayLoad = useCallback(async (loadId: string, minutes: number) => {
     try {
       const load = loads.find(l => l.id === loadId)
       if (!load) return
@@ -245,16 +268,18 @@ function LoadBuilderPageContent() {
       console.error('Failed to delay load:', error)
       toast.error('Failed to delay load')
     }
-  }
-  
-  const handleDragStart = (type: 'student' | 'assignment' | 'group', id: string, sourceLoadId?: string) => {
-    setDraggedItem({ type, id, sourceLoadId })
-  }
+  }, [loads, addAction, toast])
 
-  const handleDragEnd = () => {
+  // ✅ OPTIMIZED: Memoized with useCallback
+  const handleDragStart = useCallback((type: 'student' | 'assignment' | 'group', id: string, sourceLoadId?: string) => {
+    setDraggedItem({ type, id, sourceLoadId })
+  }, [])
+
+  // ✅ OPTIMIZED: Memoized with useCallback
+  const handleDragEnd = useCallback(() => {
     setDraggedItem(null)
     setDropTarget(null)
-  }
+  }, [])
   
 
     const handleDropToQueue = async () => {
@@ -295,7 +320,8 @@ function LoadBuilderPageContent() {
     }
   }
 
-  const handleDrop = async (loadId: string) => {
+  // ✅ OPTIMIZED: Memoized handleDrop to prevent LoadBuilderCard re-renders
+  const handleDrop = useCallback(async (loadId: string) => {
     if (!draggedItem) {
       return
     }
@@ -518,7 +544,7 @@ function LoadBuilderPageContent() {
       console.error('Critical error in handleDrop:', error)
       toast.error('Failed to assign to load', String(error))
     }
-  }
+  }, [draggedItem, loads, queue, groups, updateLoad, toast, instructors, loadSettings])
 
   // ============================================
   // KEYBOARD SHORTCUT HANDLERS
@@ -756,49 +782,53 @@ function LoadBuilderPageContent() {
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
           {/* Loads Grid */}
           <div className="xl:col-span-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-3">
-              {filteredLoads.length === 0 ? (
-                <div className="col-span-full text-center text-slate-400 py-12">
-                  <p className="text-xl mb-2">
-                    {statusFilter === 'all' ? 'No loads yet' : `No ${statusFilter} loads`}
-                  </p>
-                  <p>
-                    {statusFilter === 'all' 
-                      ? 'Click "New Load" to get started'
-                      : `Switch to "All Loads" or create a new load`
-                    }
-                  </p>
-                </div>
-              ) : (
-                filteredLoads
-                  .sort((a, b) => (a.position || 0) - (b.position || 0))
-                  .map((load) => (
-                    <div
-                      key={load.id}
-                      onClick={() => setSelectedLoadId(load.id)}
-                      className={`rounded-xl transition-all ${
-                        selectedLoadId === load.id
-                          ? 'ring-4 ring-blue-400 ring-offset-2 ring-offset-slate-900'
-                          : ''
-                      }`}
-                    >
-                      <LoadBuilderCard
-                        load={load}
-                        allLoads={loads}
-                        instructors={instructors}
-                        instructorBalances={instructorBalances}
-                        onDrop={handleDrop}
-                        onDragStart={handleDragStart}
-                        onDragEnd={handleDragEnd}
-                        dropTarget={dropTarget}
-                        setDropTarget={setDropTarget}
-                        loadSchedulingSettings={loadSettings}
-                        onDelay={handleDelayLoad}
-                      />
-                    </div>
-                  ))
-              )}
-            </div>
+            {/* ✅ PERFORMANCE: LoadBuilderProvider reduces 11 props to 1 per card */}
+            <LoadBuilderProvider
+              value={{
+                allLoads: loads,
+                instructors,
+                instructorBalances,
+                loadSchedulingSettings: loadSettings,
+                dropTarget,
+                setDropTarget,
+                onDrop: handleDrop,
+                onDragStart: handleDragStart,
+                onDragEnd: handleDragEnd,
+                onDelay: handleDelayLoad
+              }}
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-3">
+                {filteredLoads.length === 0 ? (
+                  <div className="col-span-full text-center text-slate-400 py-12">
+                    <p className="text-xl mb-2">
+                      {statusFilter === 'all' ? 'No loads yet' : `No ${statusFilter} loads`}
+                    </p>
+                    <p>
+                      {statusFilter === 'all'
+                        ? 'Click "New Load" to get started'
+                        : `Switch to "All Loads" or create a new load`
+                      }
+                    </p>
+                  </div>
+                ) : (
+                  filteredLoads
+                    .sort((a, b) => (a.position || 0) - (b.position || 0))
+                    .map((load) => (
+                      <div
+                        key={load.id}
+                        onClick={() => setSelectedLoadId(load.id)}
+                        className={`rounded-xl transition-all ${
+                          selectedLoadId === load.id
+                            ? 'ring-4 ring-blue-400 ring-offset-2 ring-offset-slate-900'
+                            : ''
+                        }`}
+                      >
+                        <LoadBuilderCard load={load} />
+                      </div>
+                    ))
+                )}
+              </div>
+            </LoadBuilderProvider>
           </div>
           
           {/* Sidebar - Queue */}

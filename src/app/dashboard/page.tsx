@@ -8,12 +8,11 @@
 'use client'
 
 import React, { useState, useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import { useCurrentPeriodAssignments, useActiveLoads } from '@/hooks/useDatabase'
 import { useApp } from '@/contexts/AppContext'
 import { useToast } from '@/contexts/ToastContext'
 import { InstructorCard } from '@/components/InstructorCard'
-import { AddJumpModal } from '@/components/AddJumpModal'
-import { ReleaseAFFModal } from '@/components/ReleaseAFFModal'
 import {
   calculateInstructorBalance,
   calculateInstructorTotalEarnings,
@@ -23,6 +22,10 @@ import { PAY_RATES } from '@/lib/constants'
 import type { Instructor } from '@/types'
 import { PageErrorBoundary } from '@/components/ErrorBoundary'
 import { RequireRole } from '@/components/auth'
+
+// ✅ PERFORMANCE: Dynamic imports for modals - only loaded when opened
+const AddJumpModal = dynamic(() => import('@/components/AddJumpModal').then(mod => ({ default: mod.AddJumpModal })), { ssr: false })
+const ReleaseAFFModal = dynamic(() => import('@/components/ReleaseAFFModal').then(mod => ({ default: mod.ReleaseAFFModal })), { ssr: false })
 
 function DashboardPageContent() {
   // ✅ IMPROVEMENT: Use global context instead of local hooks

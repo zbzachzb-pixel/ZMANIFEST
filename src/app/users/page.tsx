@@ -4,15 +4,18 @@
 'use client'
 
 import React, { useState, useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import { useUsers } from '@/hooks/useUsers'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { db } from '@/services'
-import { CreateUserModal } from '@/components/CreateUserModal'
-import { EditUserModal } from '@/components/EditUserModal'
-import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal'
 import { RequireRole } from '@/components/auth'
 import type { UserProfile, UserRole } from '@/types/funJumpers'
+
+// ✅ PERFORMANCE: Dynamic imports for modals - only loaded when opened
+const CreateUserModal = dynamic(() => import('@/components/CreateUserModal').then(mod => ({ default: mod.CreateUserModal })), { ssr: false })
+const EditUserModal = dynamic(() => import('@/components/EditUserModal').then(mod => ({ default: mod.EditUserModal })), { ssr: false })
+const ConfirmDeleteModal = dynamic(() => import('@/components/ConfirmDeleteModal').then(mod => ({ default: mod.ConfirmDeleteModal })), { ssr: false })
 
 const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Admin',

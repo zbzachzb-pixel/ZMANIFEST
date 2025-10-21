@@ -15,6 +15,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useUpdateLoad, useDeleteLoad, useGroups } from '@/hooks/useDatabase'
 import { useLoadCountdown, isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
 import { useToast } from '@/contexts/ToastContext'
+import { useLoadBuilder } from '@/contexts/LoadBuilderContext'
 import { calculateAssignmentPay } from '@/lib/utils'
 import { PAY_RATES } from '@/lib/constants'
 import { db } from '@/services'
@@ -25,36 +26,28 @@ import { LoadStats } from './LoadStats'
 import { LoadFunJumpers } from './LoadFunJumpers'
 import { ConflictWarnings } from './ConflictWarnings'
 import { detectLoadConflicts } from '@/lib/conflictDetection'
-import type { Load, Instructor, LoadSchedulingSettings, CreateQueueStudent, LoadAssignment, UpdateLoad } from '@/types'
+import type { Load, Instructor, CreateQueueStudent, LoadAssignment, UpdateLoad } from '@/types'
 import type { CreateAssignment } from '@/types'
 
+// ✅ PERFORMANCE: Simplified props - shared data comes from context
 interface LoadBuilderCardProps {
   load: Load
-  allLoads: Load[]
-  instructors: Instructor[]
-  instructorBalances: Map<string, number>
-  onDrop: (loadId: string) => void
-  onDragStart: (type: 'student' | 'assignment' | 'group', id: string, sourceLoadId?: string) => void
-  onDragEnd: () => void
-  dropTarget: string | null
-  setDropTarget: (target: string | null) => void
-  loadSchedulingSettings: LoadSchedulingSettings
-  onDelay: (loadId: string, minutes: number) => void
 }
 
-export function LoadBuilderCard({
-  load,
-  allLoads,
-  instructors,
-  instructorBalances,
-  onDrop,
-  onDragStart,
-  onDragEnd,
-  dropTarget,
-  setDropTarget,
-  loadSchedulingSettings,
-  onDelay
-}: LoadBuilderCardProps) {
+export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
+  // ✅ PERFORMANCE: Get shared data from context instead of props
+  const {
+    allLoads,
+    instructors,
+    instructorBalances,
+    onDrop,
+    onDragStart,
+    onDragEnd,
+    dropTarget,
+    setDropTarget,
+    loadSchedulingSettings,
+    onDelay
+  } = useLoadBuilder()
   // ==================== HOOKS ====================
   const { update, loading } = useUpdateLoad()
   const { deleteLoad } = useDeleteLoad()

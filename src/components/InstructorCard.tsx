@@ -13,7 +13,8 @@ interface InstructorCardProps {
   onReleaseAFF: () => void
 }
 
-export function InstructorCard({
+// ✅ OPTIMIZED: Memoized to prevent unnecessary re-renders when parent re-renders
+export const InstructorCard = React.memo(function InstructorCard({
   instructor,
   balance,
   totalEarnings,
@@ -101,4 +102,4 @@ export function InstructorCard({
       </div>
     </div>
   )
-}
+})

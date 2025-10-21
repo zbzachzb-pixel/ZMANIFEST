@@ -18,10 +18,11 @@ interface GroupCardProps {
   onStudentDragEnd?: () => void
 }
 
-export function GroupCard({ 
-  group, 
+// ✅ OPTIMIZED: Memoized to prevent unnecessary re-renders in group lists
+export const GroupCard = React.memo(function GroupCard({
+  group,
   students = [],
-  onAssignGroup, 
+  onAssignGroup,
   draggable = false,
   onDragStart,
   onStudentDrop,
@@ -264,4 +265,4 @@ export function GroupCard({
       )}
     </div>
   )
-}
+})

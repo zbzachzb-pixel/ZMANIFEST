@@ -1,15 +1,18 @@
 'use client'
 
 import React, { useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useActiveInstructors } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { useToast } from '@/contexts/ToastContext'
-import { AddInstructorModal } from '@/components/AddInstructorModal'
-import { ReleaseAFFModal } from '@/components/ReleaseAFFModal'
 import type { Instructor } from '@/types'
 import { TeamManagementSection } from '@/components/TeamManagementSection'
 import { PageErrorBoundary } from '@/components/ErrorBoundary'
 import { RequireRole } from '@/components/auth'
+
+// ✅ PERFORMANCE: Dynamic imports for modals - only loaded when opened
+const AddInstructorModal = dynamic(() => import('@/components/AddInstructorModal').then(mod => ({ default: mod.AddInstructorModal })), { ssr: false })
+const ReleaseAFFModal = dynamic(() => import('@/components/ReleaseAFFModal').then(mod => ({ default: mod.ReleaseAFFModal })), { ssr: false })
 
 function InstructorsPageContent() {
   const { data: instructors, loading } = useActiveInstructors()

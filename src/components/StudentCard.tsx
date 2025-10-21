@@ -18,12 +18,13 @@ interface StudentCardProps {
   onDragStart?: (e: React.DragEvent) => void
 }
 
-export function StudentCard({ 
-  student, 
-  selected, 
-  onToggle, 
-  onEdit, 
-  groupColor, 
+// ✅ OPTIMIZED: Memoized to prevent unnecessary re-renders in queue lists
+export const StudentCard = React.memo(function StudentCard({
+  student,
+  selected,
+  onToggle,
+  onEdit,
+  groupColor,
   groupName,
   draggable = false,
   onDragStart
@@ -179,4 +180,4 @@ export function StudentCard({
       </div>
     </div>
   )
-}
+})

@@ -2,8 +2,8 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { db } from '@/services'
-import { EndPeriodModal } from '@/components/EndPeriodModal'
 import { getCurrentPeriod } from '@/lib/utils'
 import { useToast } from '@/contexts/ToastContext'
 import type { LoadSchedulingSettings } from '@/types'
@@ -17,6 +17,9 @@ import {
   type AutoAssignSettings
 } from '@/lib/settingsStorage'
 import { RequireRole } from '@/components/auth'
+
+// ✅ PERFORMANCE: Dynamic import for EndPeriodModal - only loaded when opened
+const EndPeriodModal = dynamic(() => import('@/components/EndPeriodModal').then(mod => ({ default: mod.EndPeriodModal })), { ssr: false })
 
 function SettingsPageContent() {
   const toast = useToast()
