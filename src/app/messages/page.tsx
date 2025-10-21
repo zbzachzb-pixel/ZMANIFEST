@@ -472,7 +472,7 @@ function MessagesPageContent() {
 
 export default function MessagesPage() {
   return (
-    <RequireRole allowedRoles={['admin', 'manifest']}>
+    <RequireRole roles={['admin', 'manifest']}>
       <MessagesPageContent />
     </RequireRole>
   )
