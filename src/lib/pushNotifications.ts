@@ -1,26 +1,32 @@
 // src/lib/pushNotifications.ts
-export async function sendPushNotification(token: string, title: string, body: string) {
+// Client-side push notification service (calls API route to avoid CORS)
+
+export async function sendPushNotification(
+  token: string,
+  title: string,
+  body: string,
+  data?: any
+): Promise<boolean> {
   try {
-    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+    // Call our API route instead of Expo directly (avoids CORS issues)
+    const response = await fetch('/api/send-push', {
       method: 'POST',
       headers: {
-        'Accept': 'application/json',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        to: token,
-        sound: 'default',
-        title: title,
-        body: body,
-        priority: 'high'
+        token,
+        title,
+        body,
+        data
       })
     })
 
     const result = await response.json()
-    console.log('Push notification result:', result)
-    return result.data?.status === 'ok'
+    console.log('✅ Push notification sent:', result)
+    return result.success
   } catch (error) {
-    console.error('Failed to send push notification:', error)
+    console.error('❌ Failed to send push notification:', error)
     return false
   }
 }
