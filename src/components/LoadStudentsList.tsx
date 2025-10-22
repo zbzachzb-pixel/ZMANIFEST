@@ -121,8 +121,8 @@ export function LoadStudentsList({
                         )}
 
                         {!gaInstructor && (
-                          <div className="text-sm text-yellow-300 mt-2 font-semibold flex items-center gap-1.5">
-                            <span className="text-base">⚠️</span> No instructor assigned
+                          <div className="text-xs text-yellow-300 mt-1 font-semibold flex items-center gap-1">
+                            <span className="text-sm">⚠️</span> <span className="whitespace-nowrap">No instructor</span>
                           </div>
                         )}
                       </div>
