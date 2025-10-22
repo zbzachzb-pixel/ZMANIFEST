@@ -11,6 +11,7 @@ export default function RegisterPage() {
   const { signUp, user } = useAuth()
 
   const [displayName, setDisplayName] = useState('')
+  const [nickname, setNickname] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -40,7 +41,7 @@ export default function RegisterPage() {
     try {
       // Sign up with 'fun_jumper' role by default
       // Admins can change roles in the database later
-      await signUp(email, password, displayName, 'fun_jumper')
+      await signUp(email, password, displayName, 'fun_jumper', undefined, nickname)
       router.push('/')
     } catch (error) {
       // Error already handled by AuthContext (toast shown)
@@ -92,6 +93,22 @@ export default function RegisterPage() {
                 autoComplete="name"
                 className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 placeholder="John Doe"
+              />
+            </div>
+
+            {/* Nickname Field */}
+            <div>
+              <label htmlFor="nickname" className="block text-sm font-medium text-slate-300 mb-2">
+                Nickname <span className="text-slate-500 text-xs">(optional)</span>
+              </label>
+              <input
+                id="nickname"
+                type="text"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                autoComplete="off"
+                className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                placeholder="JD"
               />
             </div>
 

@@ -41,6 +41,7 @@ export interface UserProfile {
   uid: string
   email: string
   displayName: string
+  nickname?: string
   role: UserRole
   uspaNumber?: string
   jumprunId?: string

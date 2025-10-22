@@ -23,7 +23,7 @@ interface AuthContextType {
   user: User | null
   userProfile: UserProfile | null
   loading: boolean
-  signUp: (email: string, password: string, displayName: string, role?: UserRole, uspaNumber?: string) => Promise<void>
+  signUp: (email: string, password: string, displayName: string, role?: UserRole, uspaNumber?: string, nickname?: string) => Promise<void>
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
@@ -73,7 +73,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     email: string,
     displayName: string,
     role: UserRole = 'fun_jumper',
-    uspaNumber?: string
+    uspaNumber?: string,
+    nickname?: string
   ): Promise<void> => {
     try {
       const userRef = ref(database, `users/${uid}`)
@@ -81,6 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         uid,
         email,
         displayName,
+        nickname,
         role,
         uspaNumber,
         notificationsEnabled: true,
@@ -118,7 +120,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     password: string,
     displayName: string,
     role: UserRole = 'fun_jumper',
-    uspaNumber?: string
+    uspaNumber?: string,
+    nickname?: string
   ): Promise<void> => {
     try {
       // Create auth user
@@ -128,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await updateProfile(userCredential.user, { displayName })
 
       // Create user profile in database
-      await createUserProfile(userCredential.user.uid, email, displayName, role, uspaNumber)
+      await createUserProfile(userCredential.user.uid, email, displayName, role, uspaNumber, nickname)
 
       toast.success('Account created', 'Welcome!')
     } catch (error: any) {
