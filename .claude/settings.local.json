@@ -24,7 +24,16 @@
       "Bash(findstr /i \"loads\\page\")",
       "Bash(npm run build)",
       "Bash(git init)",
-      "Bash(git add .)"
+      "Bash(git add .)",
+      "Bash(git stash pop:*)",
+      "Bash(git checkout:*)",
+      "Bash(git stash drop:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nUI: Compact load cards with collapse feature & improved aircraft headers\n\n- **Load Cards**: Added collapsible view\n  - Collapsed: Shows load#, status emoji, timer, slots remaining\n  - Expanded: Full details with all info\n  - Click anywhere on header to collapse/expand\n  - Health indicator shows just colored dot + collapse hint\n  \n- **Aircraft Headers**: Redesigned for compact multi-aircraft view\n  - Shows only last 2 chars of tail number (e.g., \"AB\")\n  - Removed aircraft name/type to save space\n  - Compact badges for load count and capacity\n  - Single-line layout with all info inline\n  \n- **Per-Aircraft Load Numbering**: Fixed position calculation\n  - Each aircraft now has independent load numbers (1, 2, 3...)\n  - Previously used global numbering across all aircraft\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)",
+      "Bash(git commit:*)",
+      "Bash(tee:*)",
+      "Bash(git reset:*)"
     ],
     "deny": [],
     "ask": []

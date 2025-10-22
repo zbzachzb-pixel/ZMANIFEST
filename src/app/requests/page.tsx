@@ -32,6 +32,7 @@ function RequestsPageContent() {
   const [denialReason, setDenialReason] = useState<string>('')
   const [actionLoading, setActionLoading] = useState(false)
   const [recentActivity, setRecentActivity] = useState<Array<{id: string, message: string, time: number}>>([])
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   // Sync server data to local state
   useEffect(() => {
@@ -219,6 +220,34 @@ function RequestsPageContent() {
     return formatTime(timestamp)
   }
 
+  // Toggle group expansion
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
+      }
+      return next
+    })
+  }
+
+  // Group requests by groupId
+  const groupedRequests = useMemo(() => {
+    const grouped = new Map<string | undefined, FunJumperRequest[]>()
+
+    filteredRequests.forEach(request => {
+      const groupId = request.groupId
+      if (!grouped.has(groupId)) {
+        grouped.set(groupId, [])
+      }
+      grouped.get(groupId)!.push(request)
+    })
+
+    return grouped
+  }, [filteredRequests])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -325,93 +354,217 @@ function RequestsPageContent() {
           </div>
         ) : (
           <div className="grid gap-4">
-            {filteredRequests.map(request => (
-              <div
-                key={request.id}
-                className="bg-slate-800/50 backdrop-blur-xl rounded-xl border border-white/10 p-6 hover:border-blue-500/50 transition-all cursor-pointer"
-                onClick={() => setSelectedRequest(request)}
-              >
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-xl font-bold text-white">{request.userName}</h3>
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        request.status === 'pending'
-                          ? 'bg-orange-500/20 text-orange-300'
-                          : request.status === 'approved'
-                          ? 'bg-green-500/20 text-green-300'
-                          : request.status === 'denied'
-                          ? 'bg-red-500/20 text-red-300'
-                          : 'bg-slate-500/20 text-slate-300'
-                      }`}>
-                        {request.status.toUpperCase()}
-                      </span>
-                      {request.cancellationRequested && (
-                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-yellow-500/20 text-yellow-300">
-                          ⚠️ CANCELLATION REQUESTED
-                        </span>
-                      )}
-                    </div>
+            {Array.from(groupedRequests.entries()).map(([groupId, groupRequests]) => {
+              if (!groupRequests || groupRequests.length === 0) return null
 
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p className="text-slate-400">Jumprun ID</p>
-                        <p className="text-white font-medium">{request.jumprunId || 'N/A'}</p>
+              const isGroupRequest = groupId && groupRequests.length > 1
+              const firstRequest = groupRequests[0]
+              const isExpanded = groupId ? expandedGroups.has(groupId) : true
+
+              // For non-group requests, render normally
+              if (!isGroupRequest) {
+                const request = firstRequest
+                if (!request) return null
+
+                return (
+                  <div
+                    key={request.id}
+                    className="bg-slate-800/50 backdrop-blur-xl rounded-xl border border-white/10 p-6 hover:border-blue-500/50 transition-all cursor-pointer"
+                    onClick={() => setSelectedRequest(request)}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-xl font-bold text-white">{request.userName}</h3>
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            request.status === 'pending'
+                              ? 'bg-orange-500/20 text-orange-300'
+                              : request.status === 'approved'
+                              ? 'bg-green-500/20 text-green-300'
+                              : request.status === 'denied'
+                              ? 'bg-red-500/20 text-red-300'
+                              : 'bg-slate-500/20 text-slate-300'
+                          }`}>
+                            {request.status.toUpperCase()}
+                          </span>
+                          {request.cancellationRequested && (
+                            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-yellow-500/20 text-yellow-300">
+                              ⚠️ CANCELLATION REQUESTED
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <p className="text-slate-400">Jumprun ID</p>
+                            <p className="text-white font-medium">{request.jumprunId || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400">Jump Type</p>
+                            <p className="text-white font-medium">
+                              {request.skyDiveType.replace('_', ' ').toUpperCase()}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400">Requested Loads</p>
+                            <p className="text-white font-medium">
+                              {request.requestedLoadIds.map(getLoadName).join(', ')}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400">Submitted</p>
+                            <p className="text-white font-medium">{formatTime(request.createdAt)}</p>
+                          </div>
+                        </div>
+
+                        {request.notes && (
+                          <div className="mt-3 p-3 bg-slate-900/50 rounded-lg">
+                            <p className="text-sm text-slate-300">{request.notes}</p>
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <p className="text-slate-400">Jump Type</p>
-                        <p className="text-white font-medium">
-                          {request.skyDiveType.replace('_', ' ').toUpperCase()}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-400">Requested Loads</p>
-                        <p className="text-white font-medium">
-                          {request.requestedLoadIds.map(getLoadName).join(', ')}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-400">Submitted</p>
-                        <p className="text-white font-medium">{formatTime(request.createdAt)}</p>
+
+                      <div className="ml-4">
+                        {request.status === 'pending' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedRequest(request)
+                              setDenialReason('')
+                            }}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all"
+                          >
+                            Review
+                          </button>
+                        )}
+                        {request.cancellationRequested && request.status === 'approved' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleApproveCancellation(request)
+                            }}
+                            disabled={actionLoading}
+                            className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-all disabled:opacity-50"
+                          >
+                            Approve Cancellation
+                          </button>
+                        )}
                       </div>
                     </div>
+                  </div>
+                )
+              }
 
-                    {request.notes && (
-                      <div className="mt-3 p-3 bg-slate-900/50 rounded-lg">
-                        <p className="text-sm text-slate-300">{request.notes}</p>
+              // For group requests, render collapsible group
+              if (!firstRequest) return null
+
+              return (
+                <div
+                  key={groupId}
+                  className="bg-slate-800/50 backdrop-blur-xl rounded-xl border-2 border-purple-500/30 overflow-hidden"
+                >
+                  {/* Group Header */}
+                  <div
+                    className="p-6 cursor-pointer hover:bg-purple-500/5 transition-colors"
+                    onClick={() => toggleGroup(groupId!)}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <div className="text-2xl">👥</div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-xl font-bold text-white">Group Request</h3>
+                            <div className="px-3 py-1 bg-purple-500/20 border border-purple-500/40 rounded-full">
+                              <span className="text-purple-300 font-semibold text-xs">
+                                {groupRequests.length} jumpers
+                              </span>
+                            </div>
+                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                              firstRequest.status === 'pending'
+                                ? 'bg-orange-500/20 text-orange-300'
+                                : firstRequest.status === 'approved'
+                                ? 'bg-green-500/20 text-green-300'
+                                : firstRequest.status === 'denied'
+                                ? 'bg-red-500/20 text-red-300'
+                                : 'bg-slate-500/20 text-slate-300'
+                            }`}>
+                              {firstRequest.status.toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4 mt-1">
+                            <p className="text-sm text-slate-400">{formatTime(firstRequest.createdAt)}</p>
+                            <p className="text-sm text-purple-300">
+                              {groupRequests.map(r => r.userName).join(', ')}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                    )}
+                      <div className="flex items-center gap-3">
+                        {firstRequest.status === 'pending' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedRequest(firstRequest)
+                              setDenialReason('')
+                            }}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all"
+                          >
+                            Review Group
+                          </button>
+                        )}
+                        <svg
+                          className={`w-5 h-5 text-slate-400 transition-transform ${
+                            isExpanded ? 'rotate-180' : ''
+                          }`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="ml-4">
-                    {request.status === 'pending' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedRequest(request)
-                          setDenialReason('') // Reset denial reason on new modal
-                        }}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all"
-                      >
-                        Review
-                      </button>
-                    )}
-                    {request.cancellationRequested && request.status === 'approved' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleApproveCancellation(request)
-                        }}
-                        disabled={actionLoading}
-                        className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-all disabled:opacity-50"
-                      >
-                        Approve Cancellation
-                      </button>
-                    )}
-                  </div>
+                  {/* Expanded Group Members */}
+                  {isExpanded && (
+                    <div className="border-t border-purple-500/20 bg-slate-900/30">
+                      <div className="p-4 space-y-3">
+                        {groupRequests.map((request) => (
+                          <div
+                            key={request.id}
+                            className="bg-slate-800/50 rounded-lg p-4 border border-white/10"
+                          >
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <h4 className="text-lg font-bold text-white mb-2">{request.userName}</h4>
+                                <div className="grid grid-cols-2 gap-3 text-sm">
+                                  <div>
+                                    <p className="text-slate-400 text-xs">Jumprun ID</p>
+                                    <p className="text-white font-medium">{request.jumprunId || 'N/A'}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-400 text-xs">Jump Type</p>
+                                    <p className="text-white font-medium">
+                                      {request.skyDiveType.replace('_', ' ').toUpperCase()}
+                                    </p>
+                                  </div>
+                                </div>
+                                {request.notes && (
+                                  <div className="mt-2 p-2 bg-slate-900/50 rounded text-xs text-slate-300">
+                                    {request.notes}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

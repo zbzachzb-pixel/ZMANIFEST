@@ -113,6 +113,7 @@ function MyRequestsPageContent() {
   const router = useRouter()
   const { data: requests, loading, error, refresh } = useMyRequests()
   const [loads, setLoads] = useState<Load[]>([])
+  const [allRequests, setAllRequests] = useState<any[]>([]) // All requests for group lookup
   const [settings, setSettings] = useState<LoadSchedulingSettings>({
     minutesBetweenLoads: 20,
     instructorCycleTime: 40,
@@ -133,6 +134,25 @@ function MyRequestsPageContent() {
         loadsList.push(child.val() as Load)
       })
       setLoads(loadsList)
+    })
+
+    return () => unsubscribe()
+  }, [])
+
+  // Subscribe to all requests for group member lookup
+  useEffect(() => {
+    const requestsRef = ref(database, 'funJumperRequests')
+    const unsubscribe = onValue(requestsRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        setAllRequests([])
+        return
+      }
+
+      const requestsList: any[] = []
+      snapshot.forEach((child) => {
+        requestsList.push(child.val())
+      })
+      setAllRequests(requestsList)
     })
 
     return () => unsubscribe()
@@ -168,6 +188,12 @@ function MyRequestsPageContent() {
       hour: '2-digit',
       minute: '2-digit'
     })
+  }
+
+  // Get group members for a request
+  const getGroupMembers = (groupId: string | undefined) => {
+    if (!groupId) return []
+    return allRequests.filter(r => r.groupId === groupId)
   }
 
   return (
@@ -235,6 +261,8 @@ function MyRequestsPageContent() {
               const statusConfig = STATUS_CONFIG[request.status]
               const icon = SKYDIVE_TYPE_ICONS[request.skyDiveType]
               const typeLabel = SKYDIVE_TYPE_LABELS[request.skyDiveType]
+              const groupMembers = getGroupMembers(request.groupId)
+              const isGroupRequest = groupMembers.length > 1
 
               return (
                 <div
@@ -245,7 +273,16 @@ function MyRequestsPageContent() {
                     <div className="flex items-center gap-3">
                       <div className="text-3xl">{icon}</div>
                       <div>
-                        <h3 className="text-xl font-bold text-white">{typeLabel}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-xl font-bold text-white">{typeLabel}</h3>
+                          {isGroupRequest && (
+                            <div className="px-2.5 py-1 bg-purple-500/20 border border-purple-500/40 rounded-md">
+                              <span className="text-purple-300 font-semibold text-xs">
+                                👥 Group of {groupMembers.length}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                         <p className="text-sm text-slate-400">{formatDate(request.createdAt)}</p>
                       </div>
                     </div>
@@ -255,6 +292,23 @@ function MyRequestsPageContent() {
                       </span>
                     </div>
                   </div>
+
+                  {/* Group Members List */}
+                  {isGroupRequest && (
+                    <div className="mb-4 p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                      <p className="text-xs text-purple-300 font-semibold mb-2">Group Members:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {groupMembers.map(member => (
+                          <div
+                            key={member.id}
+                            className="px-2 py-1 bg-purple-500/20 rounded-md text-xs text-purple-200"
+                          >
+                            {member.userName}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Request Details */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">

@@ -7,7 +7,6 @@ import React from 'react'
 
 interface LoadStatsProps {
   totalStudents: number
-  totalPay: number
   totalPeople: number
   loadCapacity: number
   availableSlots: number
@@ -16,7 +15,6 @@ interface LoadStatsProps {
 
 export function LoadStats({
   totalStudents,
-  totalPay,
   totalPeople,
   loadCapacity,
   availableSlots,

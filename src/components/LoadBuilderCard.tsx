@@ -16,8 +16,6 @@ import { useUpdateLoad, useDeleteLoad, useGroups } from '@/hooks/useDatabase'
 import { useLoadCountdown, isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
 import { useToast } from '@/contexts/ToastContext'
 import { useLoadBuilder } from '@/contexts/LoadBuilderContext'
-import { calculateAssignmentPay } from '@/lib/utils'
-import { PAY_RATES } from '@/lib/constants'
 import { db } from '@/services'
 import { AssignInstructorsModal } from './AssignInstructorsModal'
 import { LoadStudentsList } from './LoadStudentsList'
@@ -104,15 +102,6 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
   }, 0) + (load.funJumpers || []).length  // + Fun Jumpers (1 slot each)
   const availableSlots = loadCapacity - totalPeople
   const isOverCapacity = totalPeople > loadCapacity
-  
-  // Calculate total pay
-  const totalPay = useMemo(() => {
-    return loadAssignments.reduce((sum, assignment) => {
-      let pay = calculateAssignmentPay(assignment as any)
-      if (assignment.hasOutsideVideo) pay += PAY_RATES.VIDEO_INSTRUCTOR
-      return sum + pay
-    }, 0)
-  }, [loadAssignments])
 
   // Available transitions
   const availableTransitions = useMemo(() => {
@@ -1056,7 +1045,6 @@ const handleChangeCall = async () => {
         {/* Stats */}
         <LoadStats
           totalStudents={totalStudents}
-          totalPay={totalPay}
           totalPeople={totalPeople}
           loadCapacity={loadCapacity}
           availableSlots={availableSlots}
