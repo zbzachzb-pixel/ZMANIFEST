@@ -985,53 +985,53 @@ const handleChangeCall = async () => {
               </div>
             </div>
 
-          {/* Countdown Timer */}
-          {isActive && countdown !== null && (
-            <div className="mt-3 p-3 rounded-xl bg-black/40 border border-white/20 shadow-lg">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-base">⏱️</span>
-                  <span className="text-xs font-bold text-white/80 uppercase tracking-wider">Departure In</span>
+            {/* Countdown Timer */}
+            {isActive && countdown !== null && (
+              <div className="mt-3 p-3 rounded-xl bg-black/40 border border-white/20 shadow-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base">⏱️</span>
+                    <span className="text-xs font-bold text-white/80 uppercase tracking-wider">Departure In</span>
+                  </div>
+                  <div className={`px-3 py-1.5 rounded-lg font-mono text-2xl font-extrabold shadow-md ${
+                    Math.floor(countdown / 60) < 5 ? 'text-red-300 bg-red-500/20 border border-red-500/30' :
+                    Math.floor(countdown / 60) < 10 ? 'text-orange-300 bg-orange-500/20 border border-orange-500/30' :
+                    'text-blue-300 bg-blue-500/20 border border-blue-500/30'
+                  }`}>
+                    {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
+                  </div>
                 </div>
-                <div className={`px-3 py-1.5 rounded-lg font-mono text-2xl font-extrabold shadow-md ${
-                  Math.floor(countdown / 60) < 5 ? 'text-red-300 bg-red-500/20 border border-red-500/30' :
-                  Math.floor(countdown / 60) < 10 ? 'text-orange-300 bg-orange-500/20 border border-orange-500/30' :
-                  'text-blue-300 bg-blue-500/20 border border-blue-500/30'
+
+                {/* Enhanced progress bar */}
+                <div className="relative w-full h-3 bg-slate-700/50 rounded-full overflow-hidden shadow-inner">
+                  <div
+                    className={`absolute inset-0 transition-all duration-1000 ${
+                      Math.floor(countdown / 60) < 5 ? 'bg-gradient-to-r from-red-600 via-red-500 to-red-400' :
+                      Math.floor(countdown / 60) < 10 ? 'bg-gradient-to-r from-orange-600 via-orange-500 to-orange-400' :
+                      'bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400'
+                    }`}
+                    style={{
+                      width: `${Math.max(0, Math.min(100, (countdown / (loadSchedulingSettings.minutesBetweenLoads * 60)) * 100))}%`
+                    }}
+                  >
+                    <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white/10" />
+                  </div>
+                </div>
+
+                {/* Status message */}
+                <div className={`mt-2 text-center text-xs font-bold uppercase tracking-wide ${
+                  Math.floor(countdown / 60) < 5 ? 'text-red-300 drop-shadow-lg' :
+                  Math.floor(countdown / 60) < 10 ? 'text-orange-300 drop-shadow-lg' :
+                  'text-blue-300'
                 }`}>
-                  {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
+                  {Math.floor(countdown / 60) < 5 ? '⚠️ PREPARE FOR DEPARTURE' :
+                   Math.floor(countdown / 60) < 10 ? '📋 FINAL CHECKS' :
+                   '✅ ON SCHEDULE'}
                 </div>
               </div>
-
-              {/* Enhanced progress bar */}
-              <div className="relative w-full h-3 bg-slate-700/50 rounded-full overflow-hidden shadow-inner">
-                <div
-                  className={`absolute inset-0 transition-all duration-1000 ${
-                    Math.floor(countdown / 60) < 5 ? 'bg-gradient-to-r from-red-600 via-red-500 to-red-400' :
-                    Math.floor(countdown / 60) < 10 ? 'bg-gradient-to-r from-orange-600 via-orange-500 to-orange-400' :
-                    'bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400'
-                  }`}
-                  style={{
-                    width: `${Math.max(0, Math.min(100, (countdown / (loadSchedulingSettings.minutesBetweenLoads * 60)) * 100))}%`
-                  }}
-                >
-                  <div className="absolute inset-0 bg-white/20 animate-pulse" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white/10" />
-                </div>
-              </div>
-
-              {/* Status message */}
-              <div className={`mt-2 text-center text-xs font-bold uppercase tracking-wide ${
-                Math.floor(countdown / 60) < 5 ? 'text-red-300 drop-shadow-lg' :
-                Math.floor(countdown / 60) < 10 ? 'text-orange-300 drop-shadow-lg' :
-                'text-blue-300'
-              }`}>
-                {Math.floor(countdown / 60) < 5 ? '⚠️ PREPARE FOR DEPARTURE' :
-                 Math.floor(countdown / 60) < 10 ? '📋 FINAL CHECKS' :
-                 '✅ ON SCHEDULE'}
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
         {/* Students List */}
         <LoadStudentsList
