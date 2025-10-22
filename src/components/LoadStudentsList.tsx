@@ -80,7 +80,7 @@ export function LoadStudentsList({
                     <div className="flex items-center gap-2 mb-3 pb-2 border-b border-white/20">
                       <span className="text-xl">👥</span>
                       <span className="text-base font-bold text-purple-300">
-                        {group.name} ({groupAssignments.length} students)
+                        {group.name} ({groupAssignments.length})
                       </span>
                     </div>
                   )}
