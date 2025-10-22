@@ -2,14 +2,15 @@
 // Test Request Submission Page (simulates mobile app)
 'use client'
 
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
 import { FunJumperRequestService } from '@/lib/funJumperRequests'
 import { useAvailableLoads } from '@/hooks/useRequestsData'
-import type { SkyDiveType } from '@/types'
+import type { SkyDiveType, UserProfile } from '@/types'
 import { RequireAuth } from '@/components/auth'
+import { db } from '@/services'
 
 const SKYDIVE_TYPES: { value: SkyDiveType; label: string; icon: string }[] = [
   { value: 'hop_n_pop', label: 'Hop & Pop', icon: '🪂' },
@@ -32,11 +33,48 @@ function SubmitRequestPageContent() {
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  // Friend selection for groups
+  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([])
+  const [funJumpers, setFunJumpers] = useState<UserProfile[]>([])
+  const [loadingFriends, setLoadingFriends] = useState(true)
+
+  // Load fun jumpers for friend selection
+  useEffect(() => {
+    const loadFunJumpers = async () => {
+      try {
+        const profiles = await db.getUserProfiles()
+        // Filter to only fun jumpers (excluding current user)
+        const funJumperList = profiles.filter(p =>
+          p.role === 'fun_jumper' &&
+          p.isActive &&
+          p.uid !== user?.uid
+        )
+        setFunJumpers(funJumperList)
+      } catch (error) {
+        console.error('Failed to load fun jumpers:', error)
+      } finally {
+        setLoadingFriends(false)
+      }
+    }
+
+    if (user) {
+      loadFunJumpers()
+    }
+  }, [user])
+
   const toggleLoad = (loadId: string) => {
     setSelectedLoadIds(prev =>
       prev.includes(loadId)
         ? prev.filter(id => id !== loadId)
         : [...prev, loadId]
+    )
+  }
+
+  const toggleFriend = (friendId: string) => {
+    setSelectedFriendIds(prev =>
+      prev.includes(friendId)
+        ? prev.filter(id => id !== friendId)
+        : [...prev, friendId]
     )
   }
 
@@ -61,6 +99,10 @@ function SubmitRequestPageContent() {
     setSubmitting(true)
 
     try {
+      // Generate shared groupId if friends are selected
+      const groupId = selectedFriendIds.length > 0 ? `group_${Date.now()}_${user.uid}` : undefined
+
+      // Create request for current user
       await FunJumperRequestService.createRequest({
         userId: user.uid,
         userName: userProfile.displayName,
@@ -68,13 +110,36 @@ function SubmitRequestPageContent() {
         jumprunId: userProfile.jumprunId || '',
         requestedLoadIds: selectedLoadIds,
         skyDiveType: skyDiveType as SkyDiveType,
+        groupId,
         notes: notes || undefined
       })
 
-      toast.success('Request Submitted!', `Your request for ${selectedLoadIds.length} load(s) has been submitted`)
+      // Create requests for each selected friend with the same groupId
+      if (groupId && selectedFriendIds.length > 0) {
+        const selectedFriends = funJumpers.filter(fj => selectedFriendIds.includes(fj.uid))
+
+        for (const friend of selectedFriends) {
+          await FunJumperRequestService.createRequest({
+            userId: friend.uid,
+            userName: friend.displayName,
+            userEmail: friend.email,
+            jumprunId: friend.jumprunId || '',
+            requestedLoadIds: selectedLoadIds,
+            skyDiveType: skyDiveType as SkyDiveType,
+            groupId,
+            notes: `Jumping with ${userProfile.displayName}${selectedFriendIds.length > 1 ? ` and ${selectedFriendIds.length - 1} other${selectedFriendIds.length > 2 ? 's' : ''}` : ''}`
+          })
+        }
+      }
+
+      const groupMessage = selectedFriendIds.length > 0
+        ? ` (group of ${selectedFriendIds.length + 1})`
+        : ''
+      toast.success('Request Submitted!', `Your request${groupMessage} for ${selectedLoadIds.length} load(s) has been submitted`)
 
       // Reset form
       setSelectedLoadIds([])
+      setSelectedFriendIds([])
       setSkyDiveType('')
       setNotes('')
 
@@ -196,9 +261,76 @@ function SubmitRequestPageContent() {
             </div>
           </div>
 
+          {/* Friend Selection */}
+          <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-white/10 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-2xl font-bold text-white">3. Jump with Friends (Optional)</h2>
+                <p className="text-slate-400 text-sm mt-1">Select friends to jump together as a group</p>
+              </div>
+              {selectedFriendIds.length > 0 && (
+                <div className="px-3 py-1.5 bg-purple-500/20 border border-purple-500/40 rounded-lg">
+                  <p className="text-purple-300 font-semibold text-sm">
+                    👥 Group of {selectedFriendIds.length + 1}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {loadingFriends ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
+                <p className="text-slate-400">Loading friends...</p>
+              </div>
+            ) : funJumpers.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-slate-400">No other fun jumpers available</p>
+              </div>
+            ) : (
+              <div className="grid gap-2 max-h-64 overflow-y-auto">
+                {funJumpers.map(friend => {
+                  const isSelected = selectedFriendIds.includes(friend.uid)
+
+                  return (
+                    <button
+                      key={friend.uid}
+                      type="button"
+                      onClick={() => toggleFriend(friend.uid)}
+                      className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all text-left ${
+                        isSelected
+                          ? 'border-purple-500 bg-purple-500/20'
+                          : 'border-white/10 bg-slate-900/30 hover:border-purple-500/50'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                        isSelected ? 'border-purple-500 bg-purple-500' : 'border-slate-500'
+                      }`}>
+                        {isSelected && <span className="text-white text-xs">✓</span>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-semibold truncate">{friend.displayName}</p>
+                        {friend.jumprunId && (
+                          <p className="text-slate-400 text-xs">JumpRun ID: {friend.jumprunId}</p>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {selectedFriendIds.length > 0 && (
+              <div className="mt-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                <p className="text-purple-300 text-sm">
+                  ℹ️ All group members must be approved together and will be assigned to the same load.
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Notes */}
           <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-white/10 p-6">
-            <h2 className="text-2xl font-bold text-white mb-4">3. Notes (Optional)</h2>
+            <h2 className="text-2xl font-bold text-white mb-4">4. Notes (Optional)</h2>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -236,6 +368,9 @@ function SubmitRequestPageContent() {
               <ul className="text-sm text-green-200 space-y-1">
                 <li>• {selectedLoadIds.length} load(s) selected</li>
                 <li>• Jump type: {SKYDIVE_TYPES.find(t => t.value === skyDiveType)?.label}</li>
+                {selectedFriendIds.length > 0 && (
+                  <li>• Group request ({selectedFriendIds.length + 1} jumpers)</li>
+                )}
                 {notes && <li>• Notes included</li>}
               </ul>
             </div>
