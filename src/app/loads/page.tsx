@@ -293,7 +293,8 @@ function LoadBuilderPageContent() {
       const aircraftLoads = loads.filter(l => l.aircraftId === targetAircraftId)
       const loadNumber = aircraftLoads.length + 1
 
-      const nextPosition = Math.max(0, ...loads.map(l => l.position || 0)) + 1
+      // Position is also per-aircraft (so each aircraft has loads 1, 2, 3, etc.)
+      const nextPosition = Math.max(0, ...aircraftLoads.map(l => l.position || 0)) + 1
 
       // ✅ Use undoable action
       await createLoadUndoable({
@@ -899,35 +900,44 @@ function LoadBuilderPageContent() {
 
                     return (
                       <div key={aircraftId} className="space-y-3">
-                        {/* Aircraft Header */}
-                        <div className="bg-gradient-to-r from-blue-600 to-blue-500 rounded-lg p-3 shadow-lg sticky top-0 z-10">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-2xl">{isUnassigned ? '⚠️' : '✈️'}</span>
-                              <div>
-                                <h3 className="text-white font-bold text-lg">
-                                  {isUnassigned ? 'Unassigned' : aircraftInfo?.tailNumber || 'Unknown'}
+                        {/* Aircraft Header - Compact Design */}
+                        <div className="bg-slate-800/90 backdrop-blur-sm border border-white/10 rounded-lg p-2.5 shadow-lg sticky top-0 z-10">
+                          <div className="flex items-center justify-between gap-3">
+                            {/* Left: Aircraft Info */}
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-xl flex-shrink-0">{isUnassigned ? '⚠️' : '✈️'}</span>
+                              <div className="min-w-0">
+                                <h3 className="text-white font-bold text-sm">
+                                  {isUnassigned ? 'Unassigned' : (aircraftInfo?.tailNumber?.slice(-2) || 'Unknown')}
                                 </h3>
-                                {!isUnassigned && aircraftInfo && (
-                                  <p className="text-blue-100 text-sm">
-                                    {aircraftInfo.name} • {aircraftInfo.capacity} pax
-                                  </p>
-                                )}
                               </div>
                             </div>
-                            <div className="text-right">
-                              <div className="text-white font-bold text-lg">{aircraftLoads.length}</div>
-                              <div className="text-blue-100 text-xs">Loads</div>
+
+                            {/* Right: Stats & Action */}
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {/* Load count */}
+                              <div className="px-2 py-1 bg-blue-500/20 rounded text-xs font-bold text-blue-300">
+                                {aircraftLoads.length} {aircraftLoads.length === 1 ? 'load' : 'loads'}
+                              </div>
+
+                              {/* Capacity badge */}
+                              {!isUnassigned && aircraftInfo && (
+                                <div className="px-2 py-1 bg-white/10 rounded text-xs font-semibold text-white/80">
+                                  {aircraftInfo.capacity} pax
+                                </div>
+                              )}
+
+                              {/* Create button */}
+                              {!isUnassigned && (
+                                <button
+                                  onClick={() => handleCreateLoad(aircraftId)}
+                                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded text-xs transition-colors"
+                                >
+                                  + Create
+                                </button>
+                              )}
                             </div>
                           </div>
-                          {!isUnassigned && (
-                            <button
-                              onClick={() => handleCreateLoad(aircraftId)}
-                              className="w-full bg-white/20 hover:bg-white/30 text-white font-semibold py-2 px-3 rounded-lg transition-colors text-sm"
-                            >
-                              + Create Load
-                            </button>
-                          )}
                         </div>
 
                         {/* Loads for this aircraft */}

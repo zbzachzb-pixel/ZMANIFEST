@@ -55,6 +55,7 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
   const toast = useToast()
 
   // ==================== STATE ====================
+  const [isExpanded, setIsExpanded] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [statusChangeConfirm, setStatusChangeConfirm] = useState<Load['status'] | null>(null)
   const [showDelayModal, setShowDelayModal] = useState(false)
@@ -923,23 +924,66 @@ const handleChangeCall = async () => {
             : ''
         } ${colors.bg} ${colors.glow} border-2 ${colors.border}`}
       >
-        {/* Header */}
-        <div className="p-4 border-b border-white/10">
-          <div className="flex items-center justify-between gap-3">
-            {/* Left: Load number and status */}
-            <div className="flex items-center gap-2 min-w-0">
-              <h3 className="text-2xl font-bold text-white shrink-0 tracking-tight">#{load.position || '?'}</h3>
-              <span className={`px-3 py-1 rounded-full text-xs font-bold ${currentStatus.color} text-white whitespace-nowrap shadow-lg`}>
-                {currentStatus.emoji} {currentStatus.label}
-              </span>
-            </div>
-
-            {/* Right: Health indicator */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/10 shrink-0 shadow-md">
-              <div className={`w-2 h-2 rounded-full ${conflictSummary.color} animate-pulse shadow-sm`} />
-              <span className="text-xs text-white/90 font-semibold">{conflictSummary.label}</span>
+        {/* Collapsed Summary - Only shown when not expanded */}
+        {!isExpanded && (
+          <div
+            className="p-3 cursor-pointer hover:bg-white/5 transition-colors"
+            onClick={() => setIsExpanded(true)}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <h3 className="text-xl font-bold text-white">#{load.position || '?'}</h3>
+                <span className={`px-2 py-1 rounded-full text-xs font-bold ${currentStatus.color} text-white`}>
+                  {currentStatus.emoji}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {isActive && countdown !== null && (
+                  <div className={`px-2 py-1 rounded font-mono text-sm font-bold ${
+                    Math.floor(countdown / 60) < 5 ? 'text-red-300 bg-red-500/20' :
+                    Math.floor(countdown / 60) < 10 ? 'text-orange-300 bg-orange-500/20' :
+                    'text-blue-300 bg-blue-500/20'
+                  }`}>
+                    {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
+                  </div>
+                )}
+                <div className={`px-2 py-1 rounded text-xs font-bold ${
+                  isOverCapacity ? 'bg-red-500/30 text-red-200' :
+                  availableSlots <= 2 ? 'bg-orange-500/30 text-orange-200' :
+                  'bg-green-500/30 text-green-200'
+                }`}>
+                  {availableSlots} slots
+                </div>
+              </div>
             </div>
           </div>
+        )}
+
+        {/* Expanded Content - Only shown when expanded */}
+        <div className={isExpanded ? '' : 'hidden'}>
+          {/* Header - Click to collapse */}
+          <div className="p-4 border-b border-white/10">
+            <div
+              className="flex items-center justify-between gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => setIsExpanded(false)}
+              title="Click to collapse"
+            >
+              {/* Left: Load number and status */}
+              <div className="flex items-center gap-2 min-w-0">
+                <h3 className="text-2xl font-bold text-white shrink-0 tracking-tight">#{load.position || '?'}</h3>
+                <span className={`px-3 py-1 rounded-full text-xs font-bold ${currentStatus.color} text-white whitespace-nowrap shadow-lg`}>
+                  {currentStatus.emoji} {currentStatus.label}
+                </span>
+              </div>
+
+              {/* Right: Health indicator with collapse hint */}
+              <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 px-2 py-2 rounded-full bg-black/30 border border-white/10 shrink-0 shadow-md">
+                  <div className={`w-2 h-2 rounded-full ${conflictSummary.color} animate-pulse shadow-sm`} />
+                  <span className="text-white/40 text-xs">▲</span>
+                </div>
+              </div>
+            </div>
 
           {/* Countdown Timer */}
           {isActive && countdown !== null && (
@@ -1115,6 +1159,7 @@ const handleChangeCall = async () => {
               </button>
             )}
           </div>
+        </div>
         </div>
       </div>
 
