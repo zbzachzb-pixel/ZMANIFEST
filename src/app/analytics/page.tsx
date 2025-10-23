@@ -5,6 +5,7 @@
 import React, { useMemo } from 'react'
 import { useCurrentPeriodAssignments, useActiveInstructors, useActiveLoads } from '@/hooks/useDatabase'
 import { getCurrentPeriod, calculateAssignmentPay, calculateInstructorBalance } from '@/lib/utils'
+import { exportInstructorStatsToCSV, exportPeriodSummaryToCSV } from '@/lib/exportUtils'
 import type { Assignment, Instructor, Period, Load } from '@/types'
 import { RequireRole } from '@/components/auth'
 
@@ -203,12 +204,63 @@ function AnalyticsPageContent() {
     )
   }
   
+  const handleExportInstructorStats = () => {
+    const statsMap = new Map(
+      instructorStats.map(({ instructor, stats }) => [
+        instructor.id,
+        {
+          totalJumps: stats.totalJumps,
+          tandemCount: stats.tandemCount,
+          affCount: stats.affCount,
+          videoCount: stats.videoCount,
+          missedJumps: stats.missedJumps,
+          balanceEarnings: stats.balanceEarnings,
+          totalEarnings: stats.totalEarnings,
+          avgPerJump: stats.avgPerJump
+        }
+      ])
+    )
+    exportInstructorStatsToCSV(instructors, statsMap, period.name)
+  }
+
+  const handleExportPeriodSummary = () => {
+    exportPeriodSummaryToCSV(
+      {
+        totalJumps: stats.totalJumps,
+        tandemCount: stats.tandemCount,
+        affCount: stats.affCount,
+        videoCount: stats.videoCount,
+        missedJumps: stats.missedJumps,
+        totalEarnings: stats.totalEarnings,
+        instructorCount: instructors.length,
+        avgPerJump: stats.avgPerJump
+      },
+      period.name
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-8">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">Analytics and Reports</h1>
-          <p className="text-slate-300">{period.name}</p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-white mb-2">Analytics and Reports</h1>
+            <p className="text-slate-300">{period.name}</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleExportPeriodSummary}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-all hover:scale-105 shadow-lg flex items-center gap-2"
+            >
+              📊 Export Summary
+            </button>
+            <button
+              onClick={handleExportInstructorStats}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-all hover:scale-105 shadow-lg flex items-center gap-2"
+            >
+              📈 Export Stats
+            </button>
+          </div>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
