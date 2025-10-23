@@ -71,7 +71,7 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
   const [showBreathing, setShowBreathing] = useState(false)
   const hasAutoSelected = useRef(false)
   // ==================== COUNTDOWN & METRICS ====================
-  const { countdown } = useLoadCountdown(load, loadSchedulingSettings)
+  const { countdown } = useLoadCountdown(load, loadSchedulingSettings, allLoads)
   const isActive = countdown !== null
 
   const loadAssignments = load.assignments || []
@@ -297,11 +297,9 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
   const selections: Record<string, {instructorId: string, videoInstructorId?: string, isRequest: boolean}> = {}
   const usedInstructors = new Set<string>()
   const usedVideoInstructors = new Set<string>()
-  
-  const shouldTrackAsUsed = !showEditModal
-  
+
   const currentAssignments = load.assignments || []
-  
+
   // ✅ STEP 1: Validate and keep existing PRIMARY instructors if available
   currentAssignments.forEach(assignment => {
     if (assignment.instructorId) {
@@ -318,22 +316,21 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
           instructorId: assignment.instructorId,
           isRequest: assignment.isRequest
         }
-
-        if (shouldTrackAsUsed) {
-          usedInstructors.add(assignment.instructorId)
-        }
+        // Always track to prevent duplicates, even in edit mode
+        usedInstructors.add(assignment.instructorId)
       }
     }
   })
-  
+
   // ✅ STEP 2: Auto-select PRIMARY instructors for assignments without valid ones
   currentAssignments.forEach(assignment => {
     if (selections[assignment.id]?.instructorId) {
       return
     }
 
+    // Always filter out already-used instructors to prevent duplicates
     const qualified = getQualifiedInstructors(assignment).filter(i =>
-      shouldTrackAsUsed ? !usedInstructors.has(i.id) : true
+      !usedInstructors.has(i.id)
     )
 
     const firstQualified = qualified[0]
@@ -342,7 +339,7 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
         instructorId: firstQualified.id,
         isRequest: assignment.isRequest
       }
-      if (shouldTrackAsUsed) usedInstructors.add(firstQualified.id)
+      usedInstructors.add(firstQualified.id)
     }
   })
   
@@ -365,13 +362,12 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
 
       if (isVideoAvailable && isDifferentFromPrimary) {
         selection.videoInstructorId = assignment.videoInstructorId
-        if (shouldTrackAsUsed) {
-          usedVideoInstructors.add(assignment.videoInstructorId)
-        }
+        // Always track to prevent duplicates
+        usedVideoInstructors.add(assignment.videoInstructorId)
       }
     }
   })
-  
+
   // ✅ STEP 4: Auto-select VIDEO instructors for assignments that need them but don't have valid ones
   currentAssignments.forEach(assignment => {
     if (!assignment.hasOutsideVideo) return
@@ -379,15 +375,17 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
     if (!selection) return
     if (selection.videoInstructorId) return
 
+    // Always filter out already-used instructors to prevent duplicates
     const videoInstructors = getVideoInstructors().filter(i =>
       i.id !== selection.instructorId &&
-      (shouldTrackAsUsed ? !usedVideoInstructors.has(i.id) && !usedInstructors.has(i.id) : true)
+      !usedVideoInstructors.has(i.id) &&
+      !usedInstructors.has(i.id)
     )
 
     const firstVideo = videoInstructors[0]
     if (firstVideo) {
       selection.videoInstructorId = firstVideo.id
-      if (shouldTrackAsUsed) usedVideoInstructors.add(firstVideo.id)
+      usedVideoInstructors.add(firstVideo.id)
     }
   })
 
@@ -705,11 +703,27 @@ const handleChangeCall = async () => {
       const now = Date.now()
       const remainingMs = departureTime - now
       const changeMs = Math.abs(delayMinutes) * 60 * 1000
-      
+
       if (changeMs > remainingMs) {
         const remainingMinutes = Math.floor(remainingMs / 60000)
         toast.warning('Cannot move call that far forward', `Only ${remainingMinutes} minutes remaining`)
         return
+      }
+
+      // Check if moving earlier would overlap with previous load
+      const previousLoad = allLoads
+        .filter(l => l.status !== 'completed' && (l.position || 0) < (load.position || 0) && l.countdownStartTime)
+        .sort((a, b) => (b.position || 0) - (a.position || 0))[0]
+
+      if (previousLoad && previousLoad.countdownStartTime) {
+        const prevDepartureTime = new Date(previousLoad.countdownStartTime).getTime() + (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000)
+        const newDepartureTime = departureTime - changeMs
+        const minSpacingMs = loadSchedulingSettings.minutesBetweenLoads * 60 * 1000
+
+        if (newDepartureTime < prevDepartureTime + minSpacingMs) {
+          toast.warning('Cannot move call that early', `Would overlap with Load #${previousLoad.position || '?'}`)
+          return
+        }
       }
     }
     
@@ -722,27 +736,24 @@ const handleChangeCall = async () => {
       await update(load.id, {
         countdownStartTime: newStartTime
       } as any)
-      
-      // If delaying (positive minutes), cascade to subsequent loads
-      if (delayMinutes > 0) {
-        const subsequentLoads = allLoads.filter(l => 
-          l.status !== 'completed' && 
-          (l.position || 0) > (load.position || 0) &&
-          l.countdownStartTime
-        )
-        
-        for (const subsequentLoad of subsequentLoads) {
-          if (subsequentLoad.countdownStartTime) {
-            const subCurrentStartTime = new Date(subsequentLoad.countdownStartTime).getTime()
-            const subNewStartTime = new Date(subCurrentStartTime + changeMs).toISOString()
-            
-            await update(subsequentLoad.id, {
-              countdownStartTime: subNewStartTime
-            } as any)
-          }
+
+      // Cascade time change to all subsequent loads to maintain proper spacing
+      const subsequentLoads = allLoads.filter(l =>
+        l.status !== 'completed' &&
+        (l.position || 0) > (load.position || 0) &&
+        l.countdownStartTime
+      )
+
+      for (const subsequentLoad of subsequentLoads) {
+        if (subsequentLoad.countdownStartTime) {
+          const subCurrentStartTime = new Date(subsequentLoad.countdownStartTime).getTime()
+          const subNewStartTime = new Date(subCurrentStartTime + changeMs).toISOString()
+
+          await update(subsequentLoad.id, {
+            countdownStartTime: subNewStartTime
+          } as any)
         }
       }
-      // If moving up (negative minutes), don't cascade - let subsequent loads keep their timing
     } else {
       // If no countdown started yet, store the delay amount
       await update(load.id, {

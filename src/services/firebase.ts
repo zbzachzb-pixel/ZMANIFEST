@@ -263,21 +263,24 @@ export class FirebaseService implements DatabaseService {
   }
   
   async incrementStudentJumpCount(studentAccountId: string, jumpType: 'tandem' | 'aff'): Promise<void> {
-    const account = await this.getStudentAccountById(studentAccountId)
-    if (!account) return
-    
-    const updates: UpdateStudentAccount = {
-      totalJumps: account.totalJumps + 1,
-      lastJumpDate: new Date().toISOString()
-    }
-    
-    if (jumpType === 'tandem') {
-      updates.totalTandemJumps = account.totalTandemJumps + 1
-    } else if (jumpType === 'aff') {
-      updates.totalAFFJumps = account.totalAFFJumps + 1
-    }
-    
-    await this.updateStudentAccount(studentAccountId, updates)
+    const accountRef = ref(this.db, `studentAccounts/${studentAccountId}`)
+
+    await runTransaction(accountRef, (currentData) => {
+      if (!currentData) return currentData
+
+      // Increment total jumps
+      currentData.totalJumps = (currentData.totalJumps || 0) + 1
+      currentData.lastJumpDate = new Date().toISOString()
+
+      // Increment jump type specific count
+      if (jumpType === 'tandem') {
+        currentData.totalTandemJumps = (currentData.totalTandemJumps || 0) + 1
+      } else if (jumpType === 'aff') {
+        currentData.totalAFFJumps = (currentData.totalAFFJumps || 0) + 1
+      }
+
+      return currentData
+    })
   }
   
   subscribeToStudentAccounts(callback: (accounts: StudentAccount[]) => void): () => void {
@@ -715,98 +718,96 @@ async deleteGroup(id: string): Promise<void> {
 async addStudentToGroup(groupId: string, studentAccountId: string): Promise<void> {
   console.log('➕ Adding student to group:', { groupId, studentAccountId })
 
-  // ✅ OPTIMIZED: Fetch group and queue in parallel
-  const [groupSnapshot, queue] = await Promise.all([
-    get(ref(this.db, `groups/${groupId}`)),
-    this.getQueue()
-  ])
-
-  if (!groupSnapshot.exists()) {
-    console.log('  ⚠️ Group not found')
-    return
-  }
-
-  const group = groupSnapshot.val()
-  const updatedStudentAccountIds = [...(group.studentAccountIds || []), studentAccountId]
-
-  // Find queue student with this studentAccountId
+  // Get queue to find student
+  const queue = await this.getQueue()
   const student = queue.find(s => s.studentAccountId === studentAccountId)
 
-  // ✅ Batch both updates together
-  const updates: Record<string, any> = {
-    [`groups/${groupId}/studentAccountIds`]: updatedStudentAccountIds
-  }
+  // Use transaction to atomically update group
+  const groupRef = ref(this.db, `groups/${groupId}`)
+  await runTransaction(groupRef, (currentGroup) => {
+    if (!currentGroup) {
+      console.log('  ⚠️ Group not found')
+      return currentGroup
+    }
 
+    // Add student to group if not already present
+    const studentAccountIds = currentGroup.studentAccountIds || []
+    if (!studentAccountIds.includes(studentAccountId)) {
+      currentGroup.studentAccountIds = [...studentAccountIds, studentAccountId]
+    }
+
+    return currentGroup
+  })
+
+  // After group update succeeds, update queue student's groupId
   if (student) {
-    updates[`queue/${student.id}/groupId`] = groupId
-    console.log('  ✅ Will set groupId for queue student:', student.id)
+    await update(ref(this.db, `queue/${student.id}`), { groupId })
+    console.log('  ✅ Set groupId for queue student:', student.id)
   } else {
     console.log('  ⚠️ Student not found in queue')
   }
 
-  // Single batched update
-  const rootRef = ref(this.db)
-  await update(rootRef, updates)
   console.log('✅ Student added to group')
 }
 
 async removeStudentFromGroup(groupId: string, studentAccountId: string): Promise<void> {
   console.log('➖ Removing student from group:', { groupId, studentAccountId })
 
-  // ✅ OPTIMIZED: Fetch group and queue in parallel
-  const [groupSnapshot, queue] = await Promise.all([
-    get(ref(this.db, `groups/${groupId}`)),
-    this.getQueue()
-  ])
-
-  if (!groupSnapshot.exists()) {
-    console.log('  ⚠️ Group not found')
-    return
-  }
-
-  const group = groupSnapshot.val()
-  const updatedStudentAccountIds = (group.studentAccountIds || [])
-    .filter((id: string) => id !== studentAccountId)
-
-  // Find removed student in queue
+  // Get queue to find students
+  const queue = await this.getQueue()
   const student = queue.find(s => s.studentAccountId === studentAccountId)
 
-  // ✅ Build batch updates for all changes
+  // Use transaction to atomically update/delete group
+  const groupRef = ref(this.db, `groups/${groupId}`)
+  let shouldDeleteGroup = false
+  let remainingStudentIds: string[] = []
+
+  await runTransaction(groupRef, (currentGroup) => {
+    if (!currentGroup) {
+      console.log('  ⚠️ Group not found')
+      return currentGroup
+    }
+
+    // Remove student from group
+    const updatedStudentAccountIds = (currentGroup.studentAccountIds || [])
+      .filter((id: string) => id !== studentAccountId)
+
+    // If group will have ≤1 students, mark for deletion
+    if (updatedStudentAccountIds.length <= 1) {
+      console.log('⚠️ Group has ≤1 student after removal, deleting group')
+      shouldDeleteGroup = true
+      remainingStudentIds = updatedStudentAccountIds
+      return null // Delete the group
+    }
+
+    // Group will still have 2+ students, update it
+    currentGroup.studentAccountIds = updatedStudentAccountIds
+    return currentGroup
+  })
+
+  // After group transaction, update queue students
   const updates: Record<string, any> = {}
 
-  // If group will have ≤1 students, delete it instead of updating
-  if (updatedStudentAccountIds.length <= 1) {
-    console.log('⚠️ Group has ≤1 student after removal, deleting group')
+  // Clear groupId from removed student
+  if (student) {
+    updates[`queue/${student.id}/groupId`] = null
+  }
 
-    // Delete the group
-    updates[`groups/${groupId}`] = null
-
-    // Clear groupId from removed student
-    if (student) {
-      updates[`queue/${student.id}/groupId`] = null
-    }
-
-    // Clear groupId from remaining student if any
-    if (updatedStudentAccountIds.length === 1) {
-      const remaining = queue.find(s => s.studentAccountId === updatedStudentAccountIds[0])
-      if (remaining) {
-        updates[`queue/${remaining.id}/groupId`] = null
-        console.log(`  ✅ Will clear groupId from remaining student ${remaining.studentAccountId}`)
-      }
-    }
-  } else {
-    // Group will still have 2+ students, update it
-    updates[`groups/${groupId}/studentAccountIds`] = updatedStudentAccountIds
-
-    // Clear groupId from removed student
-    if (student) {
-      updates[`queue/${student.id}/groupId`] = null
+  // If group was deleted, clear groupId from remaining student
+  if (shouldDeleteGroup && remainingStudentIds.length === 1) {
+    const remaining = queue.find(s => s.studentAccountId === remainingStudentIds[0])
+    if (remaining) {
+      updates[`queue/${remaining.id}/groupId`] = null
+      console.log(`  ✅ Clearing groupId from remaining student ${remaining.studentAccountId}`)
     }
   }
 
-  // ✅ Single batched update for all changes
-  const rootRef = ref(this.db)
-  await update(rootRef, updates)
+  // Apply queue updates
+  if (Object.keys(updates).length > 0) {
+    const rootRef = ref(this.db)
+    await update(rootRef, updates)
+  }
+
   console.log('✅ Student removed from group')
 }
 

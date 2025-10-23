@@ -96,6 +96,42 @@
         root.child('users').child(auth.uid).child('role').val() == 'manifest'
       )",
       ".indexOn": ["isActive", "order", "tailNumber"]
+    },
+
+    "studentAccounts": {
+      ".read": "auth != null",
+      ".write": "auth != null && (
+        root.child('users').child(auth.uid).child('role').val() == 'admin' ||
+        root.child('users').child(auth.uid).child('role').val() == 'manifest'
+      )",
+      ".indexOn": ["studentId", "email", "isActive", "createdAt"]
+    },
+
+    "periods": {
+      ".read": "auth != null",
+      ".write": "auth != null && (
+        root.child('users').child(auth.uid).child('role').val() == 'admin'
+      )",
+      ".indexOn": ["isActive", "createdAt", "archivedAt"]
+    },
+
+    "groups": {
+      ".read": "auth != null",
+      ".write": "auth != null && (
+        root.child('users').child(auth.uid).child('role').val() == 'admin' ||
+        root.child('users').child(auth.uid).child('role').val() == 'manifest'
+      )",
+      ".indexOn": ["createdAt"]
+    },
+
+    "clockEvents": {
+      ".read": "auth != null",
+      ".write": "auth != null && (
+        root.child('users').child(auth.uid).child('role').val() == 'admin' ||
+        root.child('users').child(auth.uid).child('role').val() == 'manifest' ||
+        root.child('users').child(auth.uid).child('role').val() == 'instructor'
+      )",
+      ".indexOn": ["timestamp", "instructorId", "type"]
     }
   }
 }
