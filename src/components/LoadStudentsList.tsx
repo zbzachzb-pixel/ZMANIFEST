@@ -35,8 +35,8 @@ export function LoadStudentsList({
   const renderAssignments = () => {
     if (assignments.length === 0) {
       return (
-        <div className="p-6 space-y-3 min-h-[200px] max-h-[500px] overflow-y-auto">
-          <div className="text-center text-white/60 py-12 text-base font-medium">
+        <div className="p-4 space-y-2 min-h-[120px] max-h-[500px] overflow-y-auto">
+          <div className="text-center text-white/60 py-8 text-sm font-medium">
             Drop students here to build the load
           </div>
         </div>
@@ -44,7 +44,7 @@ export function LoadStudentsList({
     }
 
     return (
-      <div className="p-5 space-y-3 min-h-[200px] max-h-[500px] overflow-y-auto">
+      <div className="p-3 space-y-2 min-h-[120px] max-h-[500px] overflow-y-auto">
         {assignments.map((assignment) => {
           const groupAssignments = assignment.groupId
             ? assignments.filter(a => a.groupId === assignment.groupId)
@@ -72,14 +72,14 @@ export function LoadStudentsList({
                 }
               }}
               onDragEnd={onDragEnd}
-              className="bg-white/10 backdrop-blur-sm rounded-xl p-4 cursor-move hover:bg-white/15 transition-all hover:scale-[1.02] hover:shadow-lg border border-white/10"
+              className="bg-white/10 backdrop-blur-sm rounded-lg p-2.5 cursor-move hover:bg-white/15 transition-all hover:scale-[1.01] hover:shadow-lg border border-white/10"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
                   {group && (
-                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-white/20">
-                      <span className="text-xl">👥</span>
-                      <span className="text-base font-bold text-purple-300">
+                    <div className="flex items-center gap-1.5 mb-2 pb-1.5 border-b border-white/20">
+                      <span className="text-sm">👥</span>
+                      <span className="text-sm font-bold text-purple-300">
                         {group.name} ({groupAssignments.length})
                       </span>
                     </div>
@@ -90,30 +90,30 @@ export function LoadStudentsList({
                     const gaVideoInstructor = ga.videoInstructorId ? instructors.find(i => i.id === ga.videoInstructorId) : null
 
                     return (
-                      <div key={ga.id} className={idx > 0 ? 'mt-3 pt-3 border-t border-white/20' : ''}>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-white text-base min-w-0 shrink">
+                      <div key={ga.id} className={idx > 0 ? 'mt-2 pt-2 border-t border-white/20' : ''}>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-white text-sm min-w-0 shrink">
                             {ga.studentName}
                           </span>
-                          <span className="text-xs font-bold bg-white/30 px-2.5 py-1 rounded-md text-white shadow-sm whitespace-nowrap shrink-0">
+                          <span className="text-[10px] font-bold bg-white/30 px-1.5 py-0.5 rounded text-white shadow-sm whitespace-nowrap shrink-0">
                             {ga.jumpType.toUpperCase()}
                           </span>
                           {ga.isRequest && (
-                            <span className="text-xs font-bold bg-yellow-500/40 px-2.5 py-1 rounded-md text-yellow-100 shadow-sm whitespace-nowrap shrink-0">
+                            <span className="text-[10px] font-bold bg-yellow-500/40 px-1.5 py-0.5 rounded text-yellow-100 shadow-sm whitespace-nowrap shrink-0">
                               ⭐ REQUEST
                             </span>
                           )}
                         </div>
 
                         {gaInstructor && (
-                          <div className="text-sm text-white/70 mt-2 font-medium">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="text-base">👤</span>
+                          <div className="text-xs text-white/70 mt-1 font-medium">
+                            <span className="inline-flex items-center gap-1">
+                              <span className="text-sm">👤</span>
                               <span className="text-white/90">{gaInstructor.name}</span>
                             </span>
                             {gaVideoInstructor && (
-                              <span className="ml-3 inline-flex items-center gap-1.5">
-                                <span className="text-base">📹</span>
+                              <span className="ml-2 inline-flex items-center gap-1">
+                                <span className="text-sm">📹</span>
                                 <span className="text-white/90">{gaVideoInstructor.name}</span>
                               </span>
                             )}
@@ -121,8 +121,8 @@ export function LoadStudentsList({
                         )}
 
                         {!gaInstructor && (
-                          <div className="text-xs text-yellow-300 mt-1 font-semibold flex items-center gap-1">
-                            <span className="text-sm">⚠️</span> <span className="whitespace-nowrap">No instructor</span>
+                          <div className="text-[10px] text-yellow-300 mt-0.5 font-semibold flex items-center gap-1">
+                            <span className="text-xs">⚠️</span> <span className="whitespace-nowrap">No instructor</span>
                           </div>
                         )}
                       </div>
@@ -139,7 +139,7 @@ export function LoadStudentsList({
                         onRemoveAssignment(assignment)
                       }
                     }}
-                    className="ml-2 w-8 h-8 flex items-center justify-center rounded-lg text-red-400 hover:text-red-200 hover:bg-red-500/20 transition-all hover:scale-110 font-bold text-lg"
+                    className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-red-400 hover:text-red-200 hover:bg-red-500/20 transition-all hover:scale-110 font-bold text-base"
                     title="Remove"
                     aria-label="Remove from load"
                   >
@@ -159,19 +159,19 @@ export function LoadStudentsList({
       {/* Collapsible Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-5 py-3 flex items-center justify-between hover:bg-white/5 transition-colors"
+        className="w-full px-4 py-2 flex items-center justify-between hover:bg-white/5 transition-colors"
       >
-        <div className="flex items-center gap-2">
-          <span className="text-lg">📚</span>
-          <span className="font-semibold text-white">Students</span>
-          <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-sm rounded-full font-medium">
+        <div className="flex items-center gap-1.5">
+          <span className="text-base">📚</span>
+          <span className="font-semibold text-white text-sm">Students</span>
+          <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded-full font-medium">
             {count}
           </span>
         </div>
 
         {/* Chevron Icon */}
         <svg
-          className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${
+          className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${
             isExpanded ? 'rotate-180' : ''
           }`}
           fill="none"
