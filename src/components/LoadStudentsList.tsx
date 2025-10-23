@@ -91,15 +91,15 @@ export function LoadStudentsList({
 
                     return (
                       <div key={ga.id} className={idx > 0 ? 'mt-3 pt-3 border-t border-white/20' : ''}>
-                        <div className="flex items-center flex-wrap gap-2">
-                          <span className="font-bold text-white text-base">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white text-base min-w-0 shrink">
                             {ga.studentName}
                           </span>
-                          <span className="text-xs font-bold bg-white/30 px-2.5 py-1 rounded-md text-white shadow-sm">
+                          <span className="text-xs font-bold bg-white/30 px-2.5 py-1 rounded-md text-white shadow-sm whitespace-nowrap shrink-0">
                             {ga.jumpType.toUpperCase()}
                           </span>
                           {ga.isRequest && (
-                            <span className="text-xs font-bold bg-yellow-500/40 px-2.5 py-1 rounded-md text-yellow-100 shadow-sm">
+                            <span className="text-xs font-bold bg-yellow-500/40 px-2.5 py-1 rounded-md text-yellow-100 shadow-sm whitespace-nowrap shrink-0">
                               ⭐ REQUEST
                             </span>
                           )}
