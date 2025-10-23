@@ -214,6 +214,7 @@ export interface Load {
   completedAt?: string
   delayMinutes?: number
   countdownStartTime?: string     // Timer start time for countdown
+  plannedDepartureTime?: string   // Calculated departure time for cancellation time-lock
 }
 
 export type CreateLoad = Omit<Load, 'id' | 'createdAt'>

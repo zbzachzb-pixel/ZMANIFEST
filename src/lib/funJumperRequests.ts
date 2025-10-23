@@ -537,16 +537,27 @@ export class FunJumperRequestService {
         throw new Error('Cancellation already requested')
       }
 
-      // Check time restriction (10 minutes)
+      // Check time restriction (10 minutes before planned departure)
       if (request.assignedLoadId) {
-        // TODO: Add plannedDepartureTime to Load type and implement time check
-        // const load = await this.getLoad(request.assignedLoadId)
-        // const timeRemaining = getTimeRemaining(load)
-        // if (timeRemaining !== null && timeRemaining < 10) {
-        //   throw new Error('Cannot cancel - load departing in less than 10 minutes')
-        // }
+        const loadRef = ref(database, `loads/${request.assignedLoadId}`)
+        const loadSnapshot = await get(loadRef)
 
-        // For now, allow cancellation requests for approved loads
+        if (loadSnapshot.exists()) {
+          const load = loadSnapshot.val()
+
+          // Calculate planned departure time from countdownStartTime
+          if (load.countdownStartTime) {
+            const countdownStart = new Date(load.countdownStartTime).getTime()
+            const minutesBetweenLoads = 20 // Default, should match settings
+            const plannedDepartureTime = countdownStart + (minutesBetweenLoads * 60 * 1000)
+            const now = Date.now()
+            const timeRemainingMinutes = Math.floor((plannedDepartureTime - now) / 60000)
+
+            if (timeRemainingMinutes < 10 && timeRemainingMinutes >= 0) {
+              throw new Error(`Cannot cancel - load departing in ${timeRemainingMinutes} minutes (minimum 10 minutes required)`)
+            }
+          }
+        }
       }
 
       const updates: Partial<FunJumperRequest> = {
