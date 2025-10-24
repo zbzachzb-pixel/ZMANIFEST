@@ -806,12 +806,12 @@ const handleChangeCall = async () => {
       }
       
       const currentQueue = await db.getQueue()
-      
+
       for (const assignment of loadAssignments) {
         const existingInQueue = currentQueue.find(
           s => s.studentAccountId === assignment.studentId
         )
-        
+
         if (existingInQueue) {
           if (assignment.groupId && existingInQueue.groupId !== assignment.groupId) {
             await db.updateQueueStudent(existingInQueue.id, {
@@ -837,7 +837,30 @@ const handleChangeCall = async () => {
           })
         }
       }
-      
+
+      // Cascade timers to subsequent loads (on same aircraft only) before deleting
+      if (load.status === 'ready' && load.countdownStartTime) {
+        const subsequentLoads = allLoads
+          .filter(l =>
+            l.status === 'ready' &&
+            l.aircraftId === load.aircraftId &&
+            (l.position || 0) > (load.position || 0) &&
+            l.countdownStartTime
+          )
+          .sort((a, b) => (a.position || 0) - (b.position || 0))
+
+        for (const subsequentLoad of subsequentLoads) {
+          if (subsequentLoad.countdownStartTime) {
+            const currentStartTime = new Date(subsequentLoad.countdownStartTime).getTime()
+            const adjustedStartTime = new Date(currentStartTime - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000))
+
+            await update(subsequentLoad.id, {
+              countdownStartTime: adjustedStartTime.toISOString()
+            } as any)
+          }
+        }
+      }
+
       await deleteLoad(load.id)
       setShowDeleteConfirm(false)
     } catch (error) {
