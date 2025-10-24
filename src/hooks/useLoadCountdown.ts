@@ -42,8 +42,9 @@ export function getLoadCountdown(
   
   // For ready loads, find the FIRST ready load (lowest position, not departed/completed)
   if (load.status === 'ready') {
-    // Check if there are any loads with LOWER position that are still building
+    // Check if there are any loads with LOWER position that are still building (on same aircraft)
     const loadsBeforeThis = allLoads
+      .filter(l => l.aircraftId === load.aircraftId)
       .filter(l => (l.position || 0) < (load.position || 0))
       .filter(l => l.status !== 'departed' && l.status !== 'completed')
     
@@ -61,8 +62,9 @@ export function getLoadCountdown(
     }
     
     // No building loads before this one - proceed with normal timer logic
-    // Find all ready loads that are before or at this load's position
+    // Find all ready loads that are before or at this load's position (on same aircraft)
     const readyLoads = allLoads
+      .filter(l => l.aircraftId === load.aircraftId)
       .filter(l => l.status === 'ready')
       .sort((a, b) => (a.position || 0) - (b.position || 0))
     
