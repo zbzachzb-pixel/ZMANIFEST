@@ -90,18 +90,26 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
   }
   
   const currentStatus = statusConfig[load.status]
-  
-  const totalStudents = loadAssignments.length
-  const unassignedCount = loadAssignments.filter(a => !a.instructorId).length
-  const loadCapacity = load.capacity || 18
-  
-  const totalPeople = loadAssignments.reduce((sum, assignment) => {
-    let count = 2 // Student + Instructor
-    if (assignment.hasOutsideVideo) count += 1 // + Video Instructor
-    return sum + count
-  }, 0) + (load.funJumpers || []).length  // + Fun Jumpers (1 slot each)
-  const availableSlots = loadCapacity - totalPeople
-  const isOverCapacity = totalPeople > loadCapacity
+
+  // ✅ PERFORMANCE: Memoize capacity calculations to avoid recalculating on every render
+  const capacityInfo = useMemo(() => {
+    const totalStudents = loadAssignments.length
+    const unassignedCount = loadAssignments.filter(a => !a.instructorId).length
+    const loadCapacity = load.capacity || 18
+
+    const totalPeople = loadAssignments.reduce((sum, assignment) => {
+      let count = 2 // Student + Instructor
+      if (assignment.hasOutsideVideo) count += 1 // + Video Instructor
+      return sum + count
+    }, 0) + (load.funJumpers || []).length  // + Fun Jumpers (1 slot each)
+
+    const availableSlots = loadCapacity - totalPeople
+    const isOverCapacity = totalPeople > loadCapacity
+
+    return { totalStudents, unassignedCount, loadCapacity, totalPeople, availableSlots, isOverCapacity }
+  }, [loadAssignments, load.capacity, load.funJumpers])
+
+  const { totalStudents, unassignedCount, loadCapacity, totalPeople, availableSlots, isOverCapacity } = capacityInfo
 
   // Available transitions
   const availableTransitions = useMemo(() => {
@@ -603,10 +611,11 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
       // Clear the countdown
       updates.countdownStartTime = undefined
       
-      // Cascade subsequent loads
+      // Cascade subsequent loads (on same aircraft only)
       const subsequentLoads = allLoads
-        .filter(l => 
-          l.status === 'ready' && 
+        .filter(l =>
+          l.status === 'ready' &&
+          l.aircraftId === load.aircraftId &&
           (l.position || 0) > (load.position || 0) &&
           l.countdownStartTime
         )
@@ -710,9 +719,9 @@ const handleChangeCall = async () => {
         return
       }
 
-      // Check if moving earlier would overlap with previous load
+      // Check if moving earlier would overlap with previous load (on same aircraft only)
       const previousLoad = allLoads
-        .filter(l => l.status !== 'completed' && (l.position || 0) < (load.position || 0) && l.countdownStartTime)
+        .filter(l => l.status !== 'completed' && l.aircraftId === load.aircraftId && (l.position || 0) < (load.position || 0) && l.countdownStartTime)
         .sort((a, b) => (b.position || 0) - (a.position || 0))[0]
 
       if (previousLoad && previousLoad.countdownStartTime) {
@@ -737,9 +746,10 @@ const handleChangeCall = async () => {
         countdownStartTime: newStartTime
       } as any)
 
-      // Cascade time change to all subsequent loads to maintain proper spacing
+      // Cascade time change to all subsequent loads to maintain proper spacing (on same aircraft only)
       const subsequentLoads = allLoads.filter(l =>
         l.status !== 'completed' &&
+        l.aircraftId === load.aircraftId &&
         (l.position || 0) > (load.position || 0) &&
         l.countdownStartTime
       )
