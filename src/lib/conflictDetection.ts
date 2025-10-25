@@ -349,7 +349,7 @@ function detectMissingVideoConflicts(
 ): Conflict[] {
   const conflicts: Conflict[] = []
 
-  if (!load.assignments) return conflicts
+  if (!load.assignments || load.status === 'building') return conflicts
 
   const missingVideo = load.assignments.filter(a => a.hasOutsideVideo && !a.videoInstructorId)
 

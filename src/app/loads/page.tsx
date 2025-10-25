@@ -11,6 +11,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { useActiveLoads, useQueue, useActiveInstructors, useAssignments, useUpdateLoad, useDeleteLoad, useGroups, useAircraft } from '@/hooks/useDatabase'
 import { LoadBuilderCard } from '@/components/LoadBuilderCard'
+import { LoadBuilderCardSkeleton, SkeletonList } from '@/components/SkeletonLoader'
 import { useToast } from '@/contexts/ToastContext'
 import { useActionHistory } from '@/contexts/ActionHistoryContext'
 import { db } from '@/services'
@@ -100,9 +101,54 @@ function LoadBuilderPageContent() {
   }, [instructors, assignments, period, loads])
   
   // ✅ OPTIMIZED: Single-pass filtering and grouping to reduce O(3n) to O(n)
+  // ✅ FIXED: Groups now show ALL members if ANY member matches search
   const { filteredQueue, queueGroups, individualStudents } = useMemo(() => {
-    // Step 1: Filter and sort queue in single pass
-    const filtered = queue
+    // Step 1: Build student lookup map from ALL queue students (unfiltered)
+    const studentMap = new Map(queue.map(s => [s.studentAccountId, s]))
+
+    // Step 2: Build ALL groups first (with all their students)
+    const allGroups = groups
+      .map(groupDoc => {
+        const students = groupDoc.studentAccountIds
+          .map(accountId => studentMap.get(accountId))
+          .filter((s): s is QueueStudent => s !== undefined)
+
+        if (students.length > 0) {
+          return {
+            ...groupDoc,
+            students,
+            groupId: groupDoc.id
+          }
+        }
+        return null
+      })
+      .filter((g): g is (Group & { students: QueueStudent[], groupId: string }) => g !== null)
+
+    // Step 3: Filter groups where ANY student matches search/jumpType
+    const matchedGroups = allGroups.filter(group => {
+      return group.students.some(student => {
+        // Check search term
+        if (searchTerm) {
+          const search = searchTerm.toLowerCase()
+          if (!student.name.toLowerCase().includes(search)) return false
+        }
+        // Check jump type
+        if (selectedJumpType !== 'all' && student.jumpType !== selectedJumpType) {
+          return false
+        }
+        return true
+      })
+    })
+
+    // Step 4: Collect all student IDs that are in matched groups
+    const groupedStudentIds = new Set<string>()
+    matchedGroups.forEach(group => {
+      group.students.forEach(s => groupedStudentIds.add(s.id))
+    })
+
+    // Step 5: Filter individual students (not in any matched group)
+    const individuals = queue
+      .filter(s => !groupedStudentIds.has(s.id))
       .filter(s => {
         if (searchTerm) {
           const search = searchTerm.toLowerCase()
@@ -115,37 +161,16 @@ function LoadBuilderPageContent() {
       })
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
 
-    // Step 2: Build student lookup map for O(1) group matching
-    const studentMap = new Map(filtered.map(s => [s.studentAccountId, s]))
-    const groupedStudentIds = new Set<string>()
-
-    // Step 3: Build groups and track grouped students simultaneously
-    const groups_result = groups
-      .map(groupDoc => {
-        const students = groupDoc.studentAccountIds
-          .map(accountId => studentMap.get(accountId))
-          .filter((s): s is QueueStudent => s !== undefined)
-
-        if (students.length > 0) {
-          // Mark these students as grouped
-          students.forEach(s => groupedStudentIds.add(s.id))
-
-          return {
-            ...groupDoc,
-            students,
-            groupId: groupDoc.id
-          }
-        }
-        return null
-      })
-      .filter((g): g is (Group & { students: QueueStudent[], groupId: string }) => g !== null)
-
-    // Step 4: Get individual students (not in any group)
-    const individuals = filtered.filter(s => !groupedStudentIds.has(s.id))
+    // Step 6: Build filtered queue for count display (all students shown)
+    const allStudentsInGroups: QueueStudent[] = []
+    matchedGroups.forEach(group => {
+      allStudentsInGroups.push(...group.students)
+    })
+    const filtered = [...allStudentsInGroups, ...individuals]
 
     return {
       filteredQueue: filtered,
-      queueGroups: groups_result,
+      queueGroups: matchedGroups,
       individualStudents: individuals
     }
   }, [queue, searchTerm, selectedJumpType, groups])
@@ -790,10 +815,21 @@ function LoadBuilderPageContent() {
 
   if (loadsLoading || queueLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-white text-lg">Loading...</p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-6">
+        <div className="max-w-[2000px] mx-auto">
+          {/* Header Skeleton */}
+          <div className="mb-6 flex items-center justify-between">
+            <div className="h-10 w-32 animate-pulse bg-slate-700/50 rounded" />
+            <div className="flex gap-3">
+              <div className="h-10 w-32 animate-pulse bg-slate-700/50 rounded" />
+              <div className="h-10 w-32 animate-pulse bg-slate-700/50 rounded" />
+            </div>
+          </div>
+
+          {/* Load Cards Skeleton */}
+          <div className="space-y-6">
+            <SkeletonList count={3} Component={LoadBuilderCardSkeleton} />
+          </div>
         </div>
       </div>
     )
