@@ -44,7 +44,11 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
     dropTarget,
     setDropTarget,
     loadSchedulingSettings,
-    onDelay
+    onDelay,
+    // ✅ TEST MODE: Optional test mode support
+    isTestMode,
+    testDate,
+    onTestAssignment
   } = useLoadBuilder()
   // ==================== HOOKS ====================
   const { update, loading } = useUpdateLoad()
@@ -719,14 +723,27 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
                 ...(loadAssignment.affLevel && { affLevel: loadAssignment.affLevel }),
               }
 
-              await db.createAssignment(assignmentRecord)
+              // ✅ TEST MODE: Create test assignments or real assignments
+              if (isTestMode && onTestAssignment) {
+                // Test mode - store assignment in local state with test date
+                const testAssignment = {
+                  ...assignmentRecord,
+                  id: `test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                  timestamp: testDate ? testDate.toISOString() : new Date().toISOString()
+                }
+                onTestAssignment(testAssignment)
+                console.log(`🧪 Test assignment created for ${loadAssignment.studentName} → ${loadAssignment.instructorName}`)
+              } else {
+                // Production mode - write to Firebase
+                await db.createAssignment(assignmentRecord)
 
-              // Update student account jump count if they have an account
-              if (loadAssignment.studentId) {
-                try {
-                  await db.incrementStudentJumpCount(loadAssignment.studentId, loadAssignment.jumpType)
-                } catch (err) {
-                  console.error(`Failed to update jump count for ${loadAssignment.studentId}:`, err)
+                // Update student account jump count if they have an account
+                if (loadAssignment.studentId) {
+                  try {
+                    await db.incrementStudentJumpCount(loadAssignment.studentId, loadAssignment.jumpType)
+                  } catch (err) {
+                    console.error(`Failed to update jump count for ${loadAssignment.studentId}:`, err)
+                  }
                 }
               }
 

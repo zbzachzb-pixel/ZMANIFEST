@@ -9,7 +9,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { useActiveLoads, useQueue, useActiveInstructors, useAssignments, useUpdateLoad, useDeleteLoad, useGroups, useAircraft } from '@/hooks/useDatabase'
+import { useActiveLoads, useQueue, useActiveInstructors, useAssignments, useUpdateLoad, useDeleteLoad, useGroups, useAircraft, useSettings } from '@/hooks/useDatabase'
 import { LoadBuilderCard } from '@/components/LoadBuilderCard'
 import { LoadBuilderCardSkeleton, SkeletonList } from '@/components/SkeletonLoader'
 import { useToast } from '@/contexts/ToastContext'
@@ -18,7 +18,7 @@ import { db } from '@/services'
 import { createLoadUndoable, deleteLoadUndoable, updateLoadStatusUndoable, delayLoadUndoable } from '@/services/undoableActions'
 import { getCurrentPeriod, calculateInstructorBalance } from '@/lib/utils'
 import { isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
-import type { QueueStudent, Load, LoadAssignment, LoadSchedulingSettings, Group } from '@/types'
+import type { QueueStudent, Load, LoadAssignment, LoadSchedulingSettings, Group, Assignment } from '@/types'
 import { PageErrorBoundary } from '@/components/ErrorBoundary'
 import { getLoadSettings } from '@/lib/settingsStorage'
 import { useLoadsPageShortcuts } from '@/hooks/useKeyboardShortcuts'
@@ -41,6 +41,7 @@ function LoadBuilderPageContent() {
   const { data: queue, loading: queueLoading } = useQueue()
   const { data: instructors } = useActiveInstructors()
   const { data: assignments } = useAssignments()
+  const { data: appSettings } = useSettings()
   const { update: updateLoad } = useUpdateLoad()
   useDeleteLoad()
   const { data: groups } = useGroups()
@@ -61,6 +62,11 @@ function LoadBuilderPageContent() {
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null)
   const [showAircraftSelector, setShowAircraftSelector] = useState(false)
 
+  // ✅ TEST MODE: Simulation state for historical data validation
+  const [isTestMode, setIsTestMode] = useState(false)
+  const [testDate, setTestDate] = useState(new Date('2025-10-01')) // Oct 1, 2025 - Wednesday
+  const [testAssignments, setTestAssignments] = useState<Assignment[]>([])
+
   // ============================================
   // EFFECTS - ALWAYS IN SAME ORDER
   // ============================================
@@ -80,7 +86,11 @@ function LoadBuilderPageContent() {
   // ============================================
   
   const period = getCurrentPeriod()
-  
+  const teamRotation = appSettings?.teamRotation || 'blue'
+
+  // ✅ TEST MODE: Use test assignments when in test mode, production assignments otherwise
+  const assignmentsForCalculation = isTestMode ? testAssignments : assignments
+
   // Calculate instructor balances (includes both completed and pending assignments)
   const instructorBalances = useMemo(() => {
     const balances = new Map<string, number>()
@@ -89,16 +99,17 @@ function LoadBuilderPageContent() {
       // ✅ Use centralized function that includes pending LoadAssignments
       const balance = calculateInstructorBalance(
         instructor.id,
-        assignments,
+        assignmentsForCalculation,
         instructors,
         period,
-        loads  // ✅ Includes pending assignments from non-completed loads
+        loads,  // ✅ Includes pending assignments from non-completed loads
+        teamRotation
       )
       balances.set(instructor.id, balance)
     })
 
     return balances
-  }, [instructors, assignments, period, loads])
+  }, [instructors, assignmentsForCalculation, period, loads, teamRotation])
   
   // ✅ OPTIMIZED: Single-pass filtering and grouping to reduce O(3n) to O(n)
   // ✅ FIXED: Groups now show ALL members if ANY member matches search
@@ -853,6 +864,75 @@ function LoadBuilderPageContent() {
             </button>
           </div>
 
+          {/* ✅ TEST MODE CONTROLS */}
+          <div className="mt-4 p-3 bg-gradient-to-r from-purple-500/20 to-blue-500/20 border border-purple-500/30 rounded-lg">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3">
+              {/* Test Mode Toggle */}
+              <div className="flex items-center gap-2">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isTestMode}
+                    onChange={(e) => setIsTestMode(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                  <span className="ml-3 text-sm font-semibold text-white">
+                    {isTestMode ? '🧪 Test Mode' : 'Live Mode'}
+                  </span>
+                </label>
+              </div>
+
+              {/* Date Display & Controls - Only visible in test mode */}
+              {isTestMode && (
+                <>
+                  <div className="h-6 w-px bg-white/20"></div>
+
+                  {/* Date Display */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-slate-300">Date:</span>
+                    <input
+                      type="date"
+                      value={testDate.toISOString().split('T')[0]}
+                      onChange={(e) => setTestDate(new Date(e.target.value))}
+                      className="bg-slate-700 border border-slate-600 text-white text-sm rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                    <span className="text-sm font-semibold text-white">
+                      {testDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                    </span>
+                  </div>
+
+                  {/* Next Day Button */}
+                  <button
+                    onClick={() => {
+                      const nextDate = new Date(testDate)
+                      nextDate.setDate(nextDate.getDate() + 1)
+                      setTestDate(nextDate)
+                      toast.success('Advanced to next day', nextDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }))
+                    }}
+                    className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-1.5 px-3 rounded text-sm transition-colors"
+                  >
+                    Next Day →
+                  </button>
+
+                  {/* Rotation Display */}
+                  <div className="h-6 w-px bg-white/20"></div>
+                  <div className="text-sm text-white">
+                    <span className="text-slate-300">Rotation:</span>{' '}
+                    <span className="font-semibold">
+                      {teamRotation === 'red' ? '🔴 Red: Mon/Tue' : '🔵 Blue: Mon/Tue'}
+                    </span>
+                  </div>
+
+                  {/* Test Assignments Count */}
+                  <div className="text-sm text-slate-300">
+                    {testAssignments.length} test assignment{testAssignments.length !== 1 ? 's' : ''}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
           {/* Status Filter Tabs */}
           <div className="mt-4 flex flex-wrap gap-2">
             {(['all', 'building', 'ready', 'departed', 'completed'] as const).map((status) => (
@@ -888,7 +968,13 @@ function LoadBuilderPageContent() {
                 onDrop: handleDrop,
                 onDragStart: handleDragStart,
                 onDragEnd: handleDragEnd,
-                onDelay: handleDelayLoad
+                onDelay: handleDelayLoad,
+                // ✅ TEST MODE: Pass test mode state
+                isTestMode,
+                testDate,
+                onTestAssignment: (assignment: Assignment) => {
+                  setTestAssignments(prev => [...prev, assignment])
+                }
               }}
             >
               {filteredLoads.length === 0 ? (

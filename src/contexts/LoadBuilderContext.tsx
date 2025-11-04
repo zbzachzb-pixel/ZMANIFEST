@@ -5,7 +5,7 @@
 'use client'
 
 import React, { createContext, useContext, ReactNode } from 'react'
-import type { Load, Instructor, LoadSchedulingSettings } from '@/types'
+import type { Load, Instructor, LoadSchedulingSettings, Assignment } from '@/types'
 
 interface LoadBuilderContextType {
   // Shared data
@@ -23,6 +23,11 @@ interface LoadBuilderContextType {
   onDragStart: (type: 'student' | 'assignment' | 'group', id: string, sourceLoadId?: string) => void
   onDragEnd: () => void
   onDelay: (loadId: string, minutes: number) => void
+
+  // ✅ TEST MODE: Optional test mode support
+  isTestMode?: boolean
+  testDate?: Date
+  onTestAssignment?: (assignment: Assignment) => void
 }
 
 const LoadBuilderContext = createContext<LoadBuilderContextType | null>(null)
