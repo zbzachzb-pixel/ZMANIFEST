@@ -62,6 +62,10 @@ export interface Assignment {
   videoInstructorId?: string
   videoInstructorName?: string
   affLevel?: 'upper' | 'lower'
+  loadId?: string  // Links assignment back to originating load for cleanup
+  isDeleted?: boolean  // Soft-delete flag - assignment was reverted
+  deletedAt?: string  // When assignment was soft-deleted
+  deletedReason?: 'load_reverted' | 'manual_delete'  // Why it was deleted
 }
 
 export type CreateAssignment = Omit<Assignment, 'id' | 'timestamp'>

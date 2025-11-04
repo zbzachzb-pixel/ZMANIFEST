@@ -1,0 +1,207 @@
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.9s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/app/loads/page.tsx:281:30
+Type error: Object is possibly 'undefined'.
+
+[0m [90m 279 |[39m       [36mif[39m ([33m![39mtargetAircraftId) {
+ [90m 280 |[39m         [36mif[39m (activeAircraft[33m.[39mlength [33m===[39m [35m1[39m) {
+[31m[1m>[22m[39m[90m 281 |[39m           targetAircraftId [33m=[39m activeAircraft[[35m0[39m][33m.[39mid
+ [90m     |[39m                              [31m[1m^[22m[39m
+ [90m 282 |[39m         } [36melse[39m [36mif[39m (activeAircraft[33m.[39mlength [33m===[39m [35m0[39m) {
+ [90m 283 |[39m           toast[33m.[39merror([32m'No Active Aircraft'[39m[33m,[39m [32m'Please configure aircraft in Settings first.'[39m)
+ [90m 284 |[39m           [36mreturn[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 4.1s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/app/loads/page.tsx:809:15
+Type error: Type '(aircraftId?: string) => Promise<void>' is not assignable to type 'MouseEventHandler<HTMLButtonElement>'.
+  Types of parameters 'aircraftId' and 'event' are incompatible.
+    Type 'MouseEvent<HTMLButtonElement, MouseEvent>' is not assignable to type 'string'.
+
+[0m [90m 807 |[39m             [33m<[39m[33m/[39m[33mdiv[39m[33m>[39m
+ [90m 808 |[39m             [33m<[39m[33mbutton[39m
+[31m[1m>[22m[39m[90m 809 |[39m               onClick[33m=[39m{handleCreateLoad}
+ [90m     |[39m               [31m[1m^[22m[39m
+ [90m 810 |[39m               className[33m=[39m[32m"bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors shadow-lg text-sm"[39m
+ [90m 811 |[39m             [33m>[39m
+ [90m 812 |[39m               ➕ [33mNew[39m [33mLoad[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.8s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/lib/aircraftService.ts:306:10
+Type error: Object is possibly 'undefined'.
+
+[0m [90m 304 |[39m     [36mreturn[39m [35m18[39m [90m// Legacy default[39m
+ [90m 305 |[39m   }
+[31m[1m>[22m[39m[90m 306 |[39m   [36mreturn[39m activeAircraft[[35m0[39m][33m.[39mcapacity
+ [90m     |[39m          [31m[1m^[22m[39m
+ [90m 307 |[39m }
+ [90m 308 |[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.5s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/services/firebase.ts:1094:5
+Type error: Property 'aircraft' is missing in type '{ instructors: Instructor[]; assignments: Assignment[]; studentQueue: QueueStudent[]; studentAccounts: StudentAccount[]; groups: Group[]; loads: Load[]; clockEvents: ClockEvent[]; periods: Period[]; }' but required in type 'DatabaseState'.
+
+[0m [90m 1092 |[39m     ])
+ [90m 1093 |[39m     
+[31m[1m>[22m[39m[90m 1094 |[39m     [36mreturn[39m {
+ [90m      |[39m     [31m[1m^[22m[39m
+ [90m 1095 |[39m       instructors[33m,[39m
+ [90m 1096 |[39m       assignments[33m,[39m
+ [90m 1097 |[39m       studentQueue[33m,[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.7s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/services/firebase.ts:1120:18
+Type error: Argument of type '{ instructors: Instructor[]; assignments: Assignment[]; studentQueue: QueueStudent[]; studentAccounts: StudentAccount[]; groups: Group[]; loads: Load[]; clockEvents: ClockEvent[]; periods: { ...; }[]; }' is not assignable to parameter of type 'DatabaseState'.
+  Property 'aircraft' is missing in type '{ instructors: Instructor[]; assignments: Assignment[]; studentQueue: QueueStudent[]; studentAccounts: StudentAccount[]; groups: Group[]; loads: Load[]; clockEvents: ClockEvent[]; periods: { ...; }[]; }' but required in type 'DatabaseState'.
+
+[0m [90m 1118 |[39m       [36mconst[39m data [33m=[39m snapshot[33m.[39mval()
+ [90m 1119 |[39m       [36mif[39m (data) {
+[31m[1m>[22m[39m[90m 1120 |[39m         callback({
+ [90m      |[39m                  [31m[1m^[22m[39m
+ [90m 1121 |[39m           instructors[33m:[39m data[33m.[39minstructors [33m?[39m [33mObject[39m[33m.[39mvalues(data[33m.[39minstructors) [33m:[39m [][33m,[39m
+ [90m 1122 |[39m           assignments[33m:[39m data[33m.[39massignments [33m?[39m [33mObject[39m[33m.[39mvalues(data[33m.[39massignments) [33m:[39m [][33m,[39m
+ [90m 1123 |[39m           studentQueue[33m:[39m data[33m.[39mqueue [33m?[39m [33mObject[39m[33m.[39mvalues(data[33m.[39mqueue) [33m:[39m [][33m,[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.4s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/22) ...
+   Generating static pages (5/22) 
+   Generating static pages (10/22) 
+   Generating static pages (16/22) 
+ ✓ Generating static pages (22/22)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                      635 B         183 kB
+├ ○ /_not-found                             1 kB         103 kB
+├ ○ /analytics                           2.69 kB         191 kB
+├ ƒ /api/send-push                         127 B         102 kB
+├ ○ /assignments                         4.96 kB         193 kB
+├ ○ /dashboard                            4.5 kB         193 kB
+├ ○ /instructors                         4.56 kB         193 kB
+├ ○ /loads                               20.1 kB         208 kB
+├ ○ /login                               4.47 kB         187 kB
+├ ○ /messages                            4.88 kB         191 kB
+├ ○ /my-requests                         3.54 kB         189 kB
+├ ○ /notes                               1.38 kB         183 kB
+├ ○ /queue                               6.84 kB         195 kB
+├ ○ /register                            4.66 kB         187 kB
+├ ○ /requests                            3.85 kB         189 kB
+├ ○ /settings                            5.88 kB         194 kB
+├ ○ /submit-request                       2.8 kB         188 kB
+├ ○ /test-shortcuts                      2.07 kB         104 kB
+└ ○ /users                               4.21 kB         190 kB
++ First Load JS shared by all             102 kB
+  ├ chunks/1255-ba098675cb6696ab.js      45.7 kB
+  ├ chunks/4bd1b696-f785427dddbba9fb.js  54.2 kB
+  └ other shared chunks (total)          2.33 kB
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

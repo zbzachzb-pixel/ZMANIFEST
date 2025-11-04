@@ -58,6 +58,7 @@ export interface DatabaseService {
   updateStudentAccount(id: string, updates: UpdateStudentAccount): Promise<void>
   deactivateStudentAccount(id: string): Promise<void>
   incrementStudentJumpCount(studentAccountId: string, jumpType: 'tandem' | 'aff'): Promise<void>
+  decrementStudentJumpCount(studentAccountId: string, jumpType: 'tandem' | 'aff'): Promise<void>
   subscribeToStudentAccounts(callback: (accounts: StudentAccount[]) => void): () => void
 
   // ==================== USER PROFILES ====================
@@ -89,8 +90,10 @@ export interface DatabaseService {
   getAssignments(): Promise<Assignment[]>
   getInstructorAssignments(instructorId: string): Promise<Assignment[]>
   getAssignmentsByDateRange(start: Date, end: Date): Promise<Assignment[]>
+  getAssignmentsByLoadId(loadId: string): Promise<Assignment[]>
   updateAssignment(id: string, updates: Partial<Assignment>): Promise<void>
   deleteAssignment(id: string): Promise<void>
+  softDeleteAssignment(id: string, reason: 'load_reverted' | 'manual_delete'): Promise<void>
   subscribeToAssignments(callback: (assignments: Assignment[]) => void): () => void
   subscribeToAssignmentsByDateRange(startDate: Date, endDate: Date, callback: (assignments: Assignment[]) => void): () => void
   

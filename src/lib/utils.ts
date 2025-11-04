@@ -136,12 +136,15 @@ export function calculateInstructorBalance(
   
   for (const assignment of assignments) {
     const assignmentDate = new Date(assignment.timestamp)
-    
+
     // Only count assignments in the current period
     if (assignmentDate < period.start || assignmentDate > period.end) {
       continue
     }
-    
+
+    // ✅ BUG FIX: Skip soft-deleted assignments (reverted loads)
+    if (assignment.isDeleted) continue
+
     // Requests don't count toward balance (rotation fairness)
     if (assignment.isRequest) continue
     
@@ -263,12 +266,15 @@ export function calculateInstructorTotalEarnings(
   
   for (const assignment of assignments) {
     const assignmentDate = new Date(assignment.timestamp)
-    
+
     // Only count assignments in the current period
     if (assignmentDate < period.start || assignmentDate > period.end) {
       continue
     }
-    
+
+    // ✅ BUG FIX: Skip soft-deleted assignments (reverted loads)
+    if (assignment.isDeleted) continue
+
     // Main instructor - includes requests, excludes missed
     if (assignment.instructorId === instructorId && !assignment.isMissedJump) {
       total += calculateAssignmentPay(assignment)

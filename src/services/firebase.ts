@@ -282,7 +282,27 @@ export class FirebaseService implements DatabaseService {
       return currentData
     })
   }
-  
+
+  async decrementStudentJumpCount(studentAccountId: string, jumpType: 'tandem' | 'aff'): Promise<void> {
+    const accountRef = ref(this.db, `studentAccounts/${studentAccountId}`)
+
+    await runTransaction(accountRef, (currentData) => {
+      if (!currentData) return currentData
+
+      // Decrement total jumps (floor at 0 to prevent negative counts)
+      currentData.totalJumps = Math.max(0, (currentData.totalJumps || 0) - 1)
+
+      // Decrement jump type specific count (floor at 0)
+      if (jumpType === 'tandem') {
+        currentData.totalTandemJumps = Math.max(0, (currentData.totalTandemJumps || 0) - 1)
+      } else if (jumpType === 'aff') {
+        currentData.totalAFFJumps = Math.max(0, (currentData.totalAFFJumps || 0) - 1)
+      }
+
+      return currentData
+    })
+  }
+
   subscribeToStudentAccounts(callback: (accounts: StudentAccount[]) => void): () => void {
     const accountsRef = ref(this.db, 'studentAccounts')
     const unsubscribe = onValue(accountsRef, (snapshot) => {
@@ -549,7 +569,21 @@ export class FirebaseService implements DatabaseService {
     const assignmentRef = ref(this.db, `assignments/${id}`)
     await remove(assignmentRef)
   }
-  
+
+  async getAssignmentsByLoadId(loadId: string): Promise<Assignment[]> {
+    const allAssignments = await this.getAssignments()
+    return allAssignments.filter(a => a.loadId === loadId)
+  }
+
+  async softDeleteAssignment(id: string, reason: 'load_reverted' | 'manual_delete'): Promise<void> {
+    const assignmentRef = ref(this.db, `assignments/${id}`)
+    await update(assignmentRef, {
+      isDeleted: true,
+      deletedAt: new Date().toISOString(),
+      deletedReason: reason
+    })
+  }
+
   subscribeToAssignments(callback: (assignments: Assignment[]) => void): () => void {
     const assignmentsRef = ref(this.db, 'assignments')
     const unsubscribe = onValue(assignmentsRef, (snapshot) => {

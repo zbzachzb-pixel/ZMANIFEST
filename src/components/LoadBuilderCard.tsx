@@ -642,47 +642,101 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
       // No cascade needed - subsequent loads already have their offsets
     }
     
-    // ==================== TRANSITIONING TO COMPLETED ====================
-    else if (statusChangeConfirm === 'completed' && load.status === 'departed') {
-      // Create assignment records for each student on the load
-      for (const loadAssignment of loadAssignments) {
-        try {
-          // Skip if no instructor assigned (shouldn't happen for departed loads, but check anyway)
-          if (!loadAssignment.instructorId) {
-            continue
-          }
-          
-          const assignmentRecord: CreateAssignment = {
-            instructorId: loadAssignment.instructorId,
-            instructorName: loadAssignment.instructorName || 'Unknown',
-            studentName: loadAssignment.studentName,
-            studentWeight: loadAssignment.studentWeight,
-            jumpType: loadAssignment.jumpType,
-            isRequest: loadAssignment.isRequest || false,
-            isMissedJump: false,
-            // Only include optional fields if they have values
-            ...(loadAssignment.tandemWeightTax && { tandemWeightTax: loadAssignment.tandemWeightTax }),
-            ...(loadAssignment.tandemHandcam && { tandemHandcam: loadAssignment.tandemHandcam }),
-            ...(loadAssignment.hasOutsideVideo && { hasOutsideVideo: loadAssignment.hasOutsideVideo }),
-            ...(loadAssignment.videoInstructorId && { videoInstructorId: loadAssignment.videoInstructorId }),
-            ...(loadAssignment.videoInstructorName && { videoInstructorName: loadAssignment.videoInstructorName }),
-            ...(loadAssignment.affLevel && { affLevel: loadAssignment.affLevel }),
-          }
+    // ==================== TRANSITIONING FROM COMPLETED (REVERT) ====================
+    else if (load.status === 'completed' && (statusChangeConfirm === 'departed' || statusChangeConfirm === 'building')) {
+      // ✅ BUG FIX: Revert completed assignments - soft-delete and decrement jump counts
+      try {
+        const assignmentsToRevert = await db.getAssignmentsByLoadId(load.id)
 
-          await db.createAssignment(assignmentRecord)
+        if (assignmentsToRevert.length > 0) {
+          console.log(`Reverting ${assignmentsToRevert.length} assignments from completed load #${load.position}`)
 
-          // Update student account jump count if they have an account
-          if (loadAssignment.studentId) {
-            try {
-              await db.incrementStudentJumpCount(loadAssignment.studentId, loadAssignment.jumpType)
-            } catch (err) {
-              console.error(`Failed to update jump count for ${loadAssignment.studentId}:`, err)
+          for (const assignment of assignmentsToRevert) {
+            // Skip if already soft-deleted
+            if (assignment.isDeleted) continue
+
+            // Soft-delete the assignment
+            await db.softDeleteAssignment(assignment.id, 'load_reverted')
+
+            // Decrement student jump count if applicable
+            if (assignment.jumpType === 'tandem' || assignment.jumpType === 'aff') {
+              const loadAssignment = loadAssignments.find(la =>
+                la.studentName === assignment.studentName &&
+                la.instructorId === assignment.instructorId
+              )
+
+              if (loadAssignment?.studentId) {
+                await db.decrementStudentJumpCount(loadAssignment.studentId, assignment.jumpType)
+              }
             }
           }
 
-        } catch (error) {
-          console.error(`Failed to create assignment for ${loadAssignment.studentName}:`, error)
+          toast.success(`Reverted ${assignmentsToRevert.length} assignments`, 'Jump counts and payments have been reversed')
         }
+      } catch (error) {
+        console.error('Failed to revert assignments:', error)
+        toast.error('Failed to revert assignments', 'Load status will still be updated, but assignments may need manual cleanup')
+        // Continue with status change even if revert fails
+      }
+    }
+
+    // ==================== TRANSITIONING TO COMPLETED ====================
+    else if (statusChangeConfirm === 'completed' && load.status === 'departed') {
+      // ✅ BUG FIX: IDEMPOTENCY CHECK - Prevent duplicate assignment creation
+      try {
+        const existingAssignments = await db.getAssignmentsByLoadId(load.id)
+        const activeAssignments = existingAssignments.filter(a => !a.isDeleted)
+
+        if (activeAssignments.length > 0) {
+          console.warn(`Load #${load.position} already has ${activeAssignments.length} active assignments. Skipping duplicate creation.`)
+          toast.warning('Assignments already exist', 'This load was already completed. Skipping duplicate assignment creation.')
+          // Continue with status update but skip assignment creation
+        } else {
+          // Create assignment records for each student on the load
+          for (const loadAssignment of loadAssignments) {
+            try {
+              // Skip if no instructor assigned (shouldn't happen for departed loads, but check anyway)
+              if (!loadAssignment.instructorId) {
+                continue
+              }
+
+              const assignmentRecord: CreateAssignment = {
+                loadId: load.id,  // ✅ BUG FIX: Store loadId for future cleanup
+                instructorId: loadAssignment.instructorId,
+                instructorName: loadAssignment.instructorName || 'Unknown',
+                studentName: loadAssignment.studentName,
+                studentWeight: loadAssignment.studentWeight,
+                jumpType: loadAssignment.jumpType,
+                isRequest: loadAssignment.isRequest || false,
+                isMissedJump: false,
+                // Only include optional fields if they have values
+                ...(loadAssignment.tandemWeightTax && { tandemWeightTax: loadAssignment.tandemWeightTax }),
+                ...(loadAssignment.tandemHandcam && { tandemHandcam: loadAssignment.tandemHandcam }),
+                ...(loadAssignment.hasOutsideVideo && { hasOutsideVideo: loadAssignment.hasOutsideVideo }),
+                ...(loadAssignment.videoInstructorId && { videoInstructorId: loadAssignment.videoInstructorId }),
+                ...(loadAssignment.videoInstructorName && { videoInstructorName: loadAssignment.videoInstructorName }),
+                ...(loadAssignment.affLevel && { affLevel: loadAssignment.affLevel }),
+              }
+
+              await db.createAssignment(assignmentRecord)
+
+              // Update student account jump count if they have an account
+              if (loadAssignment.studentId) {
+                try {
+                  await db.incrementStudentJumpCount(loadAssignment.studentId, loadAssignment.jumpType)
+                } catch (err) {
+                  console.error(`Failed to update jump count for ${loadAssignment.studentId}:`, err)
+                }
+              }
+
+            } catch (error) {
+              console.error(`Failed to create assignment for ${loadAssignment.studentName}:`, error)
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check for existing assignments:', error)
+        toast.error('Failed to create assignments', 'Please check assignments manually')
       }
     }
     
