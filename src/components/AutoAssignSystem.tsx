@@ -3,7 +3,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { useQueue, useLoads, useActiveInstructors, useAssignments, useUpdateLoad } from '@/hooks/useDatabase'
+import { useQueue, useLoads, useActiveInstructors, useAssignments, useUpdateLoad, useSettings } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { getCurrentPeriod, calculateInstructorBalance } from '@/lib/utils'
 import { useToast } from '@/contexts/ToastContext'
@@ -36,9 +36,11 @@ export function AutoAssignSystem() {
   const { data: loads } = useLoads()
   const { data: instructors } = useActiveInstructors()
   const { data: assignments } = useAssignments()
+  const { data: appSettings } = useSettings()
   const { update } = useUpdateLoad()
-  
+
   const period = getCurrentPeriod()
+  const teamRotation = appSettings?.teamRotation || 'blue'
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const autoAssignTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
@@ -119,8 +121,8 @@ export function AutoAssignSystem() {
     
     // Sort by balance using centralized function
     qualified.sort((a, b) => {
-      const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period, loads)
-      const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period, loads)
+      const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period, loads, teamRotation)
+      const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period, loads, teamRotation)
       return balanceA - balanceB
     })
 
