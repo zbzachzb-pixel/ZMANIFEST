@@ -295,39 +295,56 @@ export function calculateInstructorTotalEarnings(
 
 /**
  * Get which team has Monday/Tuesday off this week
- * Even weeks: Blue team off
- * Odd weeks: Red team off
- * Gold team never has days off
  *
- * @returns The team that has Monday/Tuesday off this week ('blue' or 'red')
+ * ⚠️ DEPRECATED: This function uses automatic week-based rotation.
+ * The system now uses a manual toggle in Settings (teamRotation).
+ *
+ * This function is kept for backwards compatibility but should not be used.
+ * Instead, read the teamRotation setting from the database.
+ *
+ * @returns The team that has Monday/Tuesday off ('blue' or 'red')
+ * @deprecated Use settings.teamRotation instead
  *
  * @example
- * const teamOff = getCurrentWeekRotation(); // 'blue' or 'red'
+ * // OLD (deprecated):
+ * const teamOff = getCurrentWeekRotation();
+ *
+ * // NEW (correct):
+ * const { data: settings } = useSettings();
+ * const teamOff = settings?.teamRotation || 'blue';
  */
 export function getCurrentWeekRotation(): Team {
-  const now = new Date()
-  const start = new Date(now.getFullYear(), 0, 0)
-  const diff = now.getTime() - start.getTime()
-  const oneWeek = 1000 * 60 * 60 * 24 * 7
-  const weekNumber = Math.floor(diff / oneWeek)
-  
-  // Even weeks: Blue has Mon/Tue off
-  // Odd weeks: Red has Mon/Tue off
-  return weekNumber % 2 === 0 ? 'blue' : 'red'
+  // ✅ BUG FIX #1: Default to 'blue' instead of automatic calculation
+  // The actual rotation is now stored in settings.teamRotation
+  console.warn('getCurrentWeekRotation() is deprecated. Use settings.teamRotation instead.')
+  return 'blue'
 }
 
 /**
  * Get the weekly schedule showing which team is working/off
  *
+ * ⚠️ DEPRECATED: This function uses automatic week-based rotation.
+ * The system now uses a manual toggle stored in settings.teamRotation.
+ *
  * @returns Object with schedule strings for red and blue teams
+ * @deprecated Read settings.teamRotation and build schedule object manually
  *
  * @example
+ * // OLD (deprecated):
  * const schedule = getWeekSchedule();
- * console.log(schedule.blueTeam); // "Monday & Tuesday OFF" or "Working All Week"
+ *
+ * // NEW (correct):
+ * const { data: settings } = useSettings();
+ * const teamOff = settings?.teamRotation || 'blue';
+ * const schedule = {
+ *   redTeam: teamOff === 'red' ? 'Monday & Tuesday OFF' : 'Working All Week',
+ *   blueTeam: teamOff === 'blue' ? 'Monday & Tuesday OFF' : 'Working All Week'
+ * };
  */
 export function getWeekSchedule(): { redTeam: string, blueTeam: string } {
+  console.warn('getWeekSchedule() is deprecated. Use settings.teamRotation instead.')
   const teamOff = getCurrentWeekRotation()
-  
+
   if (teamOff === 'blue') {
     return {
       blueTeam: 'Monday & Tuesday OFF',

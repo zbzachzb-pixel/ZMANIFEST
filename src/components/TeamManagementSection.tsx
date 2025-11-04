@@ -2,18 +2,35 @@
 'use client'
 
 import React, { useState } from 'react'
-import { useInstructors } from '@/hooks/useDatabase'
+import { useInstructors, useSettings } from '@/hooks/useDatabase'
 import { db } from '@/services'
 import { useToast } from '@/contexts/ToastContext'
-import { getWeekSchedule } from '@/lib/utils'
 import type { Instructor, Team } from '@/types'
 
 export function TeamManagementSection() {
   const { data: instructors } = useInstructors()
+  const { data: settings } = useSettings()
   const toast = useToast()
   const [loading, setLoading] = useState(false)
-  
-  const schedule = getWeekSchedule()
+
+  // ✅ BUG FIX #1: Use manual team rotation setting instead of automatic week calculation
+  const teamOff = settings?.teamRotation || 'blue'
+  const schedule = {
+    redTeam: teamOff === 'red' ? 'Monday & Tuesday OFF' : 'Working All Week',
+    blueTeam: teamOff === 'blue' ? 'Monday & Tuesday OFF' : 'Working All Week'
+  }
+
+  // Toggle which team has days off
+  const handleToggleRotation = async () => {
+    const newTeamOff = teamOff === 'blue' ? 'red' : 'blue'
+    try {
+      await db.updateSettings({ teamRotation: newTeamOff })
+      toast.success(`Rotation updated`, `${newTeamOff === 'red' ? 'Red' : 'Blue'} team now has Mon/Tue off`)
+    } catch (error) {
+      console.error('Failed to update rotation:', error)
+      toast.error('Failed to update rotation', 'Please try again.')
+    }
+  }
 
   // Group instructors by team
   const teamRosters = {
@@ -57,12 +74,36 @@ export function TeamManagementSection() {
     }
   }
   
-  // ... rest of the component stays the same until the render section
-  
   return (
     <div className="space-y-6">
-      {/* ... existing schedule display code ... */}
-      
+      {/* ✅ BUG FIX #1: Team Rotation Toggle */}
+      <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-xl font-bold text-white mb-1">📅 Weekly Rotation Schedule</h3>
+            <p className="text-sm text-slate-400">
+              {teamOff === 'red' ? '🔴 Red' : '🔵 Blue'} team has Monday & Tuesday off this week
+            </p>
+          </div>
+          <button
+            onClick={handleToggleRotation}
+            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors flex items-center gap-2"
+          >
+            🔄 Toggle Rotation
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className={`p-3 rounded-lg ${teamOff === 'red' ? 'bg-red-500/20 border border-red-500/30' : 'bg-slate-700/50'}`}>
+            <div className="font-semibold text-white">🔴 Red Team</div>
+            <div className={teamOff === 'red' ? 'text-red-300' : 'text-slate-400'}>{schedule.redTeam}</div>
+          </div>
+          <div className={`p-3 rounded-lg ${teamOff === 'blue' ? 'bg-blue-500/20 border border-blue-500/30' : 'bg-slate-700/50'}`}>
+            <div className="font-semibold text-white">🔵 Blue Team</div>
+            <div className={teamOff === 'blue' ? 'text-blue-300' : 'text-slate-400'}>{schedule.blueTeam}</div>
+          </div>
+        </div>
+      </div>
+
       {/* Team Rosters */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Red Team */}
