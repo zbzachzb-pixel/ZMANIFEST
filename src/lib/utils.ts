@@ -73,32 +73,43 @@ function calculateProjectedPay(loadAssignment: LoadAssignment): number {
 
 /**
  * Check if instructor is working on their scheduled off day
- * Gold team has no off days. Blue/Red teams alternate Mon/Tue off each week.
+ * Gold team has no off days. Blue/Red teams can have Mon/Tue or Wed/Thu off.
  *
  * @param instructor - The instructor to check
  * @param date - The date to check
+ * @param teamOff - Which team has days off ('blue' or 'red', defaults to 'blue')
+ * @param daysOff - Which days are off ('mon-tue' or 'wed-thu', defaults to 'mon-tue')
  * @returns true if the instructor is working on their scheduled day off
  *
  * @example
- * const isOffDay = isWorkingOffDay(blueTeamInstructor, new Date('2025-01-06')); // Monday on blue week
+ * const isOffDay = isWorkingOffDay(blueTeamInstructor, new Date(), 'blue', 'mon-tue');
  */
-export function isWorkingOffDay(instructor: Instructor, date: Date): boolean {
+export function isWorkingOffDay(
+  instructor: Instructor,
+  date: Date,
+  teamOff: 'blue' | 'red' = 'blue',
+  daysOff: 'mon-tue' | 'wed-thu' = 'mon-tue'
+): boolean {
   // ✅ Gold team has no off days - always treated as working their schedule
   if (instructor.team === 'gold') {
     return false
   }
-  
+
   const dayOfWeek = date.getDay() // 0 = Sunday, 1 = Monday, etc.
-  
-  // Get current week's rotation
-  const teamOffDay = getCurrentWeekRotation()
-  
-  // Check if this instructor's team has this day off
-  if (instructor.team === teamOffDay && (dayOfWeek === 1 || dayOfWeek === 2)) {
-    return true
+
+  // Check if this instructor's team has days off
+  if (instructor.team !== teamOff) {
+    return false // Working their normal schedule
   }
-  
-  return false
+
+  // Check if today is one of their off days
+  if (daysOff === 'mon-tue') {
+    // Monday (1) or Tuesday (2)
+    return dayOfWeek === 1 || dayOfWeek === 2
+  } else {
+    // Wednesday (3) or Thursday (4)
+    return dayOfWeek === 3 || dayOfWeek === 4
+  }
 }
 
 /**
@@ -127,7 +138,9 @@ export function calculateInstructorBalance(
   assignments: Assignment[],
   instructors: Instructor[],
   period: Period,
-  allLoads: Load[] = []
+  allLoads: Load[] = [],
+  teamRotation: 'blue' | 'red' = 'blue',
+  daysOff: 'mon-tue' | 'wed-thu' = 'mon-tue'
 ): number {
   let total = 0
   
@@ -151,26 +164,26 @@ export function calculateInstructorBalance(
     // Main instructor assignment
     if (assignment.instructorId === instructorId && !assignment.isMissedJump) {
       let pay = calculateAssignmentPay(assignment)
-      
+
       // Apply off-day multiplier for balance fairness
-      if (isWorkingOffDay(instructor, assignmentDate)) {
+      if (isWorkingOffDay(instructor, assignmentDate, teamRotation, daysOff)) {
         pay = Math.round(pay * PAY_RATES.OFF_DAY_MULTIPLIER)
       }
-      
+
       total += pay
     }
-    
+
     // ✅ FIXED: Video instructor assignment - treated exactly like main instructor
     // Video instructors get balance credit when assigned (unless missed jump)
     // No hasOutsideVideo check - if they're assigned as videoInstructorId, they get credit
     if (assignment.videoInstructorId === instructorId && !assignment.isMissedJump) {
       let videoPay: number = PAY_RATES.VIDEO_INSTRUCTOR  // $45
-      
+
       // Apply off-day multiplier if working on scheduled off day
-      if (isWorkingOffDay(instructor, assignmentDate)) {
+      if (isWorkingOffDay(instructor, assignmentDate, teamRotation, daysOff)) {
         videoPay = Math.round(videoPay * PAY_RATES.OFF_DAY_MULTIPLIER)
       }
-      
+
       total += videoPay
     }
   }
@@ -191,7 +204,7 @@ export function calculateInstructorBalance(
         let projectedPay = calculateProjectedPay(loadAssignment)
 
         // Apply off-day multiplier for balance fairness
-        if (isWorkingOffDay(instructor, new Date())) {
+        if (isWorkingOffDay(instructor, new Date(), teamRotation, daysOff)) {
           projectedPay = Math.round(projectedPay * PAY_RATES.OFF_DAY_MULTIPLIER)
         }
 
@@ -203,7 +216,7 @@ export function calculateInstructorBalance(
         let videoPay: number = PAY_RATES.VIDEO_INSTRUCTOR
 
         // Apply off-day multiplier if working on scheduled off day
-        if (isWorkingOffDay(instructor, new Date())) {
+        if (isWorkingOffDay(instructor, new Date(), teamRotation, daysOff)) {
           videoPay = Math.round(videoPay * PAY_RATES.OFF_DAY_MULTIPLIER)
         }
 

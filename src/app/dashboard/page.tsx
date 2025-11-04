@@ -9,7 +9,7 @@
 
 import React, { useState, useMemo } from 'react'
 import dynamic from 'next/dynamic'
-import { useCurrentPeriodAssignments, useActiveLoads } from '@/hooks/useDatabase'
+import { useCurrentPeriodAssignments, useActiveLoads, useSettings } from '@/hooks/useDatabase'
 import { useApp } from '@/contexts/AppContext'
 import { useToast } from '@/contexts/ToastContext'
 import { InstructorCard } from '@/components/InstructorCard'
@@ -33,6 +33,7 @@ function DashboardPageContent() {
   // ✅ OPTIMIZED: Only fetch current period assignments and active loads
   const { data: assignments, loading: assignmentsLoading } = useCurrentPeriodAssignments()
   const { data: loads } = useActiveLoads(7)
+  const { data: settings } = useSettings()
   const toast = useToast()
   
   const [selectedInstructor, setSelectedInstructor] = useState<Instructor | null>(null)
@@ -54,7 +55,9 @@ function DashboardPageContent() {
         assignments,
         instructors,
         period,
-        loads
+        loads,
+        settings?.teamRotation || 'blue',
+        settings?.daysOff || 'mon-tue'
       )
       
       // Total earnings (actual pay) - NO multiplier
@@ -99,7 +102,7 @@ function DashboardPageContent() {
         jumpCount
       }
     })
-  }, [instructors, assignments, period, loads])
+  }, [instructors, assignments, period, loads, settings])
   
   const handleAddJump = (instructor: Instructor) => {
     setSelectedInstructor(instructor)

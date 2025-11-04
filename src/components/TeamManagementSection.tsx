@@ -13,19 +13,43 @@ export function TeamManagementSection() {
   const toast = useToast()
   const [loading, setLoading] = useState(false)
 
-  // ✅ BUG FIX #1: Use manual team rotation setting instead of automatic week calculation
+  // ✅ BUG FIX #1: Use manual team rotation setting with flexible days
   const teamOff = settings?.teamRotation || 'blue'
+  const daysOff = settings?.daysOff || 'mon-tue'
+
+  const daysOffLabel = daysOff === 'mon-tue' ? 'Monday & Tuesday OFF' : 'Wednesday & Thursday OFF'
   const schedule = {
-    redTeam: teamOff === 'red' ? 'Monday & Tuesday OFF' : 'Working All Week',
-    blueTeam: teamOff === 'blue' ? 'Monday & Tuesday OFF' : 'Working All Week'
+    redTeam: teamOff === 'red' ? daysOffLabel : 'Working All Week',
+    blueTeam: teamOff === 'blue' ? daysOffLabel : 'Working All Week'
   }
 
-  // Toggle which team has days off
+  // Toggle rotation: cycles through all combinations
+  // Blue Mon/Tue → Blue Wed/Thu → Red Mon/Tue → Red Wed/Thu → Blue Mon/Tue
   const handleToggleRotation = async () => {
-    const newTeamOff = teamOff === 'blue' ? 'red' : 'blue'
+    let newTeamOff = teamOff
+    let newDaysOff = daysOff
+
+    if (teamOff === 'blue' && daysOff === 'mon-tue') {
+      // Blue Mon/Tue → Blue Wed/Thu
+      newDaysOff = 'wed-thu'
+    } else if (teamOff === 'blue' && daysOff === 'wed-thu') {
+      // Blue Wed/Thu → Red Mon/Tue
+      newTeamOff = 'red'
+      newDaysOff = 'mon-tue'
+    } else if (teamOff === 'red' && daysOff === 'mon-tue') {
+      // Red Mon/Tue → Red Wed/Thu
+      newDaysOff = 'wed-thu'
+    } else if (teamOff === 'red' && daysOff === 'wed-thu') {
+      // Red Wed/Thu → Blue Mon/Tue
+      newTeamOff = 'blue'
+      newDaysOff = 'mon-tue'
+    }
+
     try {
-      await db.updateSettings({ teamRotation: newTeamOff })
-      toast.success(`Rotation updated`, `${newTeamOff === 'red' ? 'Red' : 'Blue'} team now has Mon/Tue off`)
+      await db.updateSettings({ teamRotation: newTeamOff, daysOff: newDaysOff })
+      const teamName = newTeamOff === 'red' ? 'Red' : 'Blue'
+      const days = newDaysOff === 'mon-tue' ? 'Mon/Tue' : 'Wed/Thu'
+      toast.success(`Rotation updated`, `${teamName} team now has ${days} off`)
     } catch (error) {
       console.error('Failed to update rotation:', error)
       toast.error('Failed to update rotation', 'Please try again.')
@@ -76,13 +100,13 @@ export function TeamManagementSection() {
   
   return (
     <div className="space-y-6">
-      {/* ✅ BUG FIX #1: Team Rotation Toggle */}
+      {/* ✅ BUG FIX #1: Team Rotation Toggle with Flexible Days */}
       <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-6 border border-white/20">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-xl font-bold text-white mb-1">📅 Weekly Rotation Schedule</h3>
             <p className="text-sm text-slate-400">
-              {teamOff === 'red' ? '🔴 Red' : '🔵 Blue'} team has Monday & Tuesday off this week
+              {teamOff === 'red' ? '🔴 Red' : '🔵 Blue'} team has {daysOff === 'mon-tue' ? 'Monday & Tuesday' : 'Wednesday & Thursday'} off this week
             </p>
           </div>
           <button
@@ -95,11 +119,11 @@ export function TeamManagementSection() {
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div className={`p-3 rounded-lg ${teamOff === 'red' ? 'bg-red-500/20 border border-red-500/30' : 'bg-slate-700/50'}`}>
             <div className="font-semibold text-white">🔴 Red Team</div>
-            <div className={teamOff === 'red' ? 'text-red-300' : 'text-slate-400'}>{schedule.redTeam}</div>
+            <div className={teamOff === 'red' ? 'text-red-300 font-semibold' : 'text-slate-400'}>{schedule.redTeam}</div>
           </div>
           <div className={`p-3 rounded-lg ${teamOff === 'blue' ? 'bg-blue-500/20 border border-blue-500/30' : 'bg-slate-700/50'}`}>
             <div className="font-semibold text-white">🔵 Blue Team</div>
-            <div className={teamOff === 'blue' ? 'text-blue-300' : 'text-slate-400'}>{schedule.blueTeam}</div>
+            <div className={teamOff === 'blue' ? 'text-blue-300 font-semibold' : 'text-slate-400'}>{schedule.blueTeam}</div>
           </div>
         </div>
       </div>
