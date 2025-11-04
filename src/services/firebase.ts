@@ -650,7 +650,12 @@ export class FirebaseService implements DatabaseService {
     const rootRef = ref(this.db)
     await update(rootRef, updates)
   }
-  
+
+  async clearQueue(): Promise<void> {
+    const queueRef = ref(this.db, 'queue')
+    await set(queueRef, null)
+  }
+
   async updateQueueStudent(id: string, updates: Partial<QueueStudent>): Promise<void> {
     const studentRef = ref(this.db, `queue/${id}`)
     const cleanedUpdates = this.cleanData(updates)

@@ -325,11 +325,22 @@ function LoadBuilderPageContent() {
       const targetAircraft = aircraft.find(a => a.id === targetAircraftId)
       const defaultCapacity = targetAircraft?.capacity || loadSettings.defaultPlaneCapacity || 18
 
-      // Calculate load number per aircraft (each aircraft has independent load numbering)
-      const aircraftLoads = loads.filter(l => l.aircraftId === targetAircraftId)
+      // ✅ TEST MODE: Use test date when in test mode, current date otherwise
+      const operatingDate = isTestMode
+        ? testDate.toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0]
+
+      // ✅ DATE-SCOPED: Calculate load number per aircraft AND date (independent numbering per aircraft per day)
+      const aircraftLoads = loads.filter(l => {
+        if (l.aircraftId !== targetAircraftId) return false
+
+        // For backward compatibility: if load has no operatingDate, use createdAt date
+        const loadDate = l.operatingDate || l.createdAt.split('T')[0]
+        return loadDate === operatingDate
+      })
       const loadNumber = aircraftLoads.length + 1
 
-      // Position is also per-aircraft (so each aircraft has loads 1, 2, 3, etc.)
+      // ✅ DATE-SCOPED: Position is also per-aircraft per-day (so each aircraft has loads 1, 2, 3, etc. each day)
       const nextPosition = Math.max(0, ...aircraftLoads.map(l => l.position || 0)) + 1
 
       // ✅ Use undoable action
@@ -339,7 +350,9 @@ function LoadBuilderPageContent() {
         capacity: defaultCapacity,
         aircraftId: targetAircraftId,
         assignments: [],
-        position: nextPosition
+        position: nextPosition,
+        operatingDate,
+        ...(isTestMode && { isTestMode: true })
       }, addAction)
 
       toast.success('Load created')
@@ -363,6 +376,50 @@ function LoadBuilderPageContent() {
       toast.error('Failed to delay load')
     }
   }, [loads, addAction, toast])
+
+  // ✅ TEST MODE: Handle advancing to next day in test mode
+  const handleNextDay = async () => {
+    try {
+      const currentDateStr = testDate.toISOString().split('T')[0]
+
+      // 1. Delete test loads for current date
+      const testLoadsToDelete = loads.filter(
+        l => l.isTestMode && (l.operatingDate || l.createdAt.split('T')[0]) === currentDateStr
+      )
+
+      for (const load of testLoadsToDelete) {
+        await db.deleteLoad(load.id)
+      }
+
+      // 2. Clear queue
+      await db.clearQueue()
+
+      // 3. Clock out all instructors
+      for (const instructor of instructors) {
+        if (instructor.clockedIn) {
+          await db.updateInstructor(instructor.id, { clockedIn: false, clockInTime: null })
+        }
+      }
+
+      // 4. Advance to next day
+      const nextDate = new Date(testDate)
+      nextDate.setDate(nextDate.getDate() + 1)
+      setTestDate(nextDate)
+
+      // 5. Show success message
+      toast.success(
+        'Advanced to next day',
+        nextDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+      )
+
+      console.log(`🧪 Test mode: Advanced from ${currentDateStr} to ${nextDate.toISOString().split('T')[0]}`)
+      console.log(`   Deleted ${testLoadsToDelete.length} test loads, cleared queue, clocked out ${instructors.filter(i => i.clockedIn).length} instructors`)
+      console.log(`   Test assignments retained: ${testAssignments.length}`)
+    } catch (error) {
+      console.error('Failed to advance to next day:', error)
+      toast.error('Failed to advance day', 'Please try again')
+    }
+  }
 
   // ✅ OPTIMIZED: Memoized with useCallback
   const handleDragStart = useCallback((type: 'student' | 'assignment' | 'group', id: string, sourceLoadId?: string) => {
@@ -904,12 +961,7 @@ function LoadBuilderPageContent() {
 
                   {/* Next Day Button */}
                   <button
-                    onClick={() => {
-                      const nextDate = new Date(testDate)
-                      nextDate.setDate(nextDate.getDate() + 1)
-                      setTestDate(nextDate)
-                      toast.success('Advanced to next day', nextDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }))
-                    }}
+                    onClick={handleNextDay}
                     className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-1.5 px-3 rounded text-sm transition-colors"
                   >
                     Next Day →

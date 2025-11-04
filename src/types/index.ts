@@ -219,6 +219,8 @@ export interface Load {
   delayMinutes?: number
   countdownStartTime?: string     // Timer start time for countdown
   plannedDepartureTime?: string   // Calculated departure time for cancellation time-lock
+  operatingDate?: string          // Date this load operates (ISO date string, e.g., "2025-10-01"). Falls back to createdAt date for backward compatibility
+  isTestMode?: boolean            // Flag for test mode loads (for filtering/cleanup)
 }
 
 export type CreateLoad = Omit<Load, 'id' | 'createdAt'>
