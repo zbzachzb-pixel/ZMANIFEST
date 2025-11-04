@@ -636,15 +636,10 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
       }
     }
     
-    // ==================== TRANSITIONING TO DEPARTED ====================
-    else if (statusChangeConfirm === 'departed') {
-      // Keep the countdown (for history/tracking purposes)
-      // No cascade needed - subsequent loads already have their offsets
-    }
-    
     // ==================== TRANSITIONING FROM COMPLETED (REVERT) ====================
-    else if (load.status === 'completed' && (statusChangeConfirm === 'departed' || statusChangeConfirm === 'building')) {
-      // ✅ BUG FIX: Revert completed assignments - soft-delete and decrement jump counts
+    // ✅ BUG FIX: Check this BEFORE general departed transition to handle completed→departed revert
+    else if (load.status === 'completed' && statusChangeConfirm !== 'completed') {
+      // Reverting from completed to any other status (departed or building)
       try {
         const assignmentsToRevert = await db.getAssignmentsByLoadId(load.id)
 
@@ -678,6 +673,12 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
         toast.error('Failed to revert assignments', 'Load status will still be updated, but assignments may need manual cleanup')
         // Continue with status change even if revert fails
       }
+    }
+
+    // ==================== TRANSITIONING TO DEPARTED ====================
+    else if (statusChangeConfirm === 'departed') {
+      // Keep the countdown (for history/tracking purposes)
+      // No cascade needed - subsequent loads already have their offsets
     }
 
     // ==================== TRANSITIONING TO COMPLETED ====================
