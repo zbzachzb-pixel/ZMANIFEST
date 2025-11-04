@@ -66,7 +66,7 @@ function LoadBuilderPageContent() {
   const [isTestMode, setIsTestMode] = useState(false)
   const [testDate, setTestDate] = useState(() => {
     // Parse as local date to avoid timezone issues
-    const [year, month, day] = '2025-10-01'.split('-').map(Number)
+    const [year, month, day] = '2025-10-01'.split('-').map(Number) as [number, number, number]
     return new Date(year, month - 1, day) // month is 0-indexed
   })
   const [testAssignments, setTestAssignments] = useState<Assignment[]>([])
@@ -80,7 +80,7 @@ function LoadBuilderPageContent() {
   }
 
   const parseLocalDate = (dateStr: string): Date => {
-    const [year, month, day] = dateStr.split('-').map(Number)
+    const [year, month, day] = dateStr.split('-').map(Number) as [number, number, number]
     return new Date(year, month - 1, day)
   }
 
