@@ -208,6 +208,7 @@ export interface Load {
   id: string
   name?: string
   position: number
+  sortOrder?: number              // For building load ordering (prevents position changes on ready/departed loads)
   aircraftId?: string             // ✅ ADDED: Reference to aircraft
   capacity?: number               // Override aircraft default capacity
   status: 'building' | 'ready' | 'departed' | 'completed'

@@ -361,6 +361,13 @@ function LoadBuilderPageContent() {
       // ✅ DATE-SCOPED: Position is also per-aircraft per-day (so each aircraft has loads 1, 2, 3, etc. each day)
       const nextPosition = Math.max(0, ...aircraftLoads.map(l => l.position || 0)) + 1
 
+      // ✅ SORT ORDER: Calculate next sortOrder for building loads (increments of 1000 allow future insertions)
+      const buildingLoads = aircraftLoads.filter(l => l.status === 'building')
+      const nextSortOrder = Math.max(
+        0,
+        ...buildingLoads.map(l => l.sortOrder ?? l.position * 1000)
+      ) + 1000
+
       // ✅ Use undoable action
       await createLoadUndoable({
         name: `Load ${loadNumber}`,
@@ -369,6 +376,7 @@ function LoadBuilderPageContent() {
         aircraftId: targetAircraftId,
         assignments: [],
         position: nextPosition,
+        sortOrder: nextSortOrder,
         operatingDate,
         ...(isTestMode && { isTestMode: true })
       }, addAction)
@@ -807,12 +815,25 @@ function LoadBuilderPageContent() {
     const load = loads.find(l => l.id === selectedLoadId)
     if (!load) return
 
-    if (load.status === 'completed') {
-      toast.warning('Cannot delete completed load', 'Completed loads should not be deleted.')
+    // ✅ SAFETY: Only allow deleting building loads (prevents timer/availability issues)
+    if (load.status !== 'building') {
+      toast.error(
+        'Cannot delete non-building load',
+        `This load is ${load.status}. Only building loads can be deleted to preserve timers and instructor availability.`
+      )
       return
     }
 
-    if (!confirm(`Delete "${load.name}"? This can be undone with Ctrl+Z.`)) {
+    // ✅ SAFETY: Only allow deleting empty loads (no student assignments)
+    if (load.assignments && load.assignments.length > 0) {
+      toast.error(
+        'Cannot delete load with students',
+        'Remove all students from this load first.'
+      )
+      return
+    }
+
+    if (!confirm(`Delete "${load.name}"? Building loads will renumber automatically. This can be undone with Ctrl+Z.`)) {
       return
     }
 
@@ -820,6 +841,7 @@ function LoadBuilderPageContent() {
       // ✅ Use undoable action
       await deleteLoadUndoable(load, addAction)
       setSelectedLoadId(null)
+      toast.success('Load deleted', 'Building loads have been renumbered.')
     } catch (error) {
       console.error('Failed to delete load:', error)
       toast.error('Failed to delete load')

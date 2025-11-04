@@ -436,10 +436,47 @@ export function useLoads() {
 }
 
 // ✅ OPTIMIZED: Only fetches active loads (excludes old completed loads)
+// ✅ POSITION COMPUTATION: Renumbers building loads automatically
 export function useActiveLoads(daysToKeep: number = 7) {
-  return useRealtimeData<Load>((callback) =>
-    db.subscribeToActiveLoads(daysToKeep, callback)
-  )
+  const [data, setData] = useState<Load[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    setError(null)
+
+    try {
+      const unsubscribe = db.subscribeToActiveLoads(daysToKeep, (loads) => {
+        if (mounted) {
+          // ✅ Apply position computation for building loads
+          const { computeBuildingLoadPositions } = require('@/lib/loadUtils')
+          const loadsWithComputedPositions = computeBuildingLoadPositions(loads)
+
+          setData(loadsWithComputedPositions)
+          setLoading(false)
+        }
+      })
+
+      return () => {
+        mounted = false
+        unsubscribe()
+      }
+    } catch (err) {
+      if (mounted) {
+        setError(err as Error)
+        setLoading(false)
+      }
+    }
+  }, [daysToKeep, refreshKey])
+
+  const refresh = useCallback(() => {
+    setRefreshKey(prev => prev + 1)
+  }, [])
+
+  return { data, loading, error, refresh }
 }
 
 export function useLoadsByStatus(status: Load['status']) {

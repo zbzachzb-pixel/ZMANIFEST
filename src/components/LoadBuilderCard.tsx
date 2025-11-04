@@ -864,18 +864,32 @@ const handleChangeCall = async () => {
   
   // ==================== DELETE ====================
   const handleDelete = async () => {
+    // ✅ SAFETY: Only allow deleting building loads (prevents timer/availability issues)
+    if (load.status !== 'building') {
+      toast.error(
+        'Cannot delete non-building load',
+        `This load is ${load.status}. Only building loads can be deleted to preserve timers and instructor availability.`
+      )
+      setShowDeleteConfirm(false)
+      return
+    }
+
+    // ✅ SAFETY: Only allow deleting empty loads (no student assignments)
+    if (loadAssignments.length > 0) {
+      toast.error(
+        'Cannot delete load with students',
+        'Remove all students from this load first.'
+      )
+      setShowDeleteConfirm(false)
+      return
+    }
+
     if (!showDeleteConfirm) {
       setShowDeleteConfirm(true)
       return
     }
-    
+
     try {
-      if (isCompleted) {
-        if (!confirm('⚠️ WARNING: This load is COMPLETED.\n\nDeleting it will:\n• Remove all completion records\n• Affect instructor stats and earnings\n• Cannot be undone\n\nAre you absolutely sure you want to delete it?')) {
-          setShowDeleteConfirm(false)
-          return
-        }
-      }
       
       const currentQueue = await db.getQueue()
 
