@@ -69,8 +69,9 @@ function DashboardPageContent() {
       today.setHours(0, 0, 0, 0)
       const todaysAssignments = assignments.filter(a => {
         const assignmentDate = new Date(a.timestamp)
-        return assignmentDate >= today && 
-               (a.instructorId === instructor.id || a.videoInstructorId === instructor.id)
+        return assignmentDate >= today &&
+               (a.instructorId === instructor.id || a.videoInstructorId === instructor.id) &&
+               !a.isDeleted  // ✅ BUG FIX: Exclude soft-deleted assignments from today's earnings
       })
       
       const todayEarnings = todaysAssignments.reduce((sum, a) => {
@@ -85,8 +86,9 @@ function DashboardPageContent() {
       }, 0)
       
       // Jump count
-      const jumpCount = assignments.filter(a => 
-        a.instructorId === instructor.id || a.videoInstructorId === instructor.id
+      const jumpCount = assignments.filter(a =>
+        (a.instructorId === instructor.id || a.videoInstructorId === instructor.id) &&
+        !a.isDeleted  // ✅ BUG FIX: Exclude soft-deleted assignments from jump count
       ).length
       
       return {
