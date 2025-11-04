@@ -64,8 +64,25 @@ function LoadBuilderPageContent() {
 
   // ✅ TEST MODE: Simulation state for historical data validation
   const [isTestMode, setIsTestMode] = useState(false)
-  const [testDate, setTestDate] = useState(new Date('2025-10-01')) // Oct 1, 2025 - Wednesday
+  const [testDate, setTestDate] = useState(() => {
+    // Parse as local date to avoid timezone issues
+    const [year, month, day] = '2025-10-01'.split('-').map(Number)
+    return new Date(year, month - 1, day) // month is 0-indexed
+  })
   const [testAssignments, setTestAssignments] = useState<Assignment[]>([])
+
+  // ✅ UTILITY: Local date formatting helpers (avoid timezone bugs)
+  const formatLocalDate = (date: Date): string => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const parseLocalDate = (dateStr: string): Date => {
+    const [year, month, day] = dateStr.split('-').map(Number)
+    return new Date(year, month - 1, day)
+  }
 
   // ============================================
   // EFFECTS - ALWAYS IN SAME ORDER
@@ -326,9 +343,10 @@ function LoadBuilderPageContent() {
       const defaultCapacity = targetAircraft?.capacity || loadSettings.defaultPlaneCapacity || 18
 
       // ✅ TEST MODE: Use test date when in test mode, current date otherwise
+      // Use formatLocalDate to avoid timezone bugs
       const operatingDate = isTestMode
-        ? testDate.toISOString().split('T')[0]
-        : new Date().toISOString().split('T')[0]
+        ? formatLocalDate(testDate)
+        : formatLocalDate(new Date())
 
       // ✅ DATE-SCOPED: Calculate load number per aircraft AND date (independent numbering per aircraft per day)
       const aircraftLoads = loads.filter(l => {
@@ -380,7 +398,7 @@ function LoadBuilderPageContent() {
   // ✅ TEST MODE: Handle advancing to next day in test mode
   const handleNextDay = async () => {
     try {
-      const currentDateStr = testDate.toISOString().split('T')[0]
+      const currentDateStr = formatLocalDate(testDate)
 
       // 1. Delete test loads for current date
       const testLoadsToDelete = loads.filter(
@@ -412,7 +430,7 @@ function LoadBuilderPageContent() {
         nextDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
       )
 
-      console.log(`🧪 Test mode: Advanced from ${currentDateStr} to ${nextDate.toISOString().split('T')[0]}`)
+      console.log(`🧪 Test mode: Advanced from ${currentDateStr} to ${formatLocalDate(nextDate)}`)
       console.log(`   Deleted ${testLoadsToDelete.length} test loads, cleared queue, clocked out ${instructors.filter(i => i.clockedIn).length} instructors`)
       console.log(`   Test assignments retained: ${testAssignments.length}`)
     } catch (error) {
@@ -950,8 +968,8 @@ function LoadBuilderPageContent() {
                     <span className="text-sm text-slate-300">Date:</span>
                     <input
                       type="date"
-                      value={testDate.toISOString().split('T')[0]}
-                      onChange={(e) => setTestDate(new Date(e.target.value))}
+                      value={formatLocalDate(testDate)}
+                      onChange={(e) => setTestDate(parseLocalDate(e.target.value))}
                       className="bg-slate-700 border border-slate-600 text-white text-sm rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
                     <span className="text-sm font-semibold text-white">
