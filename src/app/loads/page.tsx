@@ -400,10 +400,12 @@ function LoadBuilderPageContent() {
     try {
       const currentDateStr = formatLocalDate(testDate)
 
-      // 1. Delete test loads for current date
-      const testLoadsToDelete = loads.filter(
-        l => l.isTestMode && (l.operatingDate || l.createdAt.split('T')[0]) === currentDateStr
-      )
+      // 1. Delete loads for current test date (handles both old and new loads)
+      // When in test mode, we delete by date match regardless of isTestMode flag
+      const testLoadsToDelete = loads.filter(l => {
+        const loadDate = l.operatingDate || l.createdAt.split('T')[0]
+        return loadDate === currentDateStr
+      })
 
       for (const load of testLoadsToDelete) {
         await db.deleteLoad(load.id)
