@@ -56,8 +56,7 @@ function DashboardPageContent() {
         instructors,
         period,
         loads,
-        settings?.teamRotation || 'blue',
-        settings?.daysOff || 'mon-tue'
+        settings?.teamRotation || 'blue'
       )
       
       // Total earnings (actual pay) - NO multiplier

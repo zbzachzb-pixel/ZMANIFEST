@@ -273,8 +273,7 @@ export interface AppSettings {
   darkMode: boolean
   autoAssign: AutoAssignSettings
   loadScheduling: LoadSchedulingSettings
-  teamRotation?: 'blue' | 'red'  // ✅ Which team has days off
-  daysOff?: 'mon-tue' | 'wed-thu'  // ✅ Which days are off (Mon/Tue or Wed/Thu)
+  teamRotation?: 'blue' | 'red'  // ✅ Which team gets Mon/Tue (other gets Wed/Thu)
 }
 
 // Default settings
@@ -292,8 +291,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     instructorCycleTime: 40,
     defaultPlaneCapacity: 18
   },
-  teamRotation: 'blue',  // ✅ Default: Blue team has days off
-  daysOff: 'mon-tue'  // ✅ Default: Monday/Tuesday off
+  teamRotation: 'blue'  // ✅ Default: Blue gets Mon/Tue, Red gets Wed/Thu
 }
 
 // ==================== DATABASE STATE ====================
