@@ -44,7 +44,7 @@ export function computeBuildingLoadPositions(loads: Load[]): Load[] {
   // Renumber building loads per aircraft
   const renumberedBuilding: Load[] = []
 
-  for (const [aircraftId, aircraftLoads] of loadsByAircraft) {
+  for (const [_aircraftId, aircraftLoads] of loadsByAircraft) {
     // Sort by sortOrder (if available) or fallback to position
     const sorted = aircraftLoads.sort((a, b) => {
       const sortA = a.sortOrder ?? a.position
