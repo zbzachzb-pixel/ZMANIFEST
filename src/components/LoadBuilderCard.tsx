@@ -890,7 +890,8 @@ const handleChangeCall = async () => {
     }
 
     try {
-      
+      // ✅ SAFETY: Since we only allow deleting building loads, they should have no assignments
+      // This code is kept for backward compatibility in case deletion happens another way
       const currentQueue = await db.getQueue()
 
       for (const assignment of loadAssignments) {
@@ -924,28 +925,7 @@ const handleChangeCall = async () => {
         }
       }
 
-      // Cascade timers to subsequent loads (on same aircraft only) before deleting
-      if (load.status === 'ready' && load.countdownStartTime) {
-        const subsequentLoads = allLoads
-          .filter(l =>
-            l.status === 'ready' &&
-            l.aircraftId === load.aircraftId &&
-            (l.position || 0) > (load.position || 0) &&
-            l.countdownStartTime
-          )
-          .sort((a, b) => (a.position || 0) - (b.position || 0))
-
-        for (const subsequentLoad of subsequentLoads) {
-          if (subsequentLoad.countdownStartTime) {
-            const currentStartTime = new Date(subsequentLoad.countdownStartTime).getTime()
-            const adjustedStartTime = new Date(currentStartTime - (loadSchedulingSettings.minutesBetweenLoads * 60 * 1000))
-
-            await update(subsequentLoad.id, {
-              countdownStartTime: adjustedStartTime.toISOString()
-            } as any)
-          }
-        }
-      }
+      // ✅ REMOVED: Timer cascade code (only building loads can be deleted, no timers to cascade)
 
       await deleteLoad(load.id)
       setShowDeleteConfirm(false)
