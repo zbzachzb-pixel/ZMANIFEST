@@ -445,11 +445,13 @@ export function useActiveLoads(daysToKeep: number = 7) {
 
   useEffect(() => {
     let mounted = true
+    let unsubscribe: (() => void) | undefined
+
     setLoading(true)
     setError(null)
 
     try {
-      const unsubscribe = db.subscribeToActiveLoads(daysToKeep, (loads) => {
+      unsubscribe = db.subscribeToActiveLoads(daysToKeep, (loads) => {
         if (mounted) {
           // ✅ Apply position computation for building loads
           const { computeBuildingLoadPositions } = require('@/lib/loadUtils')
@@ -459,15 +461,18 @@ export function useActiveLoads(daysToKeep: number = 7) {
           setLoading(false)
         }
       })
-
-      return () => {
-        mounted = false
-        unsubscribe()
-      }
     } catch (err) {
       if (mounted) {
         setError(err as Error)
         setLoading(false)
+      }
+    }
+
+    // Always return cleanup function
+    return () => {
+      mounted = false
+      if (unsubscribe) {
+        unsubscribe()
       }
     }
   }, [daysToKeep, refreshKey])
