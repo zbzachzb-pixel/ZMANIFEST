@@ -63,7 +63,8 @@ export function getSuggestedInstructors(
   targetLoad: Load,
   allLoads: Load[],
   loadSettings: LoadSchedulingSettings,
-  ignoreClockStatus = false
+  ignoreClockStatus = false,
+  teamRotation: 'blue' | 'red' = 'blue'
 ): SuggestedInstructors {
   const period = getCurrentPeriod()
   const needsVideo = student.jumpType === 'tandem' && (student.outsideVideo === true)
@@ -93,15 +94,15 @@ export function getSuggestedInstructors(
   // Sort by balance (lowest first)
   qualified.sort((a, b) => {
   // Priority 1: Not working on off day
-  const aIsOff = isWorkingOffDay(a, new Date())
-  const bIsOff = isWorkingOffDay(b, new Date())
+  const aIsOff = isWorkingOffDay(a, new Date(), teamRotation)
+  const bIsOff = isWorkingOffDay(b, new Date(), teamRotation)
   if (aIsOff !== bIsOff) return aIsOff ? 1 : -1
-  
+
   // Priority 2: Balance (lowest first)
-  const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period, allLoads)
-  const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period, allLoads)
+  const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period, allLoads, teamRotation)
+  const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period, allLoads, teamRotation)
   if (balanceA !== balanceB) return balanceA - balanceB
-  
+
   // Priority 3: Clock-in time (earliest first)
   const timeA = a.clockInTime ? new Date(a.clockInTime).getTime() : 0
   const timeB = b.clockInTime ? new Date(b.clockInTime).getTime() : 0
@@ -154,8 +155,8 @@ export function getSuggestedInstructors(
 
     if (qualifiedVideo.length > 0) {
       qualifiedVideo.sort((a, b) => {
-        const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period, allLoads)
-        const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period, allLoads)
+        const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period, allLoads, teamRotation)
+        const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period, allLoads, teamRotation)
         return balanceA - balanceB
       })
       videoInstructor = qualifiedVideo[0] || null
