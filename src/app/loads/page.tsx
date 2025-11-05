@@ -241,8 +241,18 @@ function LoadBuilderPageContent() {
 
   // ✅ OPTIMIZED: Single-pass load filtering and counting, grouped by aircraft
   const { filteredLoads, loadCounts, loadsByAircraft } = useMemo(() => {
+    // ✅ TEST MODE: Filter test loads by operating date (current test day only)
+    let loadsForCurrentDay = loads
+    if (isTestMode) {
+      const currentDateStr = formatLocalDate(testDate)
+      loadsForCurrentDay = loads.filter(load => {
+        const loadDate = load.operatingDate || load.createdAt.split('T')[0]
+        return loadDate === currentDateStr
+      })
+    }
+
     const counts = {
-      all: loads.length,
+      all: loadsForCurrentDay.length,
       building: 0,
       ready: 0,
       departed: 0,
@@ -250,14 +260,14 @@ function LoadBuilderPageContent() {
     }
 
     // Count all statuses in single pass
-    loads.forEach(load => {
+    loadsForCurrentDay.forEach(load => {
       counts[load.status]++
     })
 
     // Filter if needed
     const filtered = statusFilter === 'all'
-      ? loads
-      : loads.filter(load => load.status === statusFilter)
+      ? loadsForCurrentDay
+      : loadsForCurrentDay.filter(load => load.status === statusFilter)
 
     // Group by aircraft
     const byAircraft = new Map<string, Load[]>()
@@ -292,7 +302,7 @@ function LoadBuilderPageContent() {
     })
 
     return { filteredLoads: filtered, loadCounts: counts, loadsByAircraft: byAircraft }
-  }, [loads, statusFilter, activeAircraft])
+  }, [loads, statusFilter, activeAircraft, isTestMode, testDate])
 
   // ============================================
   // Group weight validation function

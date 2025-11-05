@@ -507,6 +507,9 @@ export class FirebaseService implements DatabaseService {
       // Filter client-side: include non-completed OR recently completed loads
       const loads: Load[] = Object.values(data)
       const activeLoads = loads.filter(load => {
+        // ✅ TEST MODE: Always include test mode loads (regardless of completion status)
+        if (load.isTestMode) return true
+
         if (load.status !== 'completed') return true // Keep all non-completed
 
         // For completed loads, only keep recent ones
