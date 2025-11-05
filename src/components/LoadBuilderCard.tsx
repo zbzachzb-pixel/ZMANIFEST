@@ -74,6 +74,7 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
   const [lastMilestone, setLastMilestone] = useState<number | null>(null)
   const [showBreathing, setShowBreathing] = useState(false)
   const hasAutoSelected = useRef(false)
+  const [manualOverrideMode, setManualOverrideMode] = useState(false)
   // ==================== COUNTDOWN & METRICS ====================
   const { countdown } = useLoadCountdown(load, loadSchedulingSettings, allLoads)
   const isActive = countdown !== null
@@ -138,7 +139,59 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
   }, [load.status])
   
   // ==================== HELPER FUNCTIONS ====================
-  
+
+  // ✅ NEW: Get restriction warnings for an instructor
+  const getInstructorWarnings = useCallback((instructor: Instructor, assignment: LoadAssignment): string[] => {
+    const warnings: string[] = []
+
+    // Check clock-in status
+    if (!instructor.clockedIn) {
+      warnings.push('Not clocked in')
+    }
+
+    // Check availability (20-minute timer)
+    const isAvailable = isInstructorAvailableForLoad(
+      instructor.id,
+      load.position || 0,
+      allLoads,
+      loadSchedulingSettings.instructorCycleTime,
+      loadSchedulingSettings.minutesBetweenLoads
+    )
+    if (!isAvailable) {
+      warnings.push('Not available yet')
+    }
+
+    // Check certifications
+    if (assignment.jumpType === 'tandem' && !instructor.canTandem) {
+      warnings.push('No tandem cert')
+    }
+    if (assignment.jumpType === 'aff' && !instructor.canAFF) {
+      warnings.push('No AFF cert')
+    }
+
+    // Check weight limits for tandem
+    if (assignment.jumpType === 'tandem') {
+      const totalWeight = assignment.studentWeight + (assignment.tandemWeightTax || 0)
+      const limit = instructor.tandemWeightLimit
+      if (limit && totalWeight > limit) {
+        const excess = totalWeight - limit
+        warnings.push(`Weight +${excess}lbs over limit`)
+      }
+    }
+
+    // Check weight limits for AFF
+    if (assignment.jumpType === 'aff') {
+      const weight = assignment.studentWeight
+      const limit = instructor.affWeightLimit
+      if (limit && weight > limit) {
+        const excess = weight - limit
+        warnings.push(`Weight +${excess}lbs over limit`)
+      }
+    }
+
+    return warnings
+  }, [load.position, allLoads, loadSchedulingSettings])
+
   const getQualifiedInstructors = useCallback((assignment: LoadAssignment) => {
     const qualified = instructors.filter(instructor => {
       if (!instructor.clockedIn) return false
@@ -203,10 +256,38 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
   const qualifiedInstructorsMap = useMemo(() => {
     const map = new Map<string, Instructor[]>()
     loadAssignments.forEach(assignment => {
-      map.set(assignment.id, getQualifiedInstructors(assignment))
+      // ✅ MANUAL OVERRIDE: Show all instructors when manual mode is enabled
+      if (manualOverrideMode) {
+        // Return all instructors sorted by balance
+        const allInstructors = instructors.slice().sort((a, b) =>
+          (instructorBalances.get(a.id) || 0) - (instructorBalances.get(b.id) || 0)
+        )
+        map.set(assignment.id, allInstructors)
+      } else {
+        // Normal mode: only show qualified instructors
+        map.set(assignment.id, getQualifiedInstructors(assignment))
+      }
     })
     return map
-  }, [loadAssignments, getQualifiedInstructors])
+  }, [loadAssignments, getQualifiedInstructors, manualOverrideMode, instructors, instructorBalances])
+
+  // ✅ MANUAL OVERRIDE: Compute warnings map for restricted instructors
+  const instructorWarningsMap = useMemo(() => {
+    const map = new Map<string, Map<string, string[]>>() // assignment.id -> instructor.id -> warnings[]
+    if (manualOverrideMode) {
+      loadAssignments.forEach(assignment => {
+        const warningsForAssignment = new Map<string, string[]>()
+        instructors.forEach(instructor => {
+          const warnings = getInstructorWarnings(instructor, assignment)
+          if (warnings.length > 0) {
+            warningsForAssignment.set(instructor.id, warnings)
+          }
+        })
+        map.set(assignment.id, warningsForAssignment)
+      })
+    }
+    return map
+  }, [loadAssignments, instructors, getInstructorWarnings, manualOverrideMode])
 
   // ==================== EFFECTS ====================
 
@@ -1238,6 +1319,34 @@ const handleChangeCall = async () => {
 
           {/* Utility Actions */}
           <div className="flex gap-2">
+            {/* ✅ Shutdown Toggle */}
+            {load.status === 'building' && (
+              <button
+                onClick={async () => {
+                  try {
+                    await update(load.id, { shutdownBefore: !load.shutdownBefore })
+                    toast.success(
+                      load.shutdownBefore ? 'Shutdown cleared' : 'Shutdown enabled',
+                      load.shutdownBefore ?
+                        'Normal timing restrictions apply' :
+                        'Instructors can do back-to-back loads'
+                    )
+                  } catch (error) {
+                    console.error('Failed to toggle shutdown:', error)
+                    toast.error('Failed to toggle shutdown')
+                  }
+                }}
+                disabled={loading}
+                className={`flex-1 font-semibold py-2 px-3 rounded-lg transition-all hover:scale-105 text-sm disabled:opacity-50 shadow-lg hover:shadow-xl ${
+                  load.shutdownBefore
+                    ? 'bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-700 hover:to-yellow-600 text-white border-2 border-yellow-400'
+                    : 'bg-gradient-to-r from-slate-600 to-slate-500 hover:from-slate-700 hover:to-slate-600 text-white border-2 border-slate-400'
+                }`}
+              >
+                <span className="text-base">✈️</span> {load.shutdownBefore ? 'Shutdown Active' : 'Enable Shutdown'}
+              </button>
+            )}
+
             {load.status === 'ready' && (
               <button
                 onClick={() => setShowDelayModal(true)}
@@ -1304,6 +1413,9 @@ const handleChangeCall = async () => {
         onClose={handleCloseAssignModal}
         onAssign={handleBulkAssign}
         onSelectionChange={handleAssignmentSelectionChange}
+        manualOverrideMode={manualOverrideMode}
+        onToggleManualOverride={() => setManualOverrideMode(!manualOverrideMode)}
+        instructorWarningsMap={instructorWarningsMap}
       />
     </>
   )

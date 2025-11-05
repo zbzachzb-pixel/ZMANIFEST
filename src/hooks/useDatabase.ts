@@ -446,6 +446,7 @@ export function useActiveLoads(daysToKeep: number = 7) {
   useEffect(() => {
     let mounted = true
     let unsubscribe: (() => void) | undefined
+    let previousLoadIds: Set<string> | null = null
 
     setLoading(true)
     setError(null)
@@ -453,10 +454,21 @@ export function useActiveLoads(daysToKeep: number = 7) {
     try {
       unsubscribe = db.subscribeToActiveLoads(daysToKeep, (loads) => {
         if (mounted) {
-          // ✅ Apply position computation for building loads
           const { computeBuildingLoadPositions } = require('@/lib/loadUtils')
-          const loadsWithComputedPositions = computeBuildingLoadPositions(loads)
 
+          // Track load IDs to detect deletions
+          const currentLoadIds = new Set(loads.map(l => l.id))
+
+          // Check if this is a deletion (load count decreased)
+          const isDeletion = previousLoadIds !== null && currentLoadIds.size < previousLoadIds.size
+
+          // ✅ FIX: Only recompute positions if a deletion occurred
+          // Otherwise, pass loads through unchanged to preserve positions on status changes
+          const loadsWithComputedPositions = isDeletion
+            ? computeBuildingLoadPositions(loads)
+            : loads
+
+          previousLoadIds = currentLoadIds
           setData(loadsWithComputedPositions)
           setLoading(false)
         }

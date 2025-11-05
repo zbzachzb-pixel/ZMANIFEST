@@ -222,6 +222,7 @@ export interface Load {
   plannedDepartureTime?: string   // Calculated departure time for cancellation time-lock
   operatingDate?: string          // Date this load operates (ISO date string, e.g., "2025-10-01"). Falls back to createdAt date for backward compatibility
   isTestMode?: boolean            // Flag for test mode loads (for filtering/cleanup)
+  shutdownBefore?: boolean        // ✅ Airplane shutdown before this load - allows back-to-back instructor assignments
 }
 
 export type CreateLoad = Omit<Load, 'id' | 'createdAt'>

@@ -135,6 +135,11 @@ function detectUnavailableInstructorConflicts(
 
   if (!load.assignments) return conflicts
 
+  // ✅ SHUTDOWN LOGIC: Skip availability conflicts if airplane shutdown before this load
+  if (load.shutdownBefore) {
+    return conflicts // Instructors are available immediately after shutdown
+  }
+
   // Only check loads that come BEFORE this load (not including the current load)
   const previousLoads = allLoads.filter(l => (l.position || 0) < (load.position || 0))
 

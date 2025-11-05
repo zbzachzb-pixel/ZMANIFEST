@@ -26,6 +26,9 @@ interface AssignInstructorsModalProps {
     assignmentId: string,
     updates: { instructorId?: string; videoInstructorId?: string }
   ) => void
+  manualOverrideMode: boolean
+  onToggleManualOverride: () => void
+  instructorWarningsMap: Map<string, Map<string, string[]>>
 }
 
 export function AssignInstructorsModal({
@@ -40,7 +43,10 @@ export function AssignInstructorsModal({
   loading,
   onClose,
   onAssign,
-  onSelectionChange
+  onSelectionChange,
+  manualOverrideMode,
+  onToggleManualOverride,
+  instructorWarningsMap
 }: AssignInstructorsModalProps) {
   if (!show) return null
 
@@ -52,14 +58,37 @@ export function AssignInstructorsModal({
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-slate-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[80vh] border border-slate-700 flex flex-col">
         <div className="p-6 border-b border-slate-700">
-          <h3 className="text-xl font-bold text-white">
-            {isEditMode ? 'Edit Instructors' : 'Assign Instructors'}
-          </h3>
-          <p className="text-sm text-slate-400 mt-1">
-            {isEditMode
-              ? 'Change instructor assignments for all students on this load.'
-              : 'Auto-selected lowest balance instructors. Adjust as needed.'}
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-white">
+                {isEditMode ? 'Edit Instructors' : 'Assign Instructors'}
+              </h3>
+              <p className="text-sm text-slate-400 mt-1">
+                {isEditMode
+                  ? 'Change instructor assignments for all students on this load.'
+                  : 'Auto-selected lowest balance instructors. Adjust as needed.'}
+              </p>
+            </div>
+
+            {/* ✅ Manual Override Toggle */}
+            <div className="flex-shrink-0">
+              <button
+                onClick={onToggleManualOverride}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm transition-colors ${
+                  manualOverrideMode
+                    ? 'bg-yellow-500 text-black hover:bg-yellow-600'
+                    : 'bg-slate-600 text-white hover:bg-slate-500'
+                }`}
+              >
+                {manualOverrideMode ? '⚠️ Manual Override ON' : '🔓 Enable Manual Override'}
+              </button>
+              {manualOverrideMode && (
+                <p className="text-xs text-yellow-400 mt-1 text-right">
+                  All instructors shown
+                </p>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -126,12 +155,35 @@ export function AssignInstructorsModal({
                       className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white"
                     >
                       <option value="">Select instructor...</option>
-                      {availableQualified.map(instructor => (
-                        <option key={instructor.id} value={instructor.id}>
-                          {instructor.name} (${instructorBalances.get(instructor.id) || 0})
-                        </option>
-                      ))}
+                      {availableQualified.map(instructor => {
+                        const warnings = instructorWarningsMap.get(assignment.id)?.get(instructor.id) || []
+                        return (
+                          <option key={instructor.id} value={instructor.id}>
+                            {instructor.name} (${instructorBalances.get(instructor.id) || 0})
+                            {warnings.length > 0 && ` ⚠️ ${warnings.join(', ')}`}
+                          </option>
+                        )
+                      })}
                     </select>
+                    {/* Show warnings below dropdown if manual mode and instructor selected */}
+                    {manualOverrideMode && selection?.instructorId && (
+                      (() => {
+                        const warnings = instructorWarningsMap.get(assignment.id)?.get(selection.instructorId) || []
+                        if (warnings.length > 0) {
+                          return (
+                            <div className="mt-2 space-y-1">
+                              {warnings.map((warning, idx) => (
+                                <div key={idx} className="text-xs text-yellow-400 flex items-start gap-1">
+                                  <span>⚠️</span>
+                                  <span>{warning}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        }
+                        return null
+                      })()
+                    )}
                   </div>
 
                   {assignment.hasOutsideVideo && (

@@ -229,16 +229,22 @@ export function isInstructorAvailableForLoad(
   instructorCycleTime: number = 40,
   minutesBetweenLoads: number = 20
 ): boolean {
+  // ✅ SHUTDOWN LOGIC: If target load has airplane shutdown before it, instructor is immediately available
+  const targetLoad = allLoads.find(l => l.position === targetLoadPosition)
+  if (targetLoad?.shutdownBefore) {
+    return true
+  }
+
   const nextAvailable = getInstructorNextAvailableLoad(
     instructorId,
     allLoads,
     instructorCycleTime,
     minutesBetweenLoads
   )
-  
+
   // If null, they're available for any load
   if (nextAvailable === null) return true
-  
+
   // Otherwise, check if target load is at or after their next available load
   return targetLoadPosition >= nextAvailable
 }
