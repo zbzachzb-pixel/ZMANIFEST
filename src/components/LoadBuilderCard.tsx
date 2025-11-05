@@ -403,10 +403,8 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
     'blue' // TODO: Get team rotation from settings
   )
 
-  // Convert result to selection format
+  // ✅ VIDEO: Convert result to selection format (video instructors now assigned by smart algorithm)
   const selections: Record<string, {instructorId: string, videoInstructorId?: string, isRequest: boolean}> = {}
-  const usedInstructorIds = new Set<string>()
-  const usedVideoInstructorIds = new Set<string>()
 
   currentAssignments.forEach(assignment => {
     const assigned = result.assignments.get(assignment.studentId)
@@ -416,31 +414,6 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
         videoInstructorId: assigned.video?.id,
         isRequest: assignment.isRequest
       }
-      usedInstructorIds.add(assigned.main.id)
-      if (assigned.video) {
-        usedVideoInstructorIds.add(assigned.video.id)
-      }
-    }
-  })
-
-  // ✅ STEP 3: Auto-select VIDEO instructors for assignments that need them
-  currentAssignments.forEach(assignment => {
-    if (!assignment.hasOutsideVideo) return
-    const selection = selections[assignment.id]
-    if (!selection) return
-    if (selection.videoInstructorId) return
-
-    // Filter out already-used instructors to prevent duplicates
-    const videoInstructors = getVideoInstructors().filter(i =>
-      i.id !== selection.instructorId &&
-      !usedVideoInstructorIds.has(i.id) &&
-      !usedInstructorIds.has(i.id)
-    )
-
-    const firstVideo = videoInstructors[0]
-    if (firstVideo) {
-      selection.videoInstructorId = firstVideo.id
-      usedVideoInstructorIds.add(firstVideo.id)
     }
   })
 

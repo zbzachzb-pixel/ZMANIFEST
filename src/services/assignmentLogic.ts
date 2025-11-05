@@ -295,15 +295,43 @@ export function getSuggestedInstructorsSimple(
 }
 
 /**
- * Smart assignment algorithm that prioritizes filling ALL slots over perfect rotation balance
+ * Helper function to filter qualified video instructors
+ */
+function filterQualifiedVideoInstructors(
+  mainInstructorId: string,
+  instructors: Instructor[],
+  targetLoad: Load,
+  allLoads: Load[],
+  loadSettings: LoadSchedulingSettings
+): Instructor[] {
+  return instructors.filter(i => {
+    if (i.archived) return false
+    if (!i.clockedIn) return false
+    if (!i.canVideo) return false
+    if (i.id === mainInstructorId) return false // Can't be same as main instructor
+
+    // Check availability (cycle time)
+    const isAvailable = isInstructorAvailableForLoad(
+      i.id,
+      targetLoad.position || 0,
+      allLoads,
+      loadSettings.instructorCycleTime,
+      loadSettings.minutesBetweenLoads
+    )
+
+    return isAvailable
+  })
+}
+
+/**
+ * Smart assignment algorithm that prioritizes filling ALL slots (main + video) over perfect rotation balance
  *
  * Algorithm:
- * 1. Try initial assignment (balance-sorted, lowest balance first)
- * 2. Identify unassigned students
- * 3. Try reassignment: find students with multiple options and reshuffle
- * 4. Protect requested pairings (never reassign them)
- * 5. Use higher-balance instructors as fallback if needed
- * 6. Track detailed errors for impossible assignments
+ * Phase 1: Lock requested pairings (never reassign)
+ * Phase 2: Initial assignment with video awareness (balance-sorted)
+ * Phase 3: Main instructor reassignment to fill empty main slots
+ * Phase 4: Video-driven reassignment to fill empty video slots
+ * Phase 5: Global optimization for any remaining unfilled slots
  *
  * @param loadAssignments - Current load assignments (may include requests)
  * @param instructors - All available instructors
@@ -327,30 +355,42 @@ export function smartAssignInstructors(
   const assignmentMap = new Map<string, { main: Instructor; video: Instructor | null }>()
   const errors: AssignmentError[] = []
 
-  // Track which instructors are used (one student per instructor rule)
-  const usedInstructorIds = new Set<string>()
+  // ✅ VIDEO: Track main and video instructors separately (instructors can only do ONE role per load)
+  const usedMainInstructorIds = new Set<string>()
+  const usedVideoInstructorIds = new Set<string>()
 
   // Separate requests from regular assignments
   const requestAssignments = loadAssignments.filter(a => a.isRequest && a.instructorId)
   const regularAssignments = loadAssignments.filter(a => !a.isRequest || !a.instructorId)
 
-  // Phase 1: Lock in all requested pairings first (these are sacred)
+  // Phase 1: Lock in all requested pairings first (these are sacred - never reassign)
   for (const request of requestAssignments) {
     if (!request.instructorId) continue
 
-    const instructor = instructors.find(i => i.id === request.instructorId)
-    if (instructor) {
-      assignmentMap.set(request.studentId, { main: instructor, video: null })
-      usedInstructorIds.add(instructor.id)
+    const mainInstructor = instructors.find(i => i.id === request.instructorId)
+    if (!mainInstructor) continue
+
+    // ✅ VIDEO: Also lock in requested video instructor if specified
+    let videoInstructor: Instructor | null = null
+    if (request.hasOutsideVideo && request.videoInstructorId) {
+      videoInstructor = instructors.find(i => i.id === request.videoInstructorId) || null
+      if (videoInstructor) {
+        usedVideoInstructorIds.add(videoInstructor.id)
+      }
     }
+
+    assignmentMap.set(request.studentId, { main: mainInstructor, video: videoInstructor })
+    usedMainInstructorIds.add(mainInstructor.id)
   }
 
-  // Phase 2: Initial assignment for regular students (balance-sorted)
+  // Phase 2: Initial assignment for regular students with video awareness (balance-sorted)
   const unassignedStudents: LoadAssignment[] = []
-  const studentOptions = new Map<string, Instructor[]>() // Track all options for each student
+  const partiallyAssignedStudents: LoadAssignment[] = [] // ✅ VIDEO: Students with main but no video
+  const studentOptions = new Map<string, Instructor[]>() // Track all main instructor options
+  const studentVideoOptions = new Map<string, Instructor[]>() // ✅ VIDEO: Track all video instructor options
 
   for (const assignment of regularAssignments) {
-    // Get ALL qualified instructors (not just lowest balance)
+    // Get ALL qualified main instructors (not just lowest balance)
     const student: QueueStudent = {
       id: assignment.id,
       studentAccountId: assignment.studentId,
@@ -375,16 +415,18 @@ export function smartAssignInstructors(
     // Store all options for this student (for reassignment later)
     studentOptions.set(assignment.studentId, allQualified)
 
-    // Filter out already-used instructors
-    const availableQualified = allQualified.filter(i => !usedInstructorIds.has(i.id))
+    // Filter out already-used main instructors
+    const availableQualified = allQualified.filter(i =>
+      !usedMainInstructorIds.has(i.id) && !usedVideoInstructorIds.has(i.id)
+    )
 
     if (availableQualified.length === 0) {
       unassignedStudents.push(assignment)
       continue
     }
 
-    // Sort by balance (lowest first for fairness)
-    availableQualified.sort((a, b) => {
+    // ✅ VIDEO: For multi-rated instructors, decide role based on balance AND student needs
+    const sortedQualified = availableQualified.slice().sort((a, b) => {
       // Priority 1: Not working off day
       const aIsOff = isWorkingOffDay(a, new Date(), teamRotation)
       const bIsOff = isWorkingOffDay(b, new Date(), teamRotation)
@@ -401,16 +443,58 @@ export function smartAssignInstructors(
       return timeA - timeB
     })
 
-    const selectedInstructor = availableQualified[0]
-    if (selectedInstructor) {
-      assignmentMap.set(assignment.studentId, { main: selectedInstructor, video: null })
-      usedInstructorIds.add(selectedInstructor.id)
-    } else {
+    const selectedMainInstructor = sortedQualified[0]
+    if (!selectedMainInstructor) {
       unassignedStudents.push(assignment)
+      continue
     }
+
+    // ✅ VIDEO: If student needs video, try to assign video instructor too
+    let selectedVideoInstructor: Instructor | null = null
+    if (assignment.hasOutsideVideo) {
+      const allQualifiedVideo = filterQualifiedVideoInstructors(
+        selectedMainInstructor.id,
+        instructors,
+        targetLoad,
+        allLoads,
+        loadSettings
+      )
+
+      // Store video options for later reassignment
+      studentVideoOptions.set(assignment.studentId, allQualifiedVideo)
+
+      // Filter out already-used video instructors
+      const availableVideo = allQualifiedVideo.filter(i =>
+        !usedMainInstructorIds.has(i.id) && !usedVideoInstructorIds.has(i.id)
+      )
+
+      if (availableVideo.length > 0) {
+        // Sort by balance (lowest first)
+        availableVideo.sort((a, b) => {
+          const aIsOff = isWorkingOffDay(a, new Date(), teamRotation)
+          const bIsOff = isWorkingOffDay(b, new Date(), teamRotation)
+          if (aIsOff !== bIsOff) return aIsOff ? 1 : -1
+
+          const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period, allLoads, teamRotation)
+          const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period, allLoads, teamRotation)
+          return balanceA - balanceB
+        })
+
+        selectedVideoInstructor = availableVideo[0] || null
+        if (selectedVideoInstructor) {
+          usedVideoInstructorIds.add(selectedVideoInstructor.id)
+        }
+      } else {
+        // No video instructor available - mark as partially assigned
+        partiallyAssignedStudents.push(assignment)
+      }
+    }
+
+    assignmentMap.set(assignment.studentId, { main: selectedMainInstructor, video: selectedVideoInstructor })
+    usedMainInstructorIds.add(selectedMainInstructor.id)
   }
 
-  // Phase 3: Smart reassignment - try to fill unassigned slots by reshuffling
+  // Phase 3: Main instructor reassignment - try to fill unassigned main slots by reshuffling
   for (const unassignedStudent of unassignedStudents) {
     const options = studentOptions.get(unassignedStudent.studentId) || []
 
@@ -424,7 +508,7 @@ export function smartAssignInstructors(
       continue
     }
 
-    // Try to find an instructor for this student by reassigning others
+    // Try to find a main instructor for this student by reassigning others
     let foundSolution = false
 
     for (const candidate of options) {
@@ -432,14 +516,17 @@ export function smartAssignInstructors(
       const isOnRequest = requestAssignments.some(r => r.instructorId === candidate.id)
       if (isOnRequest) continue
 
-      // Is this instructor currently assigned to someone else?
+      // ✅ VIDEO: Skip if instructor is being used as video on another student
+      if (usedVideoInstructorIds.has(candidate.id)) continue
+
+      // Is this instructor currently assigned as main to someone else?
       const currentlyAssignedTo = Array.from(assignmentMap.entries())
         .find(([_, assigned]) => assigned.main.id === candidate.id)?.[0]
 
       if (!currentlyAssignedTo) {
-        // This instructor is free - just assign them
+        // This instructor is free - assign them as main
         assignmentMap.set(unassignedStudent.studentId, { main: candidate, video: null })
-        usedInstructorIds.add(candidate.id)
+        usedMainInstructorIds.add(candidate.id)
         foundSolution = true
         break
       }
@@ -449,19 +536,26 @@ export function smartAssignInstructors(
       if (!otherStudent) continue
 
       const otherOptions = (studentOptions.get(currentlyAssignedTo) || [])
-        .filter(i => !usedInstructorIds.has(i.id) || i.id === candidate.id) // Include their current instructor
+        .filter(i =>
+          (!usedMainInstructorIds.has(i.id) && !usedVideoInstructorIds.has(i.id)) ||
+          i.id === candidate.id
+        )
 
-      // Does the other student have alternative options?
+      // Does the other student have alternative main instructor options?
       const alternativeForOther = otherOptions.find(i => i.id !== candidate.id)
 
       if (alternativeForOther) {
         // Reshuffle: move candidate from other student to unassigned student
-        // Then assign alternativeForOther to other student
+        // Preserve other student's video instructor if they had one
+        const otherAssignment = assignmentMap.get(currentlyAssignedTo)
         assignmentMap.set(unassignedStudent.studentId, { main: candidate, video: null })
-        assignmentMap.set(currentlyAssignedTo, { main: alternativeForOther, video: null })
-        usedInstructorIds.delete(candidate.id)
-        usedInstructorIds.add(candidate.id)
-        usedInstructorIds.add(alternativeForOther.id)
+        assignmentMap.set(currentlyAssignedTo, {
+          main: alternativeForOther,
+          video: otherAssignment?.video || null
+        })
+        usedMainInstructorIds.delete(candidate.id)
+        usedMainInstructorIds.add(candidate.id)
+        usedMainInstructorIds.add(alternativeForOther.id)
         foundSolution = true
         break
       }
@@ -473,6 +567,103 @@ export function smartAssignInstructors(
         studentName: unassignedStudent.studentName,
         studentId: unassignedStudent.studentId,
         reasons: buildErrorReasons(unassignedStudent, instructors, targetLoad, allLoads, loadSettings)
+      })
+    }
+  }
+
+  // ✅ Phase 4: Video-driven reassignment - try to fill empty video slots by reorganizing
+  for (const partialStudent of partiallyAssignedStudents) {
+    const currentAssignment = assignmentMap.get(partialStudent.studentId)
+    if (!currentAssignment || currentAssignment.video) continue // Already has video or not assigned
+
+    const videoOptions = studentVideoOptions.get(partialStudent.studentId) || []
+    if (videoOptions.length === 0) {
+      // No video instructors exist for this student
+      errors.push({
+        studentName: partialStudent.studentName,
+        studentId: partialStudent.studentId,
+        reasons: [`No video instructors available for ${partialStudent.jumpType.toUpperCase()} students`]
+      })
+      continue
+    }
+
+    let foundVideoSolution = false
+
+    // Try to find a video instructor by checking if any are being used as main
+    for (const videoCandidate of videoOptions) {
+      // Skip if already used as video
+      if (usedVideoInstructorIds.has(videoCandidate.id)) continue
+
+      // ✅ KEY OPTIMIZATION: Check if this video-capable instructor is currently assigned as MAIN
+      const assignedAsMainTo = Array.from(assignmentMap.entries())
+        .find(([_, assigned]) => assigned.main.id === videoCandidate.id)?.[0]
+
+      if (!assignedAsMainTo) {
+        // This video instructor is free - assign them
+        assignmentMap.set(partialStudent.studentId, {
+          main: currentAssignment.main,
+          video: videoCandidate
+        })
+        usedVideoInstructorIds.add(videoCandidate.id)
+        foundVideoSolution = true
+        break
+      }
+
+      // This video-capable instructor is currently being used as MAIN for another student
+      // Can we swap them to video role and reassign that student to a different main instructor?
+      const otherStudent = regularAssignments.find(a => a.studentId === assignedAsMainTo)
+      if (!otherStudent) continue
+
+      // Skip if this is a requested pairing
+      const isRequest = requestAssignments.some(r => r.instructorId === videoCandidate.id)
+      if (isRequest) continue
+
+      // Find alternative main instructors for the other student
+      const otherMainOptions = (studentOptions.get(assignedAsMainTo) || [])
+        .filter(i =>
+          i.id !== videoCandidate.id &&
+          !usedMainInstructorIds.has(i.id) &&
+          !usedVideoInstructorIds.has(i.id)
+        )
+
+      if (otherMainOptions.length > 0) {
+        // Sort by balance
+        otherMainOptions.sort((a, b) => {
+          const balanceA = calculateInstructorBalance(a.id, assignments, instructors, period, allLoads, teamRotation)
+          const balanceB = calculateInstructorBalance(b.id, assignments, instructors, period, allLoads, teamRotation)
+          return balanceA - balanceB
+        })
+
+        const alternativeMain = otherMainOptions[0]
+        if (alternativeMain) {
+          // ✅ RESHUFFLE: Move videoCandidate from main→video, assign alternative to other student
+          const otherAssignment = assignmentMap.get(assignedAsMainTo)
+
+          assignmentMap.set(partialStudent.studentId, {
+            main: currentAssignment.main,
+            video: videoCandidate
+          })
+
+          assignmentMap.set(assignedAsMainTo, {
+            main: alternativeMain,
+            video: otherAssignment?.video || null
+          })
+
+          usedMainInstructorIds.delete(videoCandidate.id)
+          usedMainInstructorIds.add(alternativeMain.id)
+          usedVideoInstructorIds.add(videoCandidate.id)
+          foundVideoSolution = true
+          break
+        }
+      }
+    }
+
+    if (!foundVideoSolution) {
+      // Couldn't assign video instructor even with reassignment
+      errors.push({
+        studentName: partialStudent.studentName,
+        studentId: partialStudent.studentId,
+        reasons: ['All video instructors are on other loads or already assigned']
       })
     }
   }
