@@ -389,7 +389,56 @@ export function smartAssignInstructors(
   const studentOptions = new Map<string, Instructor[]>() // Track all main instructor options
   const studentVideoOptions = new Map<string, Instructor[]>() // ✅ VIDEO: Track all video instructor options
 
-  for (const assignment of regularAssignments) {
+  // ✅ PRIORITY ASSIGNMENT: Sort students by constraint level (fewest options first)
+  // This ensures most-constrained students get first pick, preventing later blocking
+  const sortedRegularAssignments = regularAssignments.slice().sort((a, b) => {
+    const studentA: QueueStudent = {
+      id: a.id,
+      studentAccountId: a.studentId,
+      name: a.studentName,
+      weight: a.studentWeight,
+      jumpType: a.jumpType,
+      isRequest: a.isRequest,
+      timestamp: new Date().toISOString(),
+      tandemWeightTax: a.tandemWeightTax,
+      tandemHandcam: a.tandemHandcam,
+      outsideVideo: a.hasOutsideVideo,
+      affLevel: a.affLevel
+    }
+
+    const studentB: QueueStudent = {
+      id: b.id,
+      studentAccountId: b.studentId,
+      name: b.studentName,
+      weight: b.studentWeight,
+      jumpType: b.jumpType,
+      isRequest: b.isRequest,
+      timestamp: new Date().toISOString(),
+      tandemWeightTax: b.tandemWeightTax,
+      tandemHandcam: b.tandemHandcam,
+      outsideVideo: b.hasOutsideVideo,
+      affLevel: b.affLevel
+    }
+
+    const optionsA = filterQualifiedInstructors(studentA, instructors, {
+      ignoreClockStatus: false,
+      targetLoad,
+      allLoads,
+      loadSettings
+    }).length
+
+    const optionsB = filterQualifiedInstructors(studentB, instructors, {
+      ignoreClockStatus: false,
+      targetLoad,
+      allLoads,
+      loadSettings
+    }).length
+
+    // Fewest options first (most constrained)
+    return optionsA - optionsB
+  })
+
+  for (const assignment of sortedRegularAssignments) {
     // Get ALL qualified main instructors (not just lowest balance)
     const student: QueueStudent = {
       id: assignment.id,
