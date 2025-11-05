@@ -45,6 +45,7 @@ export function Navigation() {
         { href: '/instructors', label: 'Instructors', icon: '👨‍✈️', roles: ['admin', 'manifest', 'instructor'] },
         { href: '/assignments', label: 'History', icon: '📋', roles: ['admin', 'manifest', 'instructor'] },
         { href: '/analytics', label: 'Analytics', icon: '📊', roles: ['admin', 'manifest', 'instructor'] },
+        { href: '/test-dashboard', label: 'Test Dashboard', icon: '🧪', roles: ['admin', 'manifest', 'instructor'] },
         { href: '/messages', label: 'Messages', icon: '📬', roles: ['admin', 'manifest'] },
       ]
     },

@@ -526,17 +526,17 @@ export class FirebaseService implements DatabaseService {
   
   // ==================== ASSIGNMENTS ====================
   
-  async createAssignment(assignment: CreateAssignment): Promise<Assignment> {
+  async createAssignment(assignment: CreateAssignment, customTimestamp?: string): Promise<Assignment> {
     const newAssignment: Assignment = {
       ...assignment,
       id: this.generateId(),
-      timestamp: new Date().toISOString()
+      timestamp: customTimestamp || new Date().toISOString()  // ✅ TEST MODE: Use custom timestamp if provided
     }
-    
+
     const cleanedAssignment = this.cleanData(newAssignment)
     const assignmentRef = ref(this.db, `assignments/${newAssignment.id}`)
     await set(assignmentRef, cleanedAssignment)
-    
+
     return newAssignment
   }
   

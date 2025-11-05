@@ -86,7 +86,7 @@ export interface DatabaseService {
   subscribeToActiveLoads(daysToKeep: number, callback: (loads: Load[]) => void): () => void
   
   // ==================== ASSIGNMENTS ====================
-  createAssignment(assignment: CreateAssignment): Promise<Assignment>
+  createAssignment(assignment: CreateAssignment, customTimestamp?: string): Promise<Assignment>
   getAssignments(): Promise<Assignment[]>
   getInstructorAssignments(instructorId: string): Promise<Assignment[]>
   getAssignmentsByDateRange(start: Date, end: Date): Promise<Assignment[]>

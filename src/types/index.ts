@@ -66,6 +66,7 @@ export interface Assignment {
   isDeleted?: boolean  // Soft-delete flag - assignment was reverted
   deletedAt?: string  // When assignment was soft-deleted
   deletedReason?: 'load_reverted' | 'manual_delete'  // Why it was deleted
+  isTestMode?: boolean  // ✅ TEST MODE: Marks assignment as test data for planning/simulation
 }
 
 export type CreateAssignment = Omit<Assignment, 'id' | 'timestamp'>

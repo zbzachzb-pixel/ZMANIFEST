@@ -1,0 +1,147 @@
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.4s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/app/test-dashboard/page.tsx:12:3
+Type error: 'calculateInstructorTotalEarnings' is declared but its value is never read.
+
+[0m [90m 10 |[39m [36mimport[39m {
+ [90m 11 |[39m   calculateInstructorBalance[33m,[39m
+[31m[1m>[22m[39m[90m 12 |[39m   calculateInstructorTotalEarnings[33m,[39m
+ [90m    |[39m   [31m[1m^[22m[39m
+ [90m 13 |[39m   calculateAssignmentPay[33m,[39m
+ [90m 14 |[39m   getCurrentPeriod
+ [90m 15 |[39m } [36mfrom[39m [32m'@/lib/utils'[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 2.4s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/app/test-dashboard/page.tsx:16:1
+Type error: All imports in import declaration are unused.
+
+[0m [90m 14 |[39m } [36mfrom[39m [32m'@/lib/utils'[39m
+ [90m 15 |[39m [36mimport[39m { [33mPAY_RATES[39m } [36mfrom[39m [32m'@/lib/constants'[39m
+[31m[1m>[22m[39m[90m 16 |[39m [36mimport[39m type { [33mInstructor[39m[33m,[39m [33mAssignment[39m } [36mfrom[39m [32m'@/types'[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 17 |[39m [36mimport[39m { [33mPageErrorBoundary[39m } [36mfrom[39m [32m'@/components/ErrorBoundary'[39m
+ [90m 18 |[39m [36mimport[39m { [33mRequireRole[39m } [36mfrom[39m [32m'@/components/auth'[39m
+ [90m 19 |[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 2.3s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/app/test-dashboard/page.tsx:263:21
+Type error: Type '{ key: string; instructor: Instructor; stats: { instructor: Instructor; balance: number; totalEarnings: number; todayEarnings: number; jumpCount: number; }; onAddJump: () => void; onReleaseAFF: () => void; }' is not assignable to type 'IntrinsicAttributes & InstructorCardProps'.
+  Property 'stats' does not exist on type 'IntrinsicAttributes & InstructorCardProps'.
+
+[0m [90m 261 |[39m                     key[33m=[39m{stat[33m.[39minstructor[33m.[39mid}
+ [90m 262 |[39m                     instructor[33m=[39m{stat[33m.[39minstructor}
+[31m[1m>[22m[39m[90m 263 |[39m                     stats[33m=[39m{stat}
+ [90m     |[39m                     [31m[1m^[22m[39m
+ [90m 264 |[39m                     onAddJump[33m=[39m{() [33m=>[39m {}} [90m// Disabled for test mode[39m
+ [90m 265 |[39m                     onReleaseAFF[33m=[39m{() [33m=>[39m {}} [90m// Disabled for test mode[39m
+ [90m 266 |[39m                   [33m/[39m[33m>[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 2.4s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/23) ...
+   Generating static pages (5/23) 
+   Generating static pages (11/23) 
+   Generating static pages (17/23) 
+ ✓ Generating static pages (23/23)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                      635 B         183 kB
+├ ○ /_not-found                             1 kB         103 kB
+├ ○ /analytics                           3.54 kB         192 kB
+├ ƒ /api/send-push                         127 B         102 kB
+├ ○ /assignments                         4.96 kB         194 kB
+├ ○ /dashboard                           4.57 kB         193 kB
+├ ○ /instructors                         4.92 kB         193 kB
+├ ○ /loads                               25.2 kB         214 kB
+├ ○ /login                               4.49 kB         187 kB
+├ ○ /messages                            4.88 kB         191 kB
+├ ○ /my-requests                         3.78 kB         189 kB
+├ ○ /notes                               1.38 kB         184 kB
+├ ○ /queue                               6.84 kB         195 kB
+├ ○ /register                            4.75 kB         187 kB
+├ ○ /requests                            4.39 kB         190 kB
+├ ○ /settings                            5.97 kB         195 kB
+├ ○ /submit-request                      3.48 kB         193 kB
+├ ○ /test-dashboard                       3.6 kB         192 kB
+├ ○ /test-shortcuts                      2.07 kB         104 kB
+└ ○ /users                               4.21 kB         190 kB
++ First Load JS shared by all             102 kB
+  ├ chunks/1255-ba098675cb6696ab.js      45.7 kB
+  ├ chunks/4bd1b696-f785427dddbba9fb.js  54.2 kB
+  └ other shared chunks (total)          2.33 kB
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

@@ -582,6 +582,28 @@ export function useCurrentPeriodAssignments() {
   return useAssignmentsByDateRange(period.start, period.end)
 }
 
+// ✅ TEST MODE: Fetches only test assignments (isTestMode === true)
+export function useTestAssignments() {
+  const { data: allAssignments, loading, error } = useAssignments()
+
+  return {
+    data: allAssignments.filter(a => a.isTestMode === true),
+    loading,
+    error
+  }
+}
+
+// ✅ TEST MODE: Fetches test assignments within a date range
+export function useTestAssignmentsByDateRange(startDate: Date, endDate: Date) {
+  const { data: rangeAssignments, loading, error } = useAssignmentsByDateRange(startDate, endDate)
+
+  return {
+    data: rangeAssignments.filter(a => a.isTestMode === true),
+    loading,
+    error
+  }
+}
+
 export function useCreateAssignment() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)

@@ -762,21 +762,31 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
                 ...(loadAssignment.affLevel && { affLevel: loadAssignment.affLevel }),
               }
 
-              // ✅ TEST MODE: Create test assignments or real assignments
-              if (isTestMode && onTestAssignment) {
-                // Test mode - store assignment in local state with test date
-                const testAssignment = {
+              // ✅ TEST MODE: Create test or production assignments in Firebase
+              if (isTestMode) {
+                // Test mode - save to Firebase with isTestMode flag and test date
+                const testAssignmentRecord: CreateAssignment = {
                   ...assignmentRecord,
-                  id: `test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                  timestamp: testDate ? testDate.toISOString() : new Date().toISOString()
+                  isTestMode: true  // Mark as test data
                 }
-                onTestAssignment(testAssignment)
-                console.log(`🧪 Test assignment created for ${loadAssignment.studentName} → ${loadAssignment.instructorName}`)
+
+                await db.createAssignment(testAssignmentRecord, testDate ? testDate.toISOString() : undefined)
+                console.log(`🧪 Test assignment saved to Firebase: ${loadAssignment.studentName} → ${loadAssignment.instructorName}`)
+
+                // Also call onTestAssignment for local state tracking if provided (backward compatibility)
+                if (onTestAssignment) {
+                  const testAssignment = {
+                    ...testAssignmentRecord,
+                    id: `test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    timestamp: testDate ? testDate.toISOString() : new Date().toISOString()
+                  }
+                  onTestAssignment(testAssignment)
+                }
               } else {
-                // Production mode - write to Firebase
+                // Production mode - write to Firebase without test flag
                 await db.createAssignment(assignmentRecord)
 
-                // Update student account jump count if they have an account
+                // Update student account jump count if they have an account (production only)
                 if (loadAssignment.studentId) {
                   try {
                     await db.incrementStudentJumpCount(loadAssignment.studentId, loadAssignment.jumpType)
