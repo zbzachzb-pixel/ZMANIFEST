@@ -9,8 +9,7 @@ import { useApp } from '@/contexts/AppContext'
 import { InstructorCard } from '@/components/InstructorCard'
 import {
   calculateInstructorBalance,
-  calculateAssignmentPay,
-  getCurrentPeriod
+  calculateAssignmentPay
 } from '@/lib/utils'
 import { PAY_RATES } from '@/lib/constants'
 import { PageErrorBoundary } from '@/components/ErrorBoundary'
@@ -48,7 +47,15 @@ function TestDashboardPageContent() {
 
   // Calculate stats for each instructor
   const instructorStats = useMemo(() => {
-    const period = getCurrentPeriod() // Use for balance calculation structure
+    // ✅ TEST MODE FIX: Create custom period matching test date range
+    // Using getCurrentPeriod() would filter out test assignments from different dates
+    const testPeriod = {
+      id: `test-${startDate.toISOString()}-${asOfDate.toISOString()}`,
+      name: `Test Period: ${formatDateForInput(startDate)} - ${formatDateForInput(asOfDate)}`,
+      start: new Date(startDate),
+      end: new Date(asOfDate),
+      isActive: true
+    }
 
     return instructors.map(instructor => {
       // Balance (for rotation) - using test assignments
@@ -56,7 +63,7 @@ function TestDashboardPageContent() {
         instructor.id,
         assignmentsAsOf,
         instructors,
-        period,
+        testPeriod,  // Use test period instead of current production period
         [], // No loads for test mode balance
         'blue' // Default team rotation
       )
@@ -111,7 +118,7 @@ function TestDashboardPageContent() {
         jumpCount
       }
     })
-  }, [instructors, assignmentsAsOf, asOfDate])
+  }, [instructors, assignmentsAsOf, startDate, asOfDate])
 
   // Calculate period summary
   const periodSummary = useMemo(() => {
