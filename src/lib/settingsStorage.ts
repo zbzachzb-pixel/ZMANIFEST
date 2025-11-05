@@ -144,6 +144,67 @@ export function saveDarkMode(enabled: boolean): void {
   }
 }
 
+// ==================== TEST MODE ====================
+
+/**
+ * Gets test mode preference from localStorage
+ * @returns true if test mode is enabled
+ */
+export function getTestMode(): boolean {
+  if (typeof window === 'undefined') return false
+
+  try {
+    return localStorage.getItem('testMode') === 'true'
+  } catch (error) {
+    console.error('Failed to load test mode setting:', error)
+    return false
+  }
+}
+
+/**
+ * Saves test mode preference to localStorage
+ * @param enabled - Whether test mode is enabled
+ */
+export function saveTestMode(enabled: boolean): void {
+  if (typeof window === 'undefined') return
+
+  try {
+    localStorage.setItem('testMode', String(enabled))
+  } catch (error) {
+    console.error('Failed to save test mode setting:', error)
+    throw new Error('Failed to save test mode setting')
+  }
+}
+
+/**
+ * Gets test date from localStorage
+ * @returns ISO date string or null if not found
+ */
+export function getTestDate(): string | null {
+  if (typeof window === 'undefined') return null
+
+  try {
+    return localStorage.getItem('testDate')
+  } catch (error) {
+    console.error('Failed to load test date:', error)
+    return null
+  }
+}
+
+/**
+ * Saves test date to localStorage
+ * @param date - ISO date string (e.g., "2025-10-01")
+ */
+export function saveTestDate(date: string): void {
+  if (typeof window === 'undefined') return
+
+  try {
+    localStorage.setItem('testDate', date)
+  } catch (error) {
+    console.error('Failed to save test date:', error)
+  }
+}
+
 // ==================== UTILITY FUNCTIONS ====================
 
 /**
@@ -156,6 +217,8 @@ export function clearAllSettings(): void {
     localStorage.removeItem('loadSchedulingSettings')
     localStorage.removeItem('autoAssignSettings')
     localStorage.removeItem('darkMode')
+    localStorage.removeItem('testMode')
+    localStorage.removeItem('testDate')
   } catch (error) {
     console.error('Failed to clear settings:', error)
   }
@@ -168,7 +231,9 @@ export function exportSettings(): string {
   return JSON.stringify({
     loadSettings: getLoadSettings(),
     autoAssignSettings: getAutoAssignSettings(),
-    darkMode: getDarkMode()
+    darkMode: getDarkMode(),
+    testMode: getTestMode(),
+    testDate: getTestDate()
   }, null, 2)
 }
 
@@ -182,6 +247,8 @@ export function importSettings(json: string): void {
     if (data.loadSettings) saveLoadSettings(data.loadSettings)
     if (data.autoAssignSettings) saveAutoAssignSettings(data.autoAssignSettings)
     if (typeof data.darkMode === 'boolean') saveDarkMode(data.darkMode)
+    if (typeof data.testMode === 'boolean') saveTestMode(data.testMode)
+    if (typeof data.testDate === 'string') saveTestDate(data.testDate)
   } catch (error) {
     console.error('Failed to import settings:', error)
     throw new Error('Invalid settings format')

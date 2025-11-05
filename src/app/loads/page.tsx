@@ -20,7 +20,7 @@ import { getCurrentPeriod, calculateInstructorBalance } from '@/lib/utils'
 import { isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
 import type { QueueStudent, Load, LoadAssignment, LoadSchedulingSettings, Group, Assignment } from '@/types'
 import { PageErrorBoundary } from '@/components/ErrorBoundary'
-import { getLoadSettings } from '@/lib/settingsStorage'
+import { getLoadSettings, getTestMode, saveTestMode, getTestDate, saveTestDate } from '@/lib/settingsStorage'
 import { useLoadsPageShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { RequireRole } from '@/components/auth'
 import { LoadBuilderProvider } from '@/contexts/LoadBuilderContext'
@@ -62,10 +62,16 @@ function LoadBuilderPageContent() {
   const [selectedLoadId, setSelectedLoadId] = useState<string | null>(null)
   const [showAircraftSelector, setShowAircraftSelector] = useState(false)
 
-  // ✅ TEST MODE: Simulation state for historical data validation
-  const [isTestMode, setIsTestMode] = useState(false)
+  // ✅ TEST MODE: Simulation state for historical data validation (persisted to localStorage)
+  const [isTestMode, setIsTestMode] = useState(() => getTestMode())
   const [testDate, setTestDate] = useState(() => {
-    // Parse as local date to avoid timezone issues
+    // Try to load saved test date from localStorage
+    const savedDate = getTestDate()
+    if (savedDate) {
+      const [year, month, day] = savedDate.split('-').map(Number) as [number, number, number]
+      return new Date(year, month - 1, day)
+    }
+    // Default to 2025-10-01 if no saved date
     const [year, month, day] = '2025-10-01'.split('-').map(Number) as [number, number, number]
     return new Date(year, month - 1, day) // month is 0-indexed
   })
@@ -97,6 +103,26 @@ function LoadBuilderPageContent() {
       toast.warning('Failed to load settings', 'Using default values.')
     }
   }, [])
+
+  // ✅ TEST MODE: Save test mode to localStorage when it changes
+  useEffect(() => {
+    try {
+      saveTestMode(isTestMode)
+    } catch (e) {
+      console.error('Failed to save test mode:', e)
+    }
+  }, [isTestMode])
+
+  // ✅ TEST MODE: Save test date to localStorage when it changes
+  useEffect(() => {
+    try {
+      if (isTestMode) {
+        saveTestDate(formatLocalDate(testDate))
+      }
+    } catch (e) {
+      console.error('Failed to save test date:', e)
+    }
+  }, [testDate, isTestMode])
 
   // ============================================
   // COMPUTED VALUES
