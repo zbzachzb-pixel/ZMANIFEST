@@ -45,6 +45,21 @@ export interface SmartAssignmentResult {
   successCount: number
   /** Number of failed assignments */
   failureCount: number
+  /** Phase 5 exhaustive search metrics (if triggered) */
+  exhaustiveSearchMetrics?: {
+    /** Whether Phase 5 was triggered */
+    wasTriggered: boolean
+    /** Whether Phase 5 found a complete solution */
+    foundSolution: boolean
+    /** Number of combinations tried */
+    attempts: number
+    /** Time spent searching in milliseconds */
+    timeMs: number
+    /** Whether search timed out */
+    timedOut: boolean
+    /** Number of students that triggered exhaustive search */
+    unassignedCount: number
+  }
 }
 
 /**
@@ -753,7 +768,15 @@ export function smartAssignInstructors(
         assignments: exhaustiveResult.assignments,
         errors,
         successCount: exhaustiveResult.assignments.size,
-        failureCount: errors.length
+        failureCount: errors.length,
+        exhaustiveSearchMetrics: {
+          wasTriggered: true,
+          foundSolution: true,
+          attempts: exhaustiveResult.attempts,
+          timeMs: exhaustiveResult.timeMs,
+          timedOut: false,
+          unassignedCount: finalUnassigned.length
+        }
       }
     } else if (exhaustiveResult.timedOut) {
       console.warn(`⏱️ [Phase 5] Timeout after ${exhaustiveResult.attempts} attempts - ${finalUnassigned.length} students remain unassigned`)
@@ -771,9 +794,39 @@ export function smartAssignInstructors(
           })
         }
       })
+
+      return {
+        assignments: assignmentMap,
+        errors,
+        successCount: assignmentMap.size,
+        failureCount: errors.length,
+        exhaustiveSearchMetrics: {
+          wasTriggered: true,
+          foundSolution: false,
+          attempts: exhaustiveResult.attempts,
+          timeMs: exhaustiveResult.timeMs,
+          timedOut: true,
+          unassignedCount: finalUnassigned.length
+        }
+      }
     } else {
       console.warn(`❌ [Phase 5] No solution found after ${exhaustiveResult.attempts} attempts`)
       // Errors already added in Phase 3 for truly impossible assignments
+
+      return {
+        assignments: assignmentMap,
+        errors,
+        successCount: assignmentMap.size,
+        failureCount: errors.length,
+        exhaustiveSearchMetrics: {
+          wasTriggered: true,
+          foundSolution: false,
+          attempts: exhaustiveResult.attempts,
+          timeMs: exhaustiveResult.timeMs,
+          timedOut: false,
+          unassignedCount: finalUnassigned.length
+        }
+      }
     }
   }
 
@@ -782,6 +835,7 @@ export function smartAssignInstructors(
     errors,
     successCount: assignmentMap.size,
     failureCount: errors.length
+    // No exhaustiveSearchMetrics if Phase 5 wasn't triggered
   }
 }
 
