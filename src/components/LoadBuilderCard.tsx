@@ -24,6 +24,7 @@ import { LoadStats } from './LoadStats'
 import { LoadFunJumpers } from './LoadFunJumpers'
 import { ConflictWarnings } from './ConflictWarnings'
 import { detectLoadConflicts } from '@/lib/conflictDetection'
+import { smartAssignInstructors } from '@/services/assignmentLogic' // ✅ SMART ASSIGNMENT
 import type { Load, Instructor, CreateQueueStudent, LoadAssignment, UpdateLoad } from '@/types'
 import type { CreateAssignment } from '@/types'
 
@@ -38,6 +39,7 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
     allLoads,
     instructors,
     instructorBalances,
+    assignments, // ✅ SMART ASSIGNMENT: Needed for balance calculation
     onDrop,
     onDragStart,
     onDragEnd,
@@ -377,113 +379,96 @@ export function LoadBuilderCard({ load }: LoadBuilderCardProps) {
 
   const colors = getLoadColors()
   
+  // ✅ SMART ASSIGNMENT: Use intelligent assignment algorithm that maximizes filled slots
   useEffect(() => {
   if (!showAssignModal) {
     setAssignmentSelections({})
     hasAutoSelected.current = false
     return
   }
-  
+
   if (hasAutoSelected.current) return
   hasAutoSelected.current = true
 
-  const selections: Record<string, {instructorId: string, videoInstructorId?: string, isRequest: boolean}> = {}
-  const usedInstructors = new Set<string>()
-  const usedVideoInstructors = new Set<string>()
-
   const currentAssignments = load.assignments || []
 
-  // ✅ STEP 1: Validate and keep existing PRIMARY instructors if available
+  // Use smart assignment algorithm
+  const result = smartAssignInstructors(
+    currentAssignments,
+    instructors,
+    assignments,
+    load,
+    allLoads,
+    loadSchedulingSettings,
+    'blue' // TODO: Get team rotation from settings
+  )
+
+  // Convert result to selection format
+  const selections: Record<string, {instructorId: string, videoInstructorId?: string, isRequest: boolean}> = {}
+  const usedInstructorIds = new Set<string>()
+  const usedVideoInstructorIds = new Set<string>()
+
   currentAssignments.forEach(assignment => {
-    if (assignment.instructorId) {
-      const isInstructorAvailable = isInstructorAvailableForLoad(
-        assignment.instructorId,
-        load.position || 0,
-        allLoads,
-        loadSchedulingSettings.instructorCycleTime,
-        loadSchedulingSettings.minutesBetweenLoads
-      )
-
-      if (isInstructorAvailable) {
-        selections[assignment.id] = {
-          instructorId: assignment.instructorId,
-          isRequest: assignment.isRequest
-        }
-        // Always track to prevent duplicates, even in edit mode
-        usedInstructors.add(assignment.instructorId)
-      }
-    }
-  })
-
-  // ✅ STEP 2: Auto-select PRIMARY instructors for assignments without valid ones
-  currentAssignments.forEach(assignment => {
-    if (selections[assignment.id]?.instructorId) {
-      return
-    }
-
-    // Always filter out already-used instructors to prevent duplicates
-    const qualified = getQualifiedInstructors(assignment).filter(i =>
-      !usedInstructors.has(i.id)
-    )
-
-    const firstQualified = qualified[0]
-    if (firstQualified) {
+    const assigned = result.assignments.get(assignment.studentId)
+    if (assigned) {
       selections[assignment.id] = {
-        instructorId: firstQualified.id,
+        instructorId: assigned.main.id,
+        videoInstructorId: assigned.video?.id,
         isRequest: assignment.isRequest
       }
-      usedInstructors.add(firstQualified.id)
-    }
-  })
-  
-  // ✅ STEP 3: Validate and keep existing VIDEO instructors (if assignment needs video)
-  currentAssignments.forEach(assignment => {
-    if (!assignment.hasOutsideVideo) return
-    const selection = selections[assignment.id]
-    if (!selection) return
-
-    if (assignment.videoInstructorId) {
-      const isVideoAvailable = isInstructorAvailableForLoad(
-        assignment.videoInstructorId,
-        load.position || 0,
-        allLoads,
-        loadSchedulingSettings.instructorCycleTime,
-        loadSchedulingSettings.minutesBetweenLoads
-      )
-
-      const isDifferentFromPrimary = assignment.videoInstructorId !== selection.instructorId
-
-      if (isVideoAvailable && isDifferentFromPrimary) {
-        selection.videoInstructorId = assignment.videoInstructorId
-        // Always track to prevent duplicates
-        usedVideoInstructors.add(assignment.videoInstructorId)
+      usedInstructorIds.add(assigned.main.id)
+      if (assigned.video) {
+        usedVideoInstructorIds.add(assigned.video.id)
       }
     }
   })
 
-  // ✅ STEP 4: Auto-select VIDEO instructors for assignments that need them but don't have valid ones
+  // ✅ STEP 3: Auto-select VIDEO instructors for assignments that need them
   currentAssignments.forEach(assignment => {
     if (!assignment.hasOutsideVideo) return
     const selection = selections[assignment.id]
     if (!selection) return
     if (selection.videoInstructorId) return
 
-    // Always filter out already-used instructors to prevent duplicates
+    // Filter out already-used instructors to prevent duplicates
     const videoInstructors = getVideoInstructors().filter(i =>
       i.id !== selection.instructorId &&
-      !usedVideoInstructors.has(i.id) &&
-      !usedInstructors.has(i.id)
+      !usedVideoInstructorIds.has(i.id) &&
+      !usedInstructorIds.has(i.id)
     )
 
     const firstVideo = videoInstructors[0]
     if (firstVideo) {
       selection.videoInstructorId = firstVideo.id
-      usedVideoInstructors.add(firstVideo.id)
+      usedVideoInstructorIds.add(firstVideo.id)
     }
   })
 
+  // Display errors for unassigned students
+  if (result.errors.length > 0) {
+    result.errors.forEach(error => {
+      toast.error(
+        `Cannot assign ${error.studentName}`,
+        error.reasons.join(' • ')
+      )
+    })
+  }
+
+  // Show success summary
+  if (result.successCount > 0) {
+    const message = result.failureCount === 0
+      ? `Auto-assigned ${result.successCount} student${result.successCount !== 1 ? 's' : ''}`
+      : `Assigned ${result.successCount}/${currentAssignments.length} students`
+
+    if (result.failureCount === 0) {
+      toast.success(message)
+    } else {
+      toast.warning(message, `${result.failureCount} student${result.failureCount !== 1 ? 's' : ''} need manual assignment`)
+    }
+  }
+
   setAssignmentSelections(selections)
-}, [showAssignModal, showEditModal, load.assignments, getQualifiedInstructors, getVideoInstructors])
+}, [showAssignModal, load.assignments, instructors, assignments, allLoads, loadSchedulingSettings, toast])
   
   // ==================== DRAG & DROP ====================
   const handleDragOver = (e: React.DragEvent) => {

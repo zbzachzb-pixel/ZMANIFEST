@@ -13,6 +13,7 @@ interface LoadBuilderContextType {
   instructors: Instructor[]
   instructorBalances: Map<string, number>
   loadSchedulingSettings: LoadSchedulingSettings
+  assignments: Assignment[] // ✅ SMART ASSIGNMENT: Needed for balance calculation
 
   // Drag and drop state
   dropTarget: string | null

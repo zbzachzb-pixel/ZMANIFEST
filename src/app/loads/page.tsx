@@ -1092,6 +1092,7 @@ function LoadBuilderPageContent() {
                 instructors,
                 instructorBalances,
                 loadSchedulingSettings: loadSettings,
+                assignments, // ✅ SMART ASSIGNMENT: Needed for balance calculation
                 dropTarget,
                 setDropTarget,
                 onDrop: handleDrop,
