@@ -1,0 +1,209 @@
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 2.7s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/services/assignmentLogic.ts:816:11
+Type error: Cannot find name 'Period'.
+
+[0m [90m 814 |[39m   loadSettings[33m:[39m [33mLoadSchedulingSettings[39m[33m,[39m
+ [90m 815 |[39m   assignments[33m:[39m [33mAssignment[39m[][33m,[39m
+[31m[1m>[22m[39m[90m 816 |[39m   period[33m:[39m [33mPeriod[39m[33m,[39m
+ [90m     |[39m           [31m[1m^[22m[39m
+ [90m 817 |[39m   teamRotation[33m:[39m [32m'blue'[39m [33m|[39m [32m'red'[39m[33m,[39m
+ [90m 818 |[39m   depth[33m:[39m number[33m,[39m
+ [90m 819 |[39m   maxDepth[33m:[39m number[33m,[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 2.5s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/services/assignmentLogic.ts:874:52
+Type error: 'student' is possibly 'undefined'.
+
+[0m [90m 872 |[39m
+ [90m 873 |[39m   [90m// Get qualified instructors for this student[39m
+[31m[1m>[22m[39m[90m 874 |[39m   [36mconst[39m qualifiedInstructors [33m=[39m (studentOptions[33m.[39m[36mget[39m(student[33m.[39mstudentId) [33m||[39m [])
+ [90m     |[39m                                                    [31m[1m^[22m[39m
+ [90m 875 |[39m     [33m.[39mfilter(i [33m=>[39m [33m![39mi[33m.[39marchived [33m&&[39m i[33m.[39mclockedIn)
+ [90m 876 |[39m
+ [90m 877 |[39m   [90m// Try each qualified instructor[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 2.7s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/services/assignmentLogic.ts:919:11
+Type error: Type 'Instructor | undefined' is not assignable to type 'Instructor | null'.
+  Type 'undefined' is not assignable to type 'Instructor | null'.
+
+[0m [90m 917 |[39m
+ [90m 918 |[39m         [36mif[39m (videoOptions[33m.[39mlength [33m>[39m [35m0[39m) {
+[31m[1m>[22m[39m[90m 919 |[39m           videoInstructor [33m=[39m videoOptions[[35m0[39m]
+ [90m     |[39m           [31m[1m^[22m[39m
+ [90m 920 |[39m           newUsedVideo[33m.[39madd(videoInstructor[33m.[39mid)
+ [90m 921 |[39m         } [36melse[39m {
+ [90m 922 |[39m           [90m// Can't assign required video - skip this branch[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 2.4s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/services/assignmentLogic.ts:1011:13
+Type error: Type 'Instructor | undefined' is not assignable to type 'Instructor | null'.
+  Type 'undefined' is not assignable to type 'Instructor | null'.
+
+[0m [90m 1009 |[39m
+ [90m 1010 |[39m           [36mif[39m (videoOptions[33m.[39mlength [33m>[39m [35m0[39m) {
+[31m[1m>[22m[39m[90m 1011 |[39m             videoInstructor [33m=[39m videoOptions[[35m0[39m]
+ [90m      |[39m             [31m[1m^[22m[39m
+ [90m 1012 |[39m             newUsedVideo[33m.[39madd(videoInstructor[33m.[39mid)
+ [90m 1013 |[39m           } [36melse[39m {
+ [90m 1014 |[39m             [36mcontinue[39m [90m// Can't assign required video[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 2.7s
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/services/assignmentLogic.ts:1034:13
+Type error: Type 'Instructor | undefined' is not assignable to type 'Instructor | null'.
+  Type 'undefined' is not assignable to type 'Instructor | null'.
+
+[0m [90m 1032 |[39m
+ [90m 1033 |[39m           [36mif[39m (altVideoOptions[33m.[39mlength [33m>[39m [35m0[39m) {
+[31m[1m>[22m[39m[90m 1034 |[39m             altVideoInstructor [33m=[39m altVideoOptions[[35m0[39m]
+ [90m      |[39m             [31m[1m^[22m[39m
+ [90m 1035 |[39m             newUsedVideo[33m.[39madd(altVideoInstructor[33m.[39mid)
+ [90m 1036 |[39m           } [36melse[39m {
+ [90m 1037 |[39m             [36mcontinue[39m [90m// Can't assign required video to reassigned student[39m[0m
+Next.js build worker exited with code: 1 and signal: null
+
+> instructor-system-v2@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\zbzac\package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\zbzac\instructor-system-v2\package-lock.json
+
+   ▲ Next.js 15.5.5
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 2.5s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/23) ...
+   Generating static pages (5/23) 
+   Generating static pages (11/23) 
+   Generating static pages (17/23) 
+ ✓ Generating static pages (23/23)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                      635 B         183 kB
+├ ○ /_not-found                             1 kB         103 kB
+├ ○ /analytics                           3.54 kB         192 kB
+├ ƒ /api/send-push                         127 B         102 kB
+├ ○ /assignments                         4.96 kB         194 kB
+├ ○ /dashboard                           4.57 kB         193 kB
+├ ○ /instructors                         4.92 kB         193 kB
+├ ○ /loads                               26.4 kB         215 kB
+├ ○ /login                               4.49 kB         187 kB
+├ ○ /messages                            4.88 kB         191 kB
+├ ○ /my-requests                         3.78 kB         189 kB
+├ ○ /notes                               1.38 kB         184 kB
+├ ○ /queue                               6.84 kB         195 kB
+├ ○ /register                            4.75 kB         187 kB
+├ ○ /requests                            4.39 kB         190 kB
+├ ○ /settings                            5.97 kB         195 kB
+├ ○ /submit-request                      3.48 kB         193 kB
+├ ○ /test-dashboard                      3.66 kB         192 kB
+├ ○ /test-shortcuts                      2.07 kB         104 kB
+└ ○ /users                               4.21 kB         190 kB
++ First Load JS shared by all             102 kB
+  ├ chunks/1255-ba098675cb6696ab.js      45.7 kB
+  ├ chunks/4bd1b696-f785427dddbba9fb.js  54.2 kB
+  └ other shared chunks (total)          2.33 kB
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

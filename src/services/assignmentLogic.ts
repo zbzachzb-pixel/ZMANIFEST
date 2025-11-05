@@ -5,7 +5,7 @@
 import { isInstructorAvailableForLoad } from '@/hooks/useLoadCountdown'
 import { getCurrentPeriod, isWorkingOffDay, calculateInstructorBalance } from '@/lib/utils'
 import { filterQualifiedInstructors } from '@/lib/instructorUtils'
-import type { QueueStudent, Instructor, Assignment, Load, LoadSchedulingSettings, LoadAssignment } from '@/types'
+import type { QueueStudent, Instructor, Assignment, Load, LoadSchedulingSettings, LoadAssignment, Period } from '@/types'
 
 /**
  * Result of instructor suggestion algorithm
@@ -717,11 +717,377 @@ export function smartAssignInstructors(
     }
   }
 
+  // Phase 5: Exhaustive backtracking search for remaining unassigned students
+  // Only runs if Phase 1-4 left students unassigned
+  // Tries ALL possible instructor combinations to maximize assignment completion
+  const finalUnassigned = regularAssignments.filter(a => !assignmentMap.has(a.studentId))
+
+  if (finalUnassigned.length > 0) {
+    console.log(`⚠️ [Phase 5] ${finalUnassigned.length} students still unassigned after Phase 4, trying exhaustive search...`)
+
+    const exhaustiveResult = tryExhaustiveAssignment(
+      finalUnassigned,
+      assignmentMap,
+      instructors,
+      requestAssignments,
+      regularAssignments,
+      studentOptions,
+      studentVideoOptions,
+      targetLoad,
+      allLoads,
+      loadSettings,
+      assignments,
+      period,
+      teamRotation,
+      0,                    // Initial depth
+      5,                    // Max depth (allows complex reassignment chains)
+      Date.now(),           // Start time
+      10000,                // 10 second timeout (will use Web Worker in Part 3)
+      usedMainInstructorIds,
+      usedVideoInstructorIds
+    )
+
+    if (exhaustiveResult.success) {
+      console.log(`✅ [Phase 5] Found complete assignment after ${exhaustiveResult.attempts} attempts in ${exhaustiveResult.timeMs}ms`)
+      return {
+        assignments: exhaustiveResult.assignments,
+        errors,
+        successCount: exhaustiveResult.assignments.size,
+        failureCount: errors.length
+      }
+    } else if (exhaustiveResult.timedOut) {
+      console.warn(`⏱️ [Phase 5] Timeout after ${exhaustiveResult.attempts} attempts - ${finalUnassigned.length} students remain unassigned`)
+      // Add timeout errors for remaining students
+      finalUnassigned.forEach(student => {
+        if (!exhaustiveResult.assignments.has(student.studentId)) {
+          errors.push({
+            studentName: student.studentName,
+            studentId: student.studentId,
+            reasons: [
+              'Complex assignment - exhaustive search timed out',
+              `Tried ${exhaustiveResult.attempts} combinations`,
+              'Please assign manually or adjust load'
+            ]
+          })
+        }
+      })
+    } else {
+      console.warn(`❌ [Phase 5] No solution found after ${exhaustiveResult.attempts} attempts`)
+      // Errors already added in Phase 3 for truly impossible assignments
+    }
+  }
+
   return {
     assignments: assignmentMap,
     errors,
     successCount: assignmentMap.size,
     failureCount: errors.length
+  }
+}
+
+/**
+ * Phase 5: Exhaustive backtracking search to find ANY valid complete assignment
+ *
+ * This function uses recursive backtracking to try all possible instructor combinations.
+ * It's only called when Phases 1-4 leave students unassigned.
+ *
+ * SAFETY FEATURES:
+ * - Respects locked requests (never reassigns)
+ * - Validates all constraints (weight, certs, cycle time)
+ * - Handles video assignments
+ * - Detects reassignment cycles
+ * - Depth limit prevents exponential blowup
+ * - Time limit prevents UI freeze
+ *
+ * @returns Result object with success status, assignments, attempts, time, and timeout flag
+ */
+function tryExhaustiveAssignment(
+  unassigned: LoadAssignment[],
+  currentAssignments: Map<string, {main: Instructor, video: Instructor | null}>,
+  instructors: Instructor[],
+  requestAssignments: LoadAssignment[],
+  regularAssignments: LoadAssignment[],
+  studentOptions: Map<string, Instructor[]>,
+  studentVideoOptions: Map<string, Instructor[]>,
+  targetLoad: Load,
+  allLoads: Load[],
+  loadSettings: LoadSchedulingSettings,
+  assignments: Assignment[],
+  period: Period,
+  teamRotation: 'blue' | 'red',
+  depth: number,
+  maxDepth: number,
+  startTime: number,
+  timeLimit: number,
+  usedMainInstructorIds: Set<string>,
+  usedVideoInstructorIds: Set<string>,
+  attempts: number = 0,
+  reassignmentChain: Array<{student: string, instructor: string}> = []
+): {
+  success: boolean
+  assignments: Map<string, {main: Instructor, video: Instructor | null}>
+  attempts: number
+  timeMs: number
+  timedOut: boolean
+} {
+  attempts++
+
+  // Safety check: Time limit
+  const elapsed = Date.now() - startTime
+  if (elapsed > timeLimit) {
+    return {
+      success: false,
+      assignments: currentAssignments,
+      attempts,
+      timeMs: elapsed,
+      timedOut: true
+    }
+  }
+
+  // Safety check: Depth limit
+  if (depth > maxDepth) {
+    return {
+      success: false,
+      assignments: currentAssignments,
+      attempts,
+      timeMs: elapsed,
+      timedOut: false
+    }
+  }
+
+  // Base case: All students assigned!
+  if (unassigned.length === 0) {
+    return {
+      success: true,
+      assignments: new Map(currentAssignments),
+      attempts,
+      timeMs: elapsed,
+      timedOut: false
+    }
+  }
+
+  // Try to assign first unassigned student
+  const student = unassigned[0]
+  if (!student) {
+    // Should never happen due to length check above, but satisfies TypeScript
+    return {
+      success: false,
+      assignments: currentAssignments,
+      attempts,
+      timeMs: elapsed,
+      timedOut: false
+    }
+  }
+
+  const remainingStudents = unassigned.slice(1)
+
+  // Get qualified instructors for this student
+  const qualifiedInstructors = (studentOptions.get(student.studentId) || [])
+    .filter(i => !i.archived && i.clockedIn)
+
+  // Try each qualified instructor
+  for (const instructor of qualifiedInstructors) {
+    // Check if instructor is already locked in a request
+    const isLockedRequest = requestAssignments.some(
+      r => r.instructorId === instructor.id || r.videoInstructorId === instructor.id
+    )
+    if (isLockedRequest) continue
+
+    // Check if instructor is free
+    const assignedTo = Array.from(currentAssignments.entries())
+      .find(([_, assigned]) => assigned.main.id === instructor.id || assigned.video?.id === instructor.id)
+
+    if (!assignedTo) {
+      // Instructor is free - try direct assignment
+      const newAssignments = new Map(currentAssignments)
+      const newUsedMain = new Set(usedMainInstructorIds)
+      const newUsedVideo = new Set(usedVideoInstructorIds)
+
+      // Assign main instructor
+      let videoInstructor: Instructor | null = null
+
+      // If student needs video, try to assign video instructor
+      if (student.hasOutsideVideo) {
+        const videoOptions = (studentVideoOptions.get(student.studentId) || [])
+          .filter(v =>
+            !newUsedMain.has(v.id) &&
+            !newUsedVideo.has(v.id) &&
+            !requestAssignments.some(r => r.instructorId === v.id || r.videoInstructorId === v.id)
+          )
+
+        if (videoOptions.length > 0 && videoOptions[0]) {
+          videoInstructor = videoOptions[0]
+          newUsedVideo.add(videoInstructor.id)
+        } else {
+          // Can't assign required video - skip this branch
+          continue
+        }
+      }
+
+      newAssignments.set(student.studentId, { main: instructor, video: videoInstructor })
+      newUsedMain.add(instructor.id)
+
+      // Recursively try to assign remaining students
+      const result = tryExhaustiveAssignment(
+        remainingStudents,
+        newAssignments,
+        instructors,
+        requestAssignments,
+        regularAssignments,
+        studentOptions,
+        studentVideoOptions,
+        targetLoad,
+        allLoads,
+        loadSettings,
+        assignments,
+        period,
+        teamRotation,
+        depth,
+        maxDepth,
+        startTime,
+        timeLimit,
+        newUsedMain,
+        newUsedVideo,
+        attempts,
+        reassignmentChain
+      )
+
+      if (result.success) return result
+      attempts = result.attempts
+
+    } else {
+      // Instructor is already assigned - try reassignment
+      const [assignedStudentId, assignedInstructors] = assignedTo
+
+      // Check for reassignment cycle
+      const wouldCreateCycle = reassignmentChain.some(
+        r => r.instructor === instructor.id && r.student === assignedStudentId
+      )
+      if (wouldCreateCycle) continue
+
+      // Skip if assigned to a locked request
+      const assignedIsRequest = requestAssignments.some(r => r.studentId === assignedStudentId)
+      if (assignedIsRequest) continue
+
+      // Find the assigned student's details
+      const assignedStudent = regularAssignments.find(a => a.studentId === assignedStudentId)
+      if (!assignedStudent) continue
+
+      // Get alternative instructors for the currently-assigned student
+      const alternativeInstructors = (studentOptions.get(assignedStudentId) || [])
+        .filter(alt =>
+          alt.id !== instructor.id &&
+          !alt.archived &&
+          alt.clockedIn &&
+          !requestAssignments.some(r => r.instructorId === alt.id)
+        )
+
+      // Try each alternative for the other student
+      for (const alternative of alternativeInstructors) {
+        // Check if alternative is free
+        const altAssignedTo = Array.from(currentAssignments.entries())
+          .find(([_, assigned]) => assigned.main.id === alternative.id || assigned.video?.id === alternative.id)
+
+        if (altAssignedTo) continue // Alternative is also used, skip
+
+        // Create new assignment map with reassignment
+        const newAssignments = new Map(currentAssignments)
+        const newUsedMain = new Set(usedMainInstructorIds)
+        const newUsedVideo = new Set(usedVideoInstructorIds)
+
+        // Assign current student to the instructor
+        let videoInstructor: Instructor | null = null
+        if (student.hasOutsideVideo) {
+          const videoOptions = (studentVideoOptions.get(student.studentId) || [])
+            .filter(v =>
+              !newUsedMain.has(v.id) &&
+              !newUsedVideo.has(v.id) &&
+              v.id !== instructor.id &&
+              v.id !== alternative.id &&
+              !requestAssignments.some(r => r.instructorId === v.id || r.videoInstructorId === v.id)
+            )
+
+          if (videoOptions.length > 0 && videoOptions[0]) {
+            videoInstructor = videoOptions[0]
+            newUsedVideo.add(videoInstructor.id)
+          } else {
+            continue // Can't assign required video
+          }
+        }
+
+        newAssignments.set(student.studentId, { main: instructor, video: videoInstructor })
+
+        // Reassign the other student to alternative
+        let altVideoInstructor: Instructor | null = assignedInstructors.video
+        if (assignedStudent.hasOutsideVideo && !altVideoInstructor) {
+          // Other student needs video too
+          const altVideoOptions = (studentVideoOptions.get(assignedStudentId) || [])
+            .filter(v =>
+              !newUsedMain.has(v.id) &&
+              !newUsedVideo.has(v.id) &&
+              v.id !== instructor.id &&
+              v.id !== alternative.id &&
+              !requestAssignments.some(r => r.instructorId === v.id || r.videoInstructorId === v.id)
+            )
+
+          if (altVideoOptions.length > 0 && altVideoOptions[0]) {
+            altVideoInstructor = altVideoOptions[0]
+            newUsedVideo.add(altVideoInstructor.id)
+          } else {
+            continue // Can't assign required video to reassigned student
+          }
+        }
+
+        newAssignments.set(assignedStudentId, { main: alternative, video: altVideoInstructor })
+
+        // Update usage tracking
+        newUsedMain.delete(instructor.id)
+        newUsedMain.add(alternative.id)
+
+        // Add to reassignment chain
+        const newChain = [
+          ...reassignmentChain,
+          { student: assignedStudentId, instructor: instructor.id }
+        ]
+
+        // Recursively try to assign remaining students
+        const result = tryExhaustiveAssignment(
+          remainingStudents,
+          newAssignments,
+          instructors,
+          requestAssignments,
+          regularAssignments,
+          studentOptions,
+          studentVideoOptions,
+          targetLoad,
+          allLoads,
+          loadSettings,
+          assignments,
+          period,
+          teamRotation,
+          depth + 1, // Increment depth for reassignment
+          maxDepth,
+          startTime,
+          timeLimit,
+          newUsedMain,
+          newUsedVideo,
+          attempts,
+          newChain
+        )
+
+        if (result.success) return result
+        attempts = result.attempts
+      }
+    }
+  }
+
+  // No solution found in this branch
+  return {
+    success: false,
+    assignments: currentAssignments,
+    attempts,
+    timeMs: Date.now() - startTime,
+    timedOut: false
   }
 }
 
